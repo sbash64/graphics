@@ -3,6 +3,7 @@
 
 #include <vulkan/vulkan_core.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <exception>
 #include <iostream>
@@ -64,6 +65,21 @@ struct Instance {
 constexpr auto windowWidth = 800;
 constexpr auto windowHeight = 600;
 
+static auto suitable(VkPhysicalDevice device) -> bool {
+  uint32_t queueFamilyCount = 0;
+  vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+
+  std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+  vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount,
+                                           queueFamilies.data());
+
+  return std::any_of(queueFamilies.begin(), queueFamilies.end(),
+                     [](const VkQueueFamilyProperties &properties) {
+                       return (properties.queueFlags & VK_QUEUE_GRAPHICS_BIT) !=
+                              0U;
+                     });
+}
+
 static void run() {
   gflw_wrappers::Init gflwInitialization;
 
@@ -84,28 +100,14 @@ static void run() {
                              devices.data());
 
   VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
-  for (const auto &device : devices) {
-    uint32_t queueFamilyCount = 0;
-    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount,
-                                             nullptr);
-
-    std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
-    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount,
-                                             queueFamilies.data());
-
-    for (const auto &queueFamily : queueFamilies) {
-      if ((queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0U) {
-        physicalDevice = device;
-        break;
-      }
-    }
-    if (physicalDevice != VK_NULL_HANDLE)
+  for (const auto &device : devices)
+    if (suitable(device)) {
+      physicalDevice = device;
       break;
-  }
+    }
 
-  if (physicalDevice == VK_NULL_HANDLE) {
+  if (physicalDevice == VK_NULL_HANDLE)
     throw std::runtime_error("failed to find a suitable GPU!");
-  }
 
   while (glfwWindowShouldClose(window.window) == 0) {
     glfwPollEvents();
