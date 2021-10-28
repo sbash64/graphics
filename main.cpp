@@ -7,6 +7,7 @@
 #include <exception>
 #include <iostream>
 #include <stdexcept>
+#include <vector>
 
 namespace gflw_wrappers {
 struct Init {
@@ -41,12 +42,15 @@ struct Instance {
     createInfo.pApplicationInfo = &appInfo;
 
     uint32_t glfwExtensionCount = 0;
-
-    createInfo.enabledExtensionCount = glfwExtensionCount;
     createInfo.ppEnabledExtensionNames =
         glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
+    createInfo.enabledExtensionCount = glfwExtensionCount;
 
     createInfo.enabledLayerCount = 0;
+    createInfo.enabledLayerCount = 0;
+
+    createInfo.pNext = nullptr;
+
     if (vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS)
       throw std::runtime_error("failed to create instance!");
   }
@@ -68,6 +72,40 @@ static void run() {
   gflw_wrappers::Window window{windowWidth, windowHeight};
 
   vulkan_wrappers::Instance vulkanInstance;
+  uint32_t deviceCount = 0;
+  vkEnumeratePhysicalDevices(vulkanInstance.instance, &deviceCount, nullptr);
+
+  if (deviceCount == 0) {
+    throw std::runtime_error("failed to find GPUs with Vulkan support!");
+  }
+
+  std::vector<VkPhysicalDevice> devices(deviceCount);
+  vkEnumeratePhysicalDevices(vulkanInstance.instance, &deviceCount,
+                             devices.data());
+
+  VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+  for (const auto &device : devices) {
+    uint32_t queueFamilyCount = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount,
+                                             nullptr);
+
+    std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount,
+                                             queueFamilies.data());
+
+    for (const auto &queueFamily : queueFamilies) {
+      if ((queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0U) {
+        physicalDevice = device;
+        break;
+      }
+    }
+    if (physicalDevice != VK_NULL_HANDLE)
+      break;
+  }
+
+  if (physicalDevice == VK_NULL_HANDLE) {
+    throw std::runtime_error("failed to find a suitable GPU!");
+  }
 
   while (glfwWindowShouldClose(window.window) == 0) {
     glfwPollEvents();
