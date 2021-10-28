@@ -80,6 +80,14 @@ static auto suitable(VkPhysicalDevice device) -> bool {
                      });
 }
 
+static auto suitableDevice(const std::vector<VkPhysicalDevice> &devices)
+    -> VkPhysicalDevice {
+  for (const auto &device : devices)
+    if (suitable(device))
+      return device;
+  throw std::runtime_error("failed to find a suitable GPU!");
+}
+
 static void run() {
   gflw_wrappers::Init gflwInitialization;
 
@@ -99,15 +107,7 @@ static void run() {
   vkEnumeratePhysicalDevices(vulkanInstance.instance, &deviceCount,
                              devices.data());
 
-  VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
-  for (const auto &device : devices)
-    if (suitable(device)) {
-      physicalDevice = device;
-      break;
-    }
-
-  if (physicalDevice == VK_NULL_HANDLE)
-    throw std::runtime_error("failed to find a suitable GPU!");
+  auto physicalDevice{suitableDevice(devices)};
 
   while (glfwWindowShouldClose(window.window) == 0) {
     glfwPollEvents();
