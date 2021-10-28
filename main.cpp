@@ -48,8 +48,6 @@ struct Instance {
     createInfo.enabledExtensionCount = glfwExtensionCount;
 
     createInfo.enabledLayerCount = 0;
-    createInfo.enabledLayerCount = 0;
-
     createInfo.pNext = nullptr;
 
     if (vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS)
