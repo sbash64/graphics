@@ -30,33 +30,35 @@ struct Window {
 } // namespace gflw_wrappers
 
 static auto graphicsSupportIndex(VkPhysicalDevice device) -> uint32_t {
-  uint32_t queueFamilyCount = 0;
-  vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+  uint32_t queueFamilyPropertyCount = 0;
+  vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyPropertyCount,
+                                           nullptr);
 
-  std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
-  vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount,
-                                           queueFamilies.data());
+  std::vector<VkQueueFamilyProperties> queueFamilyProperties(
+      queueFamilyPropertyCount);
+  vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyPropertyCount,
+                                           queueFamilyProperties.data());
 
-  return static_cast<uint32_t>(
-      std::distance(queueFamilies.begin(),
-                    std::find_if(queueFamilies.begin(), queueFamilies.end(),
-                                 [](const VkQueueFamilyProperties &properties) {
-                                   return (properties.queueFlags &
-                                           VK_QUEUE_GRAPHICS_BIT) != 0U;
-                                 })));
+  return static_cast<uint32_t>(std::distance(
+      queueFamilyProperties.begin(),
+      std::find_if(queueFamilyProperties.begin(), queueFamilyProperties.end(),
+                   [](const VkQueueFamilyProperties &properties) {
+                     return (properties.queueFlags & VK_QUEUE_GRAPHICS_BIT) !=
+                            0U;
+                   })));
 }
 
 static auto presentSupportIndex(VkPhysicalDevice device, VkSurfaceKHR surface)
     -> uint32_t {
-  uint32_t queueFamilyCount = 0;
-  vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+  uint32_t queueFamilyPropertyCount = 0;
+  vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyPropertyCount,
+                                           nullptr);
 
   auto index{0U};
-  while (index < queueFamilyCount) {
-    VkBool32 presentSupport = 0U;
-    vkGetPhysicalDeviceSurfaceSupportKHR(device, index, surface,
-                                         &presentSupport);
-    if (presentSupport != 0U)
+  while (index < queueFamilyPropertyCount) {
+    VkBool32 support = 0U;
+    vkGetPhysicalDeviceSurfaceSupportKHR(device, index, surface, &support);
+    if (support != 0U)
       return index;
     ++index;
   }
@@ -99,6 +101,7 @@ struct Device {
   explicit Device(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface) {
     std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
 
+    const auto queuePriority{1.0F};
     for (auto queueFamily :
          std::set<uint32_t>{graphicsSupportIndex(physicalDevice),
                             presentSupportIndex(physicalDevice, surface)}) {
@@ -106,7 +109,6 @@ struct Device {
       queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
       queueCreateInfo.queueFamilyIndex = queueFamily;
       queueCreateInfo.queueCount = 1;
-      auto queuePriority{1.0F};
       queueCreateInfo.pQueuePriorities = &queuePriority;
       queueCreateInfos.push_back(queueCreateInfo);
     }
@@ -121,9 +123,7 @@ struct Device {
     createInfo.pQueueCreateInfos = queueCreateInfos.data();
 
     createInfo.pEnabledFeatures = &deviceFeatures;
-
     createInfo.enabledExtensionCount = 0;
-
     createInfo.enabledLayerCount = 0;
 
     if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) !=
@@ -150,20 +150,22 @@ struct Surface {
 };
 } // namespace vulkan_wrappers
 
-constexpr auto windowWidth = 800;
-constexpr auto windowHeight = 600;
+constexpr auto windowWidth{800};
+constexpr auto windowHeight{600};
 
 static auto suitable(VkPhysicalDevice device, VkSurfaceKHR surface) -> bool {
-  uint32_t queueFamilyCount = 0;
-  vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+  uint32_t queueFamilyPropertyCount{0};
+  vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyPropertyCount,
+                                           nullptr);
 
-  std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
-  vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount,
-                                           queueFamilies.data());
+  std::vector<VkQueueFamilyProperties> queueFamilyProperties(
+      queueFamilyPropertyCount);
+  vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyPropertyCount,
+                                           queueFamilyProperties.data());
 
   auto index{0U};
-  for (auto properties : queueFamilies) {
-    VkBool32 presentSupport = 0U;
+  for (auto properties : queueFamilyProperties) {
+    VkBool32 presentSupport{0U};
     vkGetPhysicalDeviceSurfaceSupportKHR(device, index, surface,
                                          &presentSupport);
     if ((properties.queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0U &&
@@ -192,7 +194,7 @@ static void run() {
   vulkan_wrappers::Instance vulkanInstance;
   vulkan_wrappers::Surface vulkanSurface{vulkanInstance.instance,
                                          gflwWindow.window};
-  uint32_t deviceCount = 0;
+  uint32_t deviceCount{0};
   vkEnumeratePhysicalDevices(vulkanInstance.instance, &deviceCount, nullptr);
 
   std::vector<VkPhysicalDevice> devices(deviceCount);
@@ -201,10 +203,10 @@ static void run() {
 
   auto *physicalDevice{suitableDevice(devices, vulkanSurface.surface)};
   vulkan_wrappers::Device device{physicalDevice, vulkanSurface.surface};
-  VkQueue graphicsQueue = nullptr;
+  VkQueue graphicsQueue{nullptr};
   vkGetDeviceQueue(device.device, graphicsSupportIndex(physicalDevice), 0,
                    &graphicsQueue);
-  VkQueue presentQueue = nullptr;
+  VkQueue presentQueue{nullptr};
   vkGetDeviceQueue(device.device,
                    presentSupportIndex(physicalDevice, vulkanSurface.surface),
                    0, &presentQueue);
