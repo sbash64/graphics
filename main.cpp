@@ -99,10 +99,6 @@ static void run() {
   uint32_t deviceCount = 0;
   vkEnumeratePhysicalDevices(vulkanInstance.instance, &deviceCount, nullptr);
 
-  if (deviceCount == 0) {
-    throw std::runtime_error("failed to find GPUs with Vulkan support!");
-  }
-
   std::vector<VkPhysicalDevice> devices(deviceCount);
   vkEnumeratePhysicalDevices(vulkanInstance.instance, &deviceCount,
                              devices.data());
