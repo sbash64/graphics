@@ -110,6 +110,19 @@ struct Device {
 
   VkDevice device{};
 };
+
+struct Surface {
+  Surface(VkInstance instance, GLFWwindow *window) : instance{instance} {
+    if (glfwCreateWindowSurface(instance, window, nullptr, &surface) !=
+        VK_SUCCESS)
+      throw std::runtime_error("failed to create window surface!");
+  }
+
+  ~Surface() { vkDestroySurfaceKHR(instance, surface, nullptr); }
+
+  VkInstance instance;
+  VkSurfaceKHR surface{};
+};
 } // namespace vulkan_wrappers
 
 constexpr auto windowWidth = 800;
@@ -143,9 +156,10 @@ static void run() {
 
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
   glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-  gflw_wrappers::Window window{windowWidth, windowHeight};
+  gflw_wrappers::Window gflwWindow{windowWidth, windowHeight};
 
   vulkan_wrappers::Instance vulkanInstance;
+  vulkan_wrappers::Surface surface{vulkanInstance.instance, gflwWindow.window};
   uint32_t deviceCount = 0;
   vkEnumeratePhysicalDevices(vulkanInstance.instance, &deviceCount, nullptr);
 
@@ -159,7 +173,7 @@ static void run() {
   vkGetDeviceQueue(device.device, queueFamilyIndex(physicalDevice), 0,
                    &graphicsQueue);
 
-  while (glfwWindowShouldClose(window.window) == 0) {
+  while (glfwWindowShouldClose(gflwWindow.window) == 0) {
     glfwPollEvents();
   }
 }
