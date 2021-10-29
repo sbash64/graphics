@@ -162,15 +162,6 @@ constexpr auto windowWidth{800};
 constexpr auto windowHeight{600};
 
 static auto suitable(VkPhysicalDevice device, VkSurfaceKHR surface) -> bool {
-  uint32_t queueFamilyPropertyCount{0};
-  vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyPropertyCount,
-                                           nullptr);
-
-  std::vector<VkQueueFamilyProperties> queueFamilyProperties(
-      queueFamilyPropertyCount);
-  vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyPropertyCount,
-                                           queueFamilyProperties.data());
-
   uint32_t extensionPropertyCount = 0;
   vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionPropertyCount,
                                        nullptr);
@@ -202,6 +193,14 @@ static auto suitable(VkPhysicalDevice device, VkSurfaceKHR surface) -> bool {
   if (formatCount == 0)
     return false;
 
+  uint32_t queueFamilyPropertyCount{0};
+  vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyPropertyCount,
+                                           nullptr);
+
+  std::vector<VkQueueFamilyProperties> queueFamilyProperties(
+      queueFamilyPropertyCount);
+  vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyPropertyCount,
+                                           queueFamilyProperties.data());
   auto index{0U};
   for (auto properties : queueFamilyProperties) {
     VkBool32 presentSupport{0U};
@@ -244,21 +243,18 @@ static auto swapExtent(VkSurfaceCapabilitiesKHR capabilities,
                        GLFWwindow *window) -> VkExtent2D {
   if (capabilities.currentExtent.width != UINT32_MAX)
     return capabilities.currentExtent;
+
   int width = 0;
   int height = 0;
   glfwGetFramebufferSize(window, &width, &height);
 
-  VkExtent2D actualExtent = {static_cast<uint32_t>(width),
-                             static_cast<uint32_t>(height)};
-
-  actualExtent.width =
-      std::clamp(actualExtent.width, capabilities.minImageExtent.width,
-                 capabilities.maxImageExtent.width);
-  actualExtent.height =
-      std::clamp(actualExtent.height, capabilities.minImageExtent.height,
-                 capabilities.maxImageExtent.height);
-
-  return actualExtent;
+  VkExtent2D extent = {static_cast<uint32_t>(width),
+                       static_cast<uint32_t>(height)};
+  extent.width = std::clamp(extent.width, capabilities.minImageExtent.width,
+                            capabilities.maxImageExtent.width);
+  extent.height = std::clamp(extent.height, capabilities.minImageExtent.height,
+                             capabilities.maxImageExtent.height);
+  return extent;
 }
 
 static void run() {
@@ -273,7 +269,6 @@ static void run() {
                                          gflwWindow.window};
   uint32_t deviceCount{0};
   vkEnumeratePhysicalDevices(vulkanInstance.instance, &deviceCount, nullptr);
-
   std::vector<VkPhysicalDevice> devices(deviceCount);
   vkEnumeratePhysicalDevices(vulkanInstance.instance, &deviceCount,
                              devices.data());
@@ -282,33 +277,23 @@ static void run() {
   vulkan_wrappers::Device device{physicalDevice, vulkanSurface.surface};
 
   VkSurfaceCapabilitiesKHR capabilities;
-  std::vector<VkSurfaceFormatKHR> formats;
-  std::vector<VkPresentModeKHR> presentModes;
-  {
-    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
-        physicalDevice, vulkanSurface.surface, &capabilities);
+  vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
+      physicalDevice, vulkanSurface.surface, &capabilities);
 
-    uint32_t formatCount = 0;
-    vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, vulkanSurface.surface,
-                                         &formatCount, nullptr);
+  uint32_t formatCount = 0;
+  vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, vulkanSurface.surface,
+                                       &formatCount, nullptr);
+  std::vector<VkSurfaceFormatKHR> formats(formatCount);
+  vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, vulkanSurface.surface,
+                                       &formatCount, formats.data());
 
-    if (formatCount != 0) {
-      formats.resize(formatCount);
-      vkGetPhysicalDeviceSurfaceFormatsKHR(
-          physicalDevice, vulkanSurface.surface, &formatCount, formats.data());
-    }
-
-    uint32_t presentModeCount = 0;
-    vkGetPhysicalDeviceSurfacePresentModesKHR(
-        physicalDevice, vulkanSurface.surface, &presentModeCount, nullptr);
-
-    if (presentModeCount != 0) {
-      presentModes.resize(presentModeCount);
-      vkGetPhysicalDeviceSurfacePresentModesKHR(
-          physicalDevice, vulkanSurface.surface, &presentModeCount,
-          presentModes.data());
-    }
-  }
+  uint32_t presentModeCount = 0;
+  vkGetPhysicalDeviceSurfacePresentModesKHR(
+      physicalDevice, vulkanSurface.surface, &presentModeCount, nullptr);
+  std::vector<VkPresentModeKHR> presentModes(presentModeCount);
+  vkGetPhysicalDeviceSurfacePresentModesKHR(
+      physicalDevice, vulkanSurface.surface, &presentModeCount,
+      presentModes.data());
 
   auto surfaceFormat = swapSurfaceFormat(formats);
   auto presentMode = swapPresentMode(presentModes);
@@ -331,14 +316,14 @@ static void run() {
   createInfo.imageArrayLayers = 1;
   createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
-  uint32_t queueFamilyIndices[] = {
+  const std::array<uint32_t, 2> queueFamilyIndices = {
       graphicsSupportIndex(physicalDevice),
       presentSupportIndex(physicalDevice, vulkanSurface.surface)};
 
   if (queueFamilyIndices[0] != queueFamilyIndices[1]) {
     createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
     createInfo.queueFamilyIndexCount = 2;
-    createInfo.pQueueFamilyIndices = queueFamilyIndices;
+    createInfo.pQueueFamilyIndices = queueFamilyIndices.data();
   } else {
     createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
   }
