@@ -13,7 +13,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace gflw_wrappers {
+namespace glfw_wrappers {
 struct Init {
   Init() { glfwInit(); }
 
@@ -28,22 +28,29 @@ struct Window {
 
   GLFWwindow *window;
 };
-} // namespace gflw_wrappers
+} // namespace glfw_wrappers
 
 static auto supportsGraphics(const VkQueueFamilyProperties &properties)
     -> bool {
   return (properties.queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0U;
 }
 
-static auto graphicsSupportIndex(VkPhysicalDevice device) -> uint32_t {
-  uint32_t queueFamilyPropertyCount = 0;
-  vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyPropertyCount,
-                                           nullptr);
-  std::vector<VkQueueFamilyProperties> queueFamilyProperties(
-      queueFamilyPropertyCount);
-  vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyPropertyCount,
-                                           queueFamilyProperties.data());
+static auto queueFamilyPropertiesCount(VkPhysicalDevice device) -> uint32_t {
+  uint32_t count = 0;
+  vkGetPhysicalDeviceQueueFamilyProperties(device, &count, nullptr);
+  return count;
+}
 
+static auto queueFamilyProperties(VkPhysicalDevice device, uint32_t count)
+    -> std::vector<VkQueueFamilyProperties> {
+  std::vector<VkQueueFamilyProperties> properties(count);
+  vkGetPhysicalDeviceQueueFamilyProperties(device, &count, properties.data());
+  return properties;
+}
+
+static auto graphicsSupportIndex(VkPhysicalDevice device) -> uint32_t {
+  std::vector<VkQueueFamilyProperties> queueFamilyProperties(
+      ::queueFamilyProperties(device, queueFamilyPropertiesCount(device)));
   return static_cast<uint32_t>(std::distance(
       queueFamilyProperties.begin(),
       std::find_if(queueFamilyProperties.begin(), queueFamilyProperties.end(),
@@ -52,12 +59,8 @@ static auto graphicsSupportIndex(VkPhysicalDevice device) -> uint32_t {
 
 static auto presentSupportIndex(VkPhysicalDevice device, VkSurfaceKHR surface)
     -> uint32_t {
-  uint32_t queueFamilyPropertyCount = 0;
-  vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyPropertyCount,
-                                           nullptr);
-
   auto index{0U};
-  while (index < queueFamilyPropertyCount) {
+  while (index < queueFamilyPropertiesCount(device)) {
     VkBool32 support = 0U;
     vkGetPhysicalDeviceSurfaceSupportKHR(device, index, surface, &support);
     if (support != 0U)
@@ -258,11 +261,11 @@ static auto swapExtent(VkSurfaceCapabilitiesKHR capabilities,
 }
 
 static void run() {
-  gflw_wrappers::Init gflwInitialization;
+  glfw_wrappers::Init gflwInitialization;
 
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
   glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-  gflw_wrappers::Window gflwWindow{windowWidth, windowHeight};
+  glfw_wrappers::Window gflwWindow{windowWidth, windowHeight};
 
   vulkan_wrappers::Instance vulkanInstance;
   vulkan_wrappers::Surface vulkanSurface{vulkanInstance.instance,
