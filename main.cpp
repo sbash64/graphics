@@ -1,4 +1,3 @@
-#include <functional>
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
@@ -8,6 +7,7 @@
 #include <array>
 #include <cstdlib>
 #include <exception>
+#include <functional>
 #include <iostream>
 #include <iterator>
 #include <set>
@@ -468,10 +468,14 @@ static void run() {
                           &imageCount, swapChainImages.data());
 
   std::vector<vulkan_wrappers::ImageView> swapChainImageViews;
-
-  for (const auto &swapChainImage : swapChainImages)
-    swapChainImageViews.emplace_back(vulkanDevice.device, vulkanPhysicalDevice,
-                                     vulkanSurface.surface, swapChainImage);
+  std::transform(
+      swapChainImages.begin(), swapChainImages.end(),
+      std::back_inserter(swapChainImageViews),
+      [&vulkanDevice, &vulkanPhysicalDevice, &vulkanSurface](VkImage image) {
+        return vulkan_wrappers::ImageView{vulkanDevice.device,
+                                          vulkanPhysicalDevice,
+                                          vulkanSurface.surface, image};
+      });
 
   while (glfwWindowShouldClose(glfwWindow.window) == 0) {
     glfwPollEvents();
