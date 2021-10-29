@@ -90,6 +90,41 @@ static auto presentSupportingQueueFamilyIndex(VkPhysicalDevice device,
 constexpr std::array<const char *, 1> deviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
+static auto swapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &formats)
+    -> VkSurfaceFormatKHR {
+  for (const auto &format : formats)
+    if (format.format == VK_FORMAT_B8G8R8A8_SRGB &&
+        format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+      return format;
+  return formats[0];
+}
+
+static auto swapPresentMode(const std::vector<VkPresentModeKHR> &presentModes)
+    -> VkPresentModeKHR {
+  for (const auto &mode : presentModes)
+    if (mode == VK_PRESENT_MODE_MAILBOX_KHR)
+      return mode;
+  return VK_PRESENT_MODE_FIFO_KHR;
+}
+
+static auto swapExtent(VkSurfaceCapabilitiesKHR capabilities,
+                       GLFWwindow *window) -> VkExtent2D {
+  if (capabilities.currentExtent.width != UINT32_MAX)
+    return capabilities.currentExtent;
+
+  int width = 0;
+  int height = 0;
+  glfwGetFramebufferSize(window, &width, &height);
+
+  VkExtent2D extent = {static_cast<uint32_t>(width),
+                       static_cast<uint32_t>(height)};
+  extent.width = std::clamp(extent.width, capabilities.minImageExtent.width,
+                            capabilities.maxImageExtent.width);
+  extent.height = std::clamp(extent.height, capabilities.minImageExtent.height,
+                             capabilities.maxImageExtent.height);
+  return extent;
+}
+
 namespace vulkan_wrappers {
 struct Instance {
   Instance() {
@@ -180,6 +215,81 @@ struct Surface {
   VkInstance instance;
   VkSurfaceKHR surface{};
 };
+
+struct Swapchain {
+  Swapchain(VkDevice device, VkPhysicalDevice physicalDevice,
+            VkSurfaceKHR surface, GLFWwindow *window)
+      : device{device} {
+    VkSwapchainCreateInfoKHR createInfo{};
+    createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+    createInfo.surface = surface;
+
+    VkSurfaceCapabilitiesKHR capabilities;
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface,
+                                              &capabilities);
+
+    auto imageCount = capabilities.minImageCount + 1;
+    if (capabilities.maxImageCount > 0 &&
+        imageCount > capabilities.maxImageCount) {
+      imageCount = capabilities.maxImageCount;
+    }
+
+    auto formatCount{vulkanCount(
+        physicalDevice, [&surface](VkPhysicalDevice device_, uint32_t *count) {
+          vkGetPhysicalDeviceSurfaceFormatsKHR(device_, surface, count,
+                                               nullptr);
+        })};
+    std::vector<VkSurfaceFormatKHR> formats(formatCount);
+    vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount,
+                                         formats.data());
+
+    const auto surfaceFormat{swapSurfaceFormat(formats)};
+
+    createInfo.minImageCount = imageCount;
+    createInfo.imageFormat = surfaceFormat.format;
+    createInfo.imageColorSpace = surfaceFormat.colorSpace;
+    createInfo.imageExtent = swapExtent(capabilities, window);
+    createInfo.imageArrayLayers = 1;
+    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+
+    const std::array<uint32_t, 2> queueFamilyIndices = {
+        graphicsSupportingQueueFamilyIndex(physicalDevice),
+        presentSupportingQueueFamilyIndex(physicalDevice, surface)};
+
+    if (queueFamilyIndices[0] != queueFamilyIndices[1]) {
+      createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
+      createInfo.queueFamilyIndexCount = 2;
+      createInfo.pQueueFamilyIndices = queueFamilyIndices.data();
+    } else {
+      createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    }
+
+    auto presentModeCount{vulkanCount(
+        physicalDevice, [&surface](VkPhysicalDevice device_, uint32_t *count) {
+          vkGetPhysicalDeviceSurfacePresentModesKHR(device_, surface, count,
+                                                    nullptr);
+        })};
+    std::vector<VkPresentModeKHR> presentModes(presentModeCount);
+    vkGetPhysicalDeviceSurfacePresentModesKHR(
+        physicalDevice, surface, &presentModeCount, presentModes.data());
+
+    createInfo.preTransform = capabilities.currentTransform;
+    createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    createInfo.presentMode = swapPresentMode(presentModes);
+    createInfo.clipped = VK_TRUE;
+
+    createInfo.oldSwapchain = VK_NULL_HANDLE;
+
+    if (vkCreateSwapchainKHR(device, &createInfo, nullptr, &swapChain) !=
+        VK_SUCCESS)
+      throw std::runtime_error("failed to create swap chain!");
+  }
+
+  ~Swapchain() { vkDestroySwapchainKHR(device, swapChain, nullptr); }
+
+  VkDevice device;
+  VkSwapchainKHR swapChain{};
+};
 } // namespace vulkan_wrappers
 
 constexpr auto windowWidth{800};
@@ -241,41 +351,6 @@ static auto suitableDevice(const std::vector<VkPhysicalDevice> &devices,
   throw std::runtime_error("failed to find a suitable GPU!");
 }
 
-static auto swapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &formats)
-    -> VkSurfaceFormatKHR {
-  for (const auto &format : formats)
-    if (format.format == VK_FORMAT_B8G8R8A8_SRGB &&
-        format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
-      return format;
-  return formats[0];
-}
-
-static auto swapPresentMode(const std::vector<VkPresentModeKHR> &presentModes)
-    -> VkPresentModeKHR {
-  for (const auto &mode : presentModes)
-    if (mode == VK_PRESENT_MODE_MAILBOX_KHR)
-      return mode;
-  return VK_PRESENT_MODE_FIFO_KHR;
-}
-
-static auto swapExtent(VkSurfaceCapabilitiesKHR capabilities,
-                       GLFWwindow *window) -> VkExtent2D {
-  if (capabilities.currentExtent.width != UINT32_MAX)
-    return capabilities.currentExtent;
-
-  int width = 0;
-  int height = 0;
-  glfwGetFramebufferSize(window, &width, &height);
-
-  VkExtent2D extent = {static_cast<uint32_t>(width),
-                       static_cast<uint32_t>(height)};
-  extent.width = std::clamp(extent.width, capabilities.minImageExtent.width,
-                            capabilities.maxImageExtent.width);
-  extent.height = std::clamp(extent.height, capabilities.minImageExtent.height,
-                             capabilities.maxImageExtent.height);
-  return extent;
-}
-
 static void run() {
   glfw_wrappers::Init glfwInitialization;
 
@@ -296,6 +371,16 @@ static void run() {
   vulkan_wrappers::Device vulkanDevice{vulkanPhysicalDevice,
                                        vulkanSurface.surface};
 
+  VkQueue graphicsQueue{nullptr};
+  vkGetDeviceQueue(vulkanDevice.device,
+                   graphicsSupportingQueueFamilyIndex(vulkanPhysicalDevice), 0,
+                   &graphicsQueue);
+  VkQueue presentQueue{nullptr};
+  vkGetDeviceQueue(vulkanDevice.device,
+                   presentSupportingQueueFamilyIndex(vulkanPhysicalDevice,
+                                                     vulkanSurface.surface),
+                   0, &presentQueue);
+
   VkSurfaceCapabilitiesKHR capabilities;
   vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
       vulkanPhysicalDevice, vulkanSurface.surface, &capabilities);
@@ -311,85 +396,52 @@ static void run() {
                                        vulkanSurface.surface, &formatCount,
                                        formats.data());
 
-  auto presentModeCount{
-      vulkanCount(vulkanPhysicalDevice,
-                  [&vulkanSurface](VkPhysicalDevice device_, uint32_t *count) {
-                    vkGetPhysicalDeviceSurfacePresentModesKHR(
-                        device_, vulkanSurface.surface, count, nullptr);
-                  })};
-  std::vector<VkPresentModeKHR> presentModes(presentModeCount);
-  vkGetPhysicalDeviceSurfacePresentModesKHR(
-      vulkanPhysicalDevice, vulkanSurface.surface, &presentModeCount,
-      presentModes.data());
-
   auto surfaceFormat = swapSurfaceFormat(formats);
-  auto presentMode = swapPresentMode(presentModes);
-  VkExtent2D extent = swapExtent(capabilities, glfwWindow.window);
 
-  uint32_t imageCount = capabilities.minImageCount + 1;
-  if (capabilities.maxImageCount > 0 &&
-      imageCount > capabilities.maxImageCount) {
-    imageCount = capabilities.maxImageCount;
-  }
+  vulkan_wrappers::Swapchain vulkanSwapchain{
+      vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface,
+      glfwWindow.window};
 
-  VkSwapchainCreateInfoKHR createInfo{};
-  createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-  createInfo.surface = vulkanSurface.surface;
-
-  createInfo.minImageCount = imageCount;
-  createInfo.imageFormat = surfaceFormat.format;
-  createInfo.imageColorSpace = surfaceFormat.colorSpace;
-  createInfo.imageExtent = extent;
-  createInfo.imageArrayLayers = 1;
-  createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-
-  const std::array<uint32_t, 2> queueFamilyIndices = {
-      graphicsSupportingQueueFamilyIndex(vulkanPhysicalDevice),
-      presentSupportingQueueFamilyIndex(vulkanPhysicalDevice,
-                                        vulkanSurface.surface)};
-
-  if (queueFamilyIndices[0] != queueFamilyIndices[1]) {
-    createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
-    createInfo.queueFamilyIndexCount = 2;
-    createInfo.pQueueFamilyIndices = queueFamilyIndices.data();
-  } else {
-    createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-  }
-
-  createInfo.preTransform = capabilities.currentTransform;
-  createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-  createInfo.presentMode = presentMode;
-  createInfo.clipped = VK_TRUE;
-
-  createInfo.oldSwapchain = VK_NULL_HANDLE;
-
-  VkSwapchainKHR swapChain = nullptr;
-  if (vkCreateSwapchainKHR(vulkanDevice.device, &createInfo, nullptr,
-                           &swapChain) != VK_SUCCESS) {
-    throw std::runtime_error("failed to create swap chain!");
-  }
-
-  vkGetSwapchainImagesKHR(vulkanDevice.device, swapChain, &imageCount, nullptr);
+  uint32_t imageCount{0};
+  vkGetSwapchainImagesKHR(vulkanDevice.device, vulkanSwapchain.swapChain,
+                          &imageCount, nullptr);
   std::vector<VkImage> swapChainImages(imageCount);
-  vkGetSwapchainImagesKHR(vulkanDevice.device, swapChain, &imageCount,
-                          swapChainImages.data());
+  vkGetSwapchainImagesKHR(vulkanDevice.device, vulkanSwapchain.swapChain,
+                          &imageCount, swapChainImages.data());
 
   auto swapChainImageFormat = surfaceFormat.format;
-  auto swapChainExtent = extent;
 
-  VkQueue graphicsQueue{nullptr};
-  vkGetDeviceQueue(vulkanDevice.device,
-                   graphicsSupportingQueueFamilyIndex(vulkanPhysicalDevice), 0,
-                   &graphicsQueue);
-  VkQueue presentQueue{nullptr};
-  vkGetDeviceQueue(vulkanDevice.device,
-                   presentSupportingQueueFamilyIndex(vulkanPhysicalDevice,
-                                                     vulkanSurface.surface),
-                   0, &presentQueue);
+  // std::vector<VkImageView> swapChainImageViews(swapChainImages.size());
+
+  // for (size_t i = 0; i < swapChainImages.size(); i++) {
+  //   VkImageViewCreateInfo createInfo{};
+  //   createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+  //   createInfo.image = swapChainImages[i];
+  //   createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+  //   createInfo.format = swapChainImageFormat;
+  //   createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+  //   createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+  //   createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+  //   createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+  //   createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  //   createInfo.subresourceRange.baseMipLevel = 0;
+  //   createInfo.subresourceRange.levelCount = 1;
+  //   createInfo.subresourceRange.baseArrayLayer = 0;
+  //   createInfo.subresourceRange.layerCount = 1;
+
+  //   if (vkCreateImageView(vulkanDevice.device, &createInfo, nullptr,
+  //                         &swapChainImageViews[i]) != VK_SUCCESS) {
+  //     throw std::runtime_error("failed to create image views!");
+  //   }
+  // }
 
   while (glfwWindowShouldClose(glfwWindow.window) == 0) {
     glfwPollEvents();
   }
+
+  // for (auto imageView : swapChainImageViews) {
+  //   vkDestroyImageView(device, imageView, nullptr);
+  // }
 }
 
 int main() {
