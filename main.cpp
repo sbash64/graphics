@@ -106,12 +106,12 @@ struct Device {
     std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
 
     const auto queuePriority{1.0F};
-    for (auto queueFamily :
+    for (auto index :
          std::set<uint32_t>{graphicsSupportIndex(physicalDevice),
                             presentSupportIndex(physicalDevice, surface)}) {
       VkDeviceQueueCreateInfo queueCreateInfo{};
       queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-      queueCreateInfo.queueFamilyIndex = queueFamily;
+      queueCreateInfo.queueFamilyIndex = index;
       queueCreateInfo.queueCount = 1;
       queueCreateInfo.pQueuePriorities = &queuePriority;
       queueCreateInfos.push_back(queueCreateInfo);
@@ -127,9 +127,11 @@ struct Device {
     createInfo.pQueueCreateInfos = queueCreateInfos.data();
 
     createInfo.pEnabledFeatures = &deviceFeatures;
+
     createInfo.enabledExtensionCount =
         static_cast<uint32_t>(deviceExtensions.size());
     createInfo.ppEnabledExtensionNames = deviceExtensions.data();
+
     createInfo.enabledLayerCount = 0;
 
     if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) !=
@@ -169,22 +171,24 @@ static auto suitable(VkPhysicalDevice device, VkSurfaceKHR surface) -> bool {
   vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyPropertyCount,
                                            queueFamilyProperties.data());
 
-  uint32_t extensionCount = 0;
-  vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount,
+  uint32_t extensionPropertyCount = 0;
+  vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionPropertyCount,
                                        nullptr);
 
-  std::vector<VkExtensionProperties> extensionProperties(extensionCount);
-  vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount,
+  std::vector<VkExtensionProperties> extensionProperties(
+      extensionPropertyCount);
+  vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionPropertyCount,
                                        extensionProperties.data());
 
-  std::set<std::string> requiredExtensions{deviceExtensions.begin(),
-                                           deviceExtensions.end()};
+  std::vector<std::string> extensionNames(extensionProperties.size());
+  std::transform(extensionProperties.begin(), extensionProperties.end(),
+                 extensionNames.begin(),
+                 [](const VkExtensionProperties &properties) {
+                   return properties.extensionName;
+                 });
 
-  for (const auto &extension : extensionProperties) {
-    requiredExtensions.erase(extension.extensionName);
-  }
-
-  if (!requiredExtensions.empty())
+  if (!std::includes(extensionNames.begin(), extensionNames.end(),
+                     deviceExtensions.begin(), deviceExtensions.end()))
     return false;
 
   uint32_t presentModeCount = 0;
