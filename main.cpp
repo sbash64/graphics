@@ -22,6 +22,8 @@ struct Init {
 
   Init(const Init &) = delete;
   auto operator=(const Init &) -> Init & = delete;
+  Init(Init &&) = delete;
+  auto operator=(Init &&) -> Init & = delete;
 };
 
 struct Window {
@@ -32,6 +34,8 @@ struct Window {
 
   Window(const Window &) = delete;
   auto operator=(const Window &) -> Window & = delete;
+  Window(Window &&) = delete;
+  auto operator=(Window &&) -> Window & = delete;
 
   GLFWwindow *window;
 };
@@ -162,6 +166,8 @@ struct Instance {
 
   Instance(const Instance &) = delete;
   auto operator=(const Instance &) -> Instance & = delete;
+  Instance(Instance &&) = delete;
+  auto operator=(Instance &&) -> Instance & = delete;
 
   VkInstance instance{};
 };
@@ -211,6 +217,8 @@ struct Device {
 
   Device(const Device &) = delete;
   auto operator=(const Device &) -> Device & = delete;
+  Device(Device &&) = delete;
+  auto operator=(Device &&) -> Device & = delete;
 
   VkDevice device{};
 };
@@ -226,6 +234,8 @@ struct Surface {
 
   Surface(const Surface &) = delete;
   auto operator=(const Surface &) -> Surface & = delete;
+  Surface(Surface &&) = delete;
+  auto operator=(Surface &&) -> Surface & = delete;
 
   VkInstance instance;
   VkSurfaceKHR surface{};
@@ -304,6 +314,8 @@ struct Swapchain {
 
   Swapchain(const Swapchain &) = delete;
   auto operator=(const Swapchain &) -> Swapchain & = delete;
+  Swapchain(Swapchain &&) = delete;
+  auto operator=(Swapchain &&) -> Swapchain & = delete;
 
   VkDevice device;
   VkSwapchainKHR swapChain{};
