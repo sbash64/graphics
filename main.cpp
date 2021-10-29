@@ -48,7 +48,7 @@ static auto queueFamilyProperties(VkPhysicalDevice device, uint32_t count)
   return properties;
 }
 
-static auto graphicsSupportIndex(
+static auto graphicsSupportingQueueFamilyIndex(
     const std::vector<VkQueueFamilyProperties> &queueFamilyProperties)
     -> uint32_t {
   return static_cast<uint32_t>(std::distance(
@@ -57,12 +57,14 @@ static auto graphicsSupportIndex(
                    supportsGraphics)));
 }
 
-static auto graphicsSupportIndex(VkPhysicalDevice device) -> uint32_t {
-  return graphicsSupportIndex(
+static auto graphicsSupportingQueueFamilyIndex(VkPhysicalDevice device)
+    -> uint32_t {
+  return graphicsSupportingQueueFamilyIndex(
       queueFamilyProperties(device, queueFamilyPropertiesCount(device)));
 }
 
-static auto presentSupportIndex(VkPhysicalDevice device, VkSurfaceKHR surface)
+static auto presentSupportingQueueFamilyIndex(VkPhysicalDevice device,
+                                              VkSurfaceKHR surface)
     -> uint32_t {
   auto index{0U};
   while (index < queueFamilyPropertiesCount(device)) {
@@ -81,22 +83,22 @@ constexpr std::array<const char *, 1> deviceExtensions = {
 namespace vulkan_wrappers {
 struct Instance {
   Instance() {
-    VkApplicationInfo appInfo{};
-    appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    appInfo.pApplicationName = "Hello Triangle";
-    appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-    appInfo.pEngineName = "No Engine";
-    appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-    appInfo.apiVersion = VK_API_VERSION_1_0;
+    VkApplicationInfo applicationInfo{};
+    applicationInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+    applicationInfo.pApplicationName = "Hello Triangle";
+    applicationInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
+    applicationInfo.pEngineName = "No Engine";
+    applicationInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
+    applicationInfo.apiVersion = VK_API_VERSION_1_0;
 
     VkInstanceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-    createInfo.pApplicationInfo = &appInfo;
+    createInfo.pApplicationInfo = &applicationInfo;
 
-    uint32_t glfwExtensionCount = 0;
+    uint32_t extensionCount{0};
     createInfo.ppEnabledExtensionNames =
-        glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
-    createInfo.enabledExtensionCount = glfwExtensionCount;
+        glfwGetRequiredInstanceExtensions(&extensionCount);
+    createInfo.enabledExtensionCount = extensionCount;
 
     createInfo.enabledLayerCount = 0;
     createInfo.pNext = nullptr;
@@ -112,19 +114,22 @@ struct Instance {
 
 struct Device {
   explicit Device(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface) {
-    std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
 
+    const auto indices{std::set<uint32_t>{
+        graphicsSupportingQueueFamilyIndex(physicalDevice),
+        presentSupportingQueueFamilyIndex(physicalDevice, surface)}};
+    std::vector<VkDeviceQueueCreateInfo> queueCreateInfos(indices.size());
     const auto queuePriority{1.0F};
-    for (auto index :
-         std::set<uint32_t>{graphicsSupportIndex(physicalDevice),
-                            presentSupportIndex(physicalDevice, surface)}) {
-      VkDeviceQueueCreateInfo queueCreateInfo{};
-      queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-      queueCreateInfo.queueFamilyIndex = index;
-      queueCreateInfo.queueCount = 1;
-      queueCreateInfo.pQueuePriorities = &queuePriority;
-      queueCreateInfos.push_back(queueCreateInfo);
-    }
+    std::transform(indices.begin(), indices.end(), queueCreateInfos.begin(),
+                   [&queuePriority](uint32_t index) {
+                     VkDeviceQueueCreateInfo queueCreateInfo{};
+                     queueCreateInfo.sType =
+                         VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+                     queueCreateInfo.queueFamilyIndex = index;
+                     queueCreateInfo.queueCount = 1;
+                     queueCreateInfo.pQueuePriorities = &queuePriority;
+                     return queueCreateInfo;
+                   });
 
     VkPhysicalDeviceFeatures deviceFeatures{};
 
@@ -325,8 +330,8 @@ static void run() {
   createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
   const std::array<uint32_t, 2> queueFamilyIndices = {
-      graphicsSupportIndex(physicalDevice),
-      presentSupportIndex(physicalDevice, vulkanSurface.surface)};
+      graphicsSupportingQueueFamilyIndex(physicalDevice),
+      presentSupportingQueueFamilyIndex(physicalDevice, vulkanSurface.surface)};
 
   if (queueFamilyIndices[0] != queueFamilyIndices[1]) {
     createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
@@ -358,12 +363,14 @@ static void run() {
   auto swapChainExtent = extent;
 
   VkQueue graphicsQueue{nullptr};
-  vkGetDeviceQueue(device.device, graphicsSupportIndex(physicalDevice), 0,
+  vkGetDeviceQueue(device.device,
+                   graphicsSupportingQueueFamilyIndex(physicalDevice), 0,
                    &graphicsQueue);
   VkQueue presentQueue{nullptr};
-  vkGetDeviceQueue(device.device,
-                   presentSupportIndex(physicalDevice, vulkanSurface.surface),
-                   0, &presentQueue);
+  vkGetDeviceQueue(
+      device.device,
+      presentSupportingQueueFamilyIndex(physicalDevice, vulkanSurface.surface),
+      0, &presentQueue);
 
   while (glfwWindowShouldClose(gflwWindow.window) == 0) {
     glfwPollEvents();
