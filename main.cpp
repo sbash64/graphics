@@ -207,19 +207,18 @@ static auto suitable(VkPhysicalDevice device, VkSurfaceKHR surface) -> bool {
                      deviceExtensions.begin(), deviceExtensions.end()))
     return false;
 
-  {
-    uint32_t count = 0;
-    vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &count, nullptr);
-    if (count == 0)
-      return false;
-  }
+  if (vulkanCount(device,
+                  [&surface](VkPhysicalDevice device_, uint32_t *count) {
+                    vkGetPhysicalDeviceSurfacePresentModesKHR(device_, surface,
+                                                              count, nullptr);
+                  }) == 0)
+    return false;
 
-  {
-    uint32_t count = 0;
-    vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &count, nullptr);
-    if (count == 0)
-      return false;
-  }
+  if (vulkanCount(device, [&surface](VkPhysicalDevice device_,
+                                     uint32_t *count) {
+        vkGetPhysicalDeviceSurfaceFormatsKHR(device_, surface, count, nullptr);
+      }) == 0)
+    return false;
 
   auto index{0U};
   for (const auto properties :
