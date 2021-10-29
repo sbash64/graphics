@@ -196,27 +196,23 @@ static auto suitable(VkPhysicalDevice device, VkSurfaceKHR surface) -> bool {
                      deviceExtensions.begin(), deviceExtensions.end()))
     return false;
 
-  uint32_t presentModeCount = 0;
-  vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount,
-                                            nullptr);
-  if (presentModeCount == 0)
-    return false;
+  {
+    uint32_t count = 0;
+    vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &count, nullptr);
+    if (count == 0)
+      return false;
+  }
 
-  uint32_t formatCount = 0;
-  vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, nullptr);
-  if (formatCount == 0)
-    return false;
+  {
+    uint32_t count = 0;
+    vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &count, nullptr);
+    if (count == 0)
+      return false;
+  }
 
-  uint32_t queueFamilyPropertyCount{0};
-  vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyPropertyCount,
-                                           nullptr);
-
-  std::vector<VkQueueFamilyProperties> queueFamilyProperties(
-      queueFamilyPropertyCount);
-  vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyPropertyCount,
-                                           queueFamilyProperties.data());
   auto index{0U};
-  for (auto properties : queueFamilyProperties) {
+  for (const auto properties :
+       queueFamilyProperties(device, queueFamilyPropertiesCount(device))) {
     VkBool32 presentSupport{0U};
     vkGetPhysicalDeviceSurfaceSupportKHR(device, index, surface,
                                          &presentSupport);
