@@ -1,3 +1,4 @@
+#include <functional>
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
@@ -35,10 +36,19 @@ static auto supportsGraphics(const VkQueueFamilyProperties &properties)
   return (properties.queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0U;
 }
 
-static auto queueFamilyPropertiesCount(VkPhysicalDevice device) -> uint32_t {
+static auto
+vulkanCount(VkPhysicalDevice device,
+            const std::function<void(VkPhysicalDevice, uint32_t *)> &f)
+    -> uint32_t {
   uint32_t count = 0;
-  vkGetPhysicalDeviceQueueFamilyProperties(device, &count, nullptr);
+  f(device, &count);
   return count;
+}
+
+static auto queueFamilyPropertiesCount(VkPhysicalDevice device) -> uint32_t {
+  return vulkanCount(device, [](VkPhysicalDevice device_, uint32_t *count) {
+    vkGetPhysicalDeviceQueueFamilyProperties(device_, count, nullptr);
+  });
 }
 
 static auto queueFamilyProperties(VkPhysicalDevice device, uint32_t count)
@@ -68,7 +78,7 @@ static auto presentSupportingQueueFamilyIndex(VkPhysicalDevice device,
     -> uint32_t {
   auto index{0U};
   while (index < queueFamilyPropertiesCount(device)) {
-    VkBool32 support = 0U;
+    VkBool32 support{0U};
     vkGetPhysicalDeviceSurfaceSupportKHR(device, index, surface, &support);
     if (support != 0U)
       return index;
@@ -176,9 +186,10 @@ constexpr auto windowWidth{800};
 constexpr auto windowHeight{600};
 
 static auto suitable(VkPhysicalDevice device, VkSurfaceKHR surface) -> bool {
-  uint32_t extensionPropertyCount = 0;
-  vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionPropertyCount,
-                                       nullptr);
+  auto extensionPropertyCount{
+      vulkanCount(device, [](VkPhysicalDevice device_, uint32_t *count) {
+        vkEnumerateDeviceExtensionProperties(device_, nullptr, count, nullptr);
+      })};
 
   std::vector<VkExtensionProperties> extensionProperties(
       extensionPropertyCount);
@@ -267,46 +278,48 @@ static auto swapExtent(VkSurfaceCapabilitiesKHR capabilities,
 }
 
 static void run() {
-  glfw_wrappers::Init gflwInitialization;
+  glfw_wrappers::Init glfwInitialization;
 
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
   glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-  glfw_wrappers::Window gflwWindow{windowWidth, windowHeight};
+  glfw_wrappers::Window glfwWindow{windowWidth, windowHeight};
 
   vulkan_wrappers::Instance vulkanInstance;
   vulkan_wrappers::Surface vulkanSurface{vulkanInstance.instance,
-                                         gflwWindow.window};
+                                         glfwWindow.window};
   uint32_t deviceCount{0};
   vkEnumeratePhysicalDevices(vulkanInstance.instance, &deviceCount, nullptr);
   std::vector<VkPhysicalDevice> devices(deviceCount);
   vkEnumeratePhysicalDevices(vulkanInstance.instance, &deviceCount,
                              devices.data());
 
-  auto *physicalDevice{suitableDevice(devices, vulkanSurface.surface)};
-  vulkan_wrappers::Device device{physicalDevice, vulkanSurface.surface};
+  auto *vulkanPhysicalDevice{suitableDevice(devices, vulkanSurface.surface)};
+  vulkan_wrappers::Device vulkanDevice{vulkanPhysicalDevice,
+                                       vulkanSurface.surface};
 
   VkSurfaceCapabilitiesKHR capabilities;
   vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
-      physicalDevice, vulkanSurface.surface, &capabilities);
+      vulkanPhysicalDevice, vulkanSurface.surface, &capabilities);
 
   uint32_t formatCount = 0;
-  vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, vulkanSurface.surface,
-                                       &formatCount, nullptr);
+  vkGetPhysicalDeviceSurfaceFormatsKHR(
+      vulkanPhysicalDevice, vulkanSurface.surface, &formatCount, nullptr);
   std::vector<VkSurfaceFormatKHR> formats(formatCount);
-  vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, vulkanSurface.surface,
-                                       &formatCount, formats.data());
+  vkGetPhysicalDeviceSurfaceFormatsKHR(vulkanPhysicalDevice,
+                                       vulkanSurface.surface, &formatCount,
+                                       formats.data());
 
   uint32_t presentModeCount = 0;
   vkGetPhysicalDeviceSurfacePresentModesKHR(
-      physicalDevice, vulkanSurface.surface, &presentModeCount, nullptr);
+      vulkanPhysicalDevice, vulkanSurface.surface, &presentModeCount, nullptr);
   std::vector<VkPresentModeKHR> presentModes(presentModeCount);
   vkGetPhysicalDeviceSurfacePresentModesKHR(
-      physicalDevice, vulkanSurface.surface, &presentModeCount,
+      vulkanPhysicalDevice, vulkanSurface.surface, &presentModeCount,
       presentModes.data());
 
   auto surfaceFormat = swapSurfaceFormat(formats);
   auto presentMode = swapPresentMode(presentModes);
-  VkExtent2D extent = swapExtent(capabilities, gflwWindow.window);
+  VkExtent2D extent = swapExtent(capabilities, glfwWindow.window);
 
   uint32_t imageCount = capabilities.minImageCount + 1;
   if (capabilities.maxImageCount > 0 &&
@@ -326,8 +339,9 @@ static void run() {
   createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
   const std::array<uint32_t, 2> queueFamilyIndices = {
-      graphicsSupportingQueueFamilyIndex(physicalDevice),
-      presentSupportingQueueFamilyIndex(physicalDevice, vulkanSurface.surface)};
+      graphicsSupportingQueueFamilyIndex(vulkanPhysicalDevice),
+      presentSupportingQueueFamilyIndex(vulkanPhysicalDevice,
+                                        vulkanSurface.surface)};
 
   if (queueFamilyIndices[0] != queueFamilyIndices[1]) {
     createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
@@ -345,30 +359,30 @@ static void run() {
   createInfo.oldSwapchain = VK_NULL_HANDLE;
 
   VkSwapchainKHR swapChain = nullptr;
-  if (vkCreateSwapchainKHR(device.device, &createInfo, nullptr, &swapChain) !=
-      VK_SUCCESS) {
+  if (vkCreateSwapchainKHR(vulkanDevice.device, &createInfo, nullptr,
+                           &swapChain) != VK_SUCCESS) {
     throw std::runtime_error("failed to create swap chain!");
   }
 
-  vkGetSwapchainImagesKHR(device.device, swapChain, &imageCount, nullptr);
+  vkGetSwapchainImagesKHR(vulkanDevice.device, swapChain, &imageCount, nullptr);
   std::vector<VkImage> swapChainImages(imageCount);
-  vkGetSwapchainImagesKHR(device.device, swapChain, &imageCount,
+  vkGetSwapchainImagesKHR(vulkanDevice.device, swapChain, &imageCount,
                           swapChainImages.data());
 
   auto swapChainImageFormat = surfaceFormat.format;
   auto swapChainExtent = extent;
 
   VkQueue graphicsQueue{nullptr};
-  vkGetDeviceQueue(device.device,
-                   graphicsSupportingQueueFamilyIndex(physicalDevice), 0,
+  vkGetDeviceQueue(vulkanDevice.device,
+                   graphicsSupportingQueueFamilyIndex(vulkanPhysicalDevice), 0,
                    &graphicsQueue);
   VkQueue presentQueue{nullptr};
-  vkGetDeviceQueue(
-      device.device,
-      presentSupportingQueueFamilyIndex(physicalDevice, vulkanSurface.surface),
-      0, &presentQueue);
+  vkGetDeviceQueue(vulkanDevice.device,
+                   presentSupportingQueueFamilyIndex(vulkanPhysicalDevice,
+                                                     vulkanSurface.surface),
+                   0, &presentQueue);
 
-  while (glfwWindowShouldClose(gflwWindow.window) == 0) {
+  while (glfwWindowShouldClose(glfwWindow.window) == 0) {
     glfwPollEvents();
   }
 }
