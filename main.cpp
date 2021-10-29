@@ -300,17 +300,23 @@ static void run() {
   vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
       vulkanPhysicalDevice, vulkanSurface.surface, &capabilities);
 
-  uint32_t formatCount = 0;
-  vkGetPhysicalDeviceSurfaceFormatsKHR(
-      vulkanPhysicalDevice, vulkanSurface.surface, &formatCount, nullptr);
+  auto formatCount{
+      vulkanCount(vulkanPhysicalDevice,
+                  [&vulkanSurface](VkPhysicalDevice device_, uint32_t *count) {
+                    vkGetPhysicalDeviceSurfaceFormatsKHR(
+                        device_, vulkanSurface.surface, count, nullptr);
+                  })};
   std::vector<VkSurfaceFormatKHR> formats(formatCount);
   vkGetPhysicalDeviceSurfaceFormatsKHR(vulkanPhysicalDevice,
                                        vulkanSurface.surface, &formatCount,
                                        formats.data());
 
-  uint32_t presentModeCount = 0;
-  vkGetPhysicalDeviceSurfacePresentModesKHR(
-      vulkanPhysicalDevice, vulkanSurface.surface, &presentModeCount, nullptr);
+  auto presentModeCount{
+      vulkanCount(vulkanPhysicalDevice,
+                  [&vulkanSurface](VkPhysicalDevice device_, uint32_t *count) {
+                    vkGetPhysicalDeviceSurfacePresentModesKHR(
+                        device_, vulkanSurface.surface, count, nullptr);
+                  })};
   std::vector<VkPresentModeKHR> presentModes(presentModeCount);
   vkGetPhysicalDeviceSurfacePresentModesKHR(
       vulkanPhysicalDevice, vulkanSurface.surface, &presentModeCount,
