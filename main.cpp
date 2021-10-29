@@ -30,11 +30,15 @@ struct Window {
 };
 } // namespace gflw_wrappers
 
+static auto supportsGraphics(const VkQueueFamilyProperties &properties)
+    -> bool {
+  return (properties.queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0U;
+}
+
 static auto graphicsSupportIndex(VkPhysicalDevice device) -> uint32_t {
   uint32_t queueFamilyPropertyCount = 0;
   vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyPropertyCount,
                                            nullptr);
-
   std::vector<VkQueueFamilyProperties> queueFamilyProperties(
       queueFamilyPropertyCount);
   vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyPropertyCount,
@@ -43,10 +47,7 @@ static auto graphicsSupportIndex(VkPhysicalDevice device) -> uint32_t {
   return static_cast<uint32_t>(std::distance(
       queueFamilyProperties.begin(),
       std::find_if(queueFamilyProperties.begin(), queueFamilyProperties.end(),
-                   [](const VkQueueFamilyProperties &properties) {
-                     return (properties.queueFlags & VK_QUEUE_GRAPHICS_BIT) !=
-                            0U;
-                   })));
+                   supportsGraphics)));
 }
 
 static auto presentSupportIndex(VkPhysicalDevice device, VkSurfaceKHR surface)
@@ -206,8 +207,7 @@ static auto suitable(VkPhysicalDevice device, VkSurfaceKHR surface) -> bool {
     VkBool32 presentSupport{0U};
     vkGetPhysicalDeviceSurfaceSupportKHR(device, index, surface,
                                          &presentSupport);
-    if ((properties.queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0U &&
-        (presentSupport != 0U))
+    if (supportsGraphics(properties) && presentSupport != 0U)
       return true;
     ++index;
   }
