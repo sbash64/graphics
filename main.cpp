@@ -48,13 +48,18 @@ static auto queueFamilyProperties(VkPhysicalDevice device, uint32_t count)
   return properties;
 }
 
-static auto graphicsSupportIndex(VkPhysicalDevice device) -> uint32_t {
-  std::vector<VkQueueFamilyProperties> queueFamilyProperties(
-      ::queueFamilyProperties(device, queueFamilyPropertiesCount(device)));
+static auto graphicsSupportIndex(
+    const std::vector<VkQueueFamilyProperties> &queueFamilyProperties)
+    -> uint32_t {
   return static_cast<uint32_t>(std::distance(
       queueFamilyProperties.begin(),
       std::find_if(queueFamilyProperties.begin(), queueFamilyProperties.end(),
                    supportsGraphics)));
+}
+
+static auto graphicsSupportIndex(VkPhysicalDevice device) -> uint32_t {
+  return graphicsSupportIndex(
+      queueFamilyProperties(device, queueFamilyPropertiesCount(device)));
 }
 
 static auto presentSupportIndex(VkPhysicalDevice device, VkSurfaceKHR surface)
