@@ -19,6 +19,9 @@ struct Init {
   Init() { glfwInit(); }
 
   ~Init() { glfwTerminate(); }
+
+  Init(const Init &) = delete;
+  auto operator=(const Init &) -> Init & = delete;
 };
 
 struct Window {
@@ -26,6 +29,9 @@ struct Window {
       : window{glfwCreateWindow(width, height, "Vulkan", nullptr, nullptr)} {}
 
   ~Window() { glfwDestroyWindow(window); }
+
+  Window(const Window &) = delete;
+  auto operator=(const Window &) -> Window & = delete;
 
   GLFWwindow *window;
 };
@@ -154,6 +160,9 @@ struct Instance {
 
   ~Instance() { vkDestroyInstance(instance, nullptr); }
 
+  Instance(const Instance &) = delete;
+  auto operator=(const Instance &) -> Instance & = delete;
+
   VkInstance instance{};
 };
 
@@ -200,6 +209,9 @@ struct Device {
 
   ~Device() { vkDestroyDevice(device, nullptr); }
 
+  Device(const Device &) = delete;
+  auto operator=(const Device &) -> Device & = delete;
+
   VkDevice device{};
 };
 
@@ -211,6 +223,9 @@ struct Surface {
   }
 
   ~Surface() { vkDestroySurfaceKHR(instance, surface, nullptr); }
+
+  Surface(const Surface &) = delete;
+  auto operator=(const Surface &) -> Surface & = delete;
 
   VkInstance instance;
   VkSurfaceKHR surface{};
@@ -287,6 +302,9 @@ struct Swapchain {
 
   ~Swapchain() { vkDestroySwapchainKHR(device, swapChain, nullptr); }
 
+  Swapchain(const Swapchain &) = delete;
+  auto operator=(const Swapchain &) -> Swapchain & = delete;
+
   VkDevice device;
   VkSwapchainKHR swapChain{};
 };
@@ -325,7 +343,20 @@ struct ImageView {
       throw std::runtime_error("failed to create image view!");
   }
 
-  ~ImageView() { vkDestroyImageView(device, view, nullptr); }
+  ~ImageView() {
+    if (view != nullptr)
+      vkDestroyImageView(device, view, nullptr);
+  }
+
+  ImageView(ImageView &&other) noexcept
+      : device{other.device}, view{other.view} {
+    other.view = nullptr;
+  }
+
+  auto operator=(ImageView &&) -> ImageView & = delete;
+
+  ImageView(const ImageView &) = delete;
+  auto operator=(const ImageView &) -> ImageView & = delete;
 
   VkDevice device;
   VkImageView view{};
@@ -438,8 +469,7 @@ static void run() {
 
   std::vector<vulkan_wrappers::ImageView> swapChainImageViews;
 
-  swapChainImageViews.reserve(swapChainImages.size());
-  for (auto &swapChainImage : swapChainImages)
+  for (const auto &swapChainImage : swapChainImages)
     swapChainImageViews.emplace_back(vulkanDevice.device, vulkanPhysicalDevice,
                                      vulkanSurface.surface, swapChainImage);
 
