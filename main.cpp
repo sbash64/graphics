@@ -7,11 +7,14 @@
 #include <array>
 #include <cstdlib>
 #include <exception>
+#include <fstream>
 #include <functional>
 #include <iostream>
 #include <iterator>
 #include <set>
+#include <span>
 #include <stdexcept>
+#include <string_view>
 #include <vector>
 
 namespace glfw_wrappers {
@@ -373,6 +376,26 @@ struct ImageView {
   VkDevice device;
   VkImageView view{};
 };
+
+struct ShaderModule {
+  ShaderModule(VkDevice device, const std::vector<char> &code)
+      : device{device} {
+    VkShaderModuleCreateInfo createInfo{};
+    createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    createInfo.codeSize = code.size();
+    createInfo.pCode = reinterpret_cast<const uint32_t *>(code.data());
+
+    if (vkCreateShaderModule(device, &createInfo, nullptr, &module) !=
+        VK_SUCCESS) {
+      throw std::runtime_error("failed to create shader module!");
+    }
+  }
+
+  ~ShaderModule() { vkDestroyShaderModule(device, module, nullptr); }
+
+  VkDevice device;
+  VkShaderModule module{};
+};
 } // namespace vulkan_wrappers
 
 constexpr auto windowWidth{800};
@@ -434,7 +457,26 @@ static auto suitableDevice(const std::vector<VkPhysicalDevice> &devices,
   throw std::runtime_error("failed to find a suitable GPU!");
 }
 
-static void run() {
+static auto readFile(const std::string &filename) -> std::vector<char> {
+  std::ifstream file{filename, std::ios::ate | std::ios::binary};
+
+  if (!file.is_open()) {
+    throw std::runtime_error("failed to open file!");
+  }
+
+  const auto fileSize = file.tellg();
+  std::vector<char> buffer(fileSize);
+
+  file.seekg(0);
+  file.read(buffer.data(), fileSize);
+
+  file.close();
+
+  return buffer;
+}
+
+static void run(const std::string &vertexShaderCodePath,
+                const std::string &fragmentShaderCodePath) {
   glfw_wrappers::Init glfwInitialization;
 
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -489,14 +531,40 @@ static void run() {
                                           vulkanSurface.surface, image};
       });
 
+  vulkan_wrappers::ShaderModule vertexShaderModule{
+      vulkanDevice.device, readFile(vertexShaderCodePath)};
+  vulkan_wrappers::ShaderModule fragmentShaderModule{
+      vulkanDevice.device, readFile(fragmentShaderCodePath)};
+
+  VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
+  vertShaderStageInfo.sType =
+      VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+  vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+  vertShaderStageInfo.module = vertexShaderModule.module;
+  vertShaderStageInfo.pName = "main";
+
+  VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
+  fragShaderStageInfo.sType =
+      VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+  fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+  fragShaderStageInfo.module = fragmentShaderModule.module;
+  fragShaderStageInfo.pName = "main";
+
+  VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo,
+                                                    fragShaderStageInfo};
+
   while (glfwWindowShouldClose(glfwWindow.window) == 0) {
     glfwPollEvents();
   }
 }
 
-int main() {
+int main(int argc, char *argv[]) {
+  std::span<char *> arguments{argv,
+                              static_cast<std::span<char *>::size_type>(argc)};
+  if (arguments.size() < 3)
+    return EXIT_FAILURE;
   try {
-    run();
+    run(arguments[1], arguments[2]);
   } catch (const std::exception &e) {
     std::cerr << e.what() << std::endl;
     return EXIT_FAILURE;
