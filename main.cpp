@@ -120,8 +120,12 @@ static auto swapPresentMode(const std::vector<VkPresentModeKHR> &presentModes)
   return VK_PRESENT_MODE_FIFO_KHR;
 }
 
-static auto swapExtent(VkSurfaceCapabilitiesKHR capabilities,
+static auto swapExtent(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface,
                        GLFWwindow *window) -> VkExtent2D {
+  VkSurfaceCapabilitiesKHR capabilities;
+  vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface,
+                                            &capabilities);
+
   if (capabilities.currentExtent.width != UINT32_MAX)
     return capabilities.currentExtent;
 
@@ -274,7 +278,7 @@ struct Swapchain {
     createInfo.imageColorSpace = surfaceFormat.colorSpace;
 
     createInfo.minImageCount = imageCount;
-    createInfo.imageExtent = swapExtent(capabilities, window);
+    createInfo.imageExtent = swapExtent(physicalDevice, surface, window);
     createInfo.imageArrayLayers = 1;
     createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
@@ -524,16 +528,14 @@ struct Pipeline {
     pipelineInfo.pVertexInputState = &vertexInputInfo;
     pipelineInfo.pInputAssemblyState = &inputAssembly;
 
-    VkSurfaceCapabilitiesKHR capabilities;
-    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface,
-                                              &capabilities);
-    const auto swapChainExtent{swapExtent(capabilities, window)};
-
     std::array<VkViewport, 1> viewport{};
     viewport.at(0).x = 0.0F;
     viewport.at(0).y = 0.0F;
+
+    const auto swapChainExtent{swapExtent(physicalDevice, surface, window)};
     viewport.at(0).width = swapChainExtent.width;
     viewport.at(0).height = swapChainExtent.height;
+
     viewport.at(0).minDepth = 0.0F;
     viewport.at(0).maxDepth = 1.0F;
 
@@ -621,10 +623,7 @@ struct Framebuffer {
     framebufferInfo.attachmentCount = attachments.size();
     framebufferInfo.pAttachments = attachments.data();
 
-    VkSurfaceCapabilitiesKHR capabilities;
-    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface,
-                                              &capabilities);
-    const auto swapChainExtent{swapExtent(capabilities, window)};
+    const auto swapChainExtent{swapExtent(physicalDevice, surface, window)};
     framebufferInfo.width = swapChainExtent.width;
     framebufferInfo.height = swapChainExtent.height;
 
@@ -935,11 +934,9 @@ static void run(const std::string &vertexShaderCodePath,
   for (auto i{0}; i < vulkanCommandBuffers.commandBuffers.size(); i++) {
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-
     if (vkBeginCommandBuffer(vulkanCommandBuffers.commandBuffers[i],
-                             &beginInfo) != VK_SUCCESS) {
+                             &beginInfo) != VK_SUCCESS)
       throw std::runtime_error("failed to begin recording command buffer!");
-    }
 
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -947,11 +944,8 @@ static void run(const std::string &vertexShaderCodePath,
     renderPassInfo.framebuffer = vulkanFrameBuffers.at(i).framebuffer;
     renderPassInfo.renderArea.offset = {0, 0};
 
-    VkSurfaceCapabilitiesKHR capabilities;
-    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
-        vulkanPhysicalDevice, vulkanSurface.surface, &capabilities);
-    const auto swapChainExtent{swapExtent(capabilities, glfwWindow.window)};
-    renderPassInfo.renderArea.extent = swapChainExtent;
+    renderPassInfo.renderArea.extent = swapExtent(
+        vulkanPhysicalDevice, vulkanSurface.surface, glfwWindow.window);
 
     std::array<VkClearValue, 1> clearColor = {{{{{0.0F, 0.0F, 0.0F, 1.0F}}}}};
     renderPassInfo.clearValueCount = clearColor.size();
