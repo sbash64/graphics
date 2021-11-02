@@ -176,8 +176,7 @@ struct Instance {
 };
 
 struct Device {
-  explicit Device(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface) {
-
+  Device(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface) {
     const auto indices{std::set<uint32_t>{
         graphicsSupportingQueueFamilyIndex(physicalDevice),
         presentSupportingQueueFamilyIndex(physicalDevice, surface)}};
@@ -270,12 +269,11 @@ struct Swapchain {
     std::vector<VkSurfaceFormatKHR> formats(formatCount);
     vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount,
                                          formats.data());
-
     const auto surfaceFormat{swapSurfaceFormat(formats)};
-
-    createInfo.minImageCount = imageCount;
     createInfo.imageFormat = surfaceFormat.format;
     createInfo.imageColorSpace = surfaceFormat.colorSpace;
+
+    createInfo.minImageCount = imageCount;
     createInfo.imageExtent = swapExtent(capabilities, window);
     createInfo.imageArrayLayers = 1;
     createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
@@ -300,10 +298,10 @@ struct Swapchain {
     std::vector<VkPresentModeKHR> presentModes(presentModeCount);
     vkGetPhysicalDeviceSurfacePresentModesKHR(
         physicalDevice, surface, &presentModeCount, presentModes.data());
+    createInfo.presentMode = swapPresentMode(presentModes);
 
     createInfo.preTransform = capabilities.currentTransform;
     createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-    createInfo.presentMode = swapPresentMode(presentModes);
     createInfo.clipped = VK_TRUE;
 
     createInfo.oldSwapchain = VK_NULL_HANDLE;
@@ -330,8 +328,9 @@ struct ImageView {
       : device{device} {
     VkImageViewCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    createInfo.image = image;
     createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+
+    createInfo.image = image;
 
     auto formatCount{vulkanCount(
         physicalDevice, [&surface](VkPhysicalDevice device_, uint32_t *count) {
@@ -341,7 +340,7 @@ struct ImageView {
     std::vector<VkSurfaceFormatKHR> formats(formatCount);
     vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount,
                                          formats.data());
-    auto surfaceFormat{swapSurfaceFormat(formats)};
+    const auto surfaceFormat{swapSurfaceFormat(formats)};
     createInfo.format = surfaceFormat.format;
 
     createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
@@ -382,6 +381,7 @@ struct ShaderModule {
       : device{device} {
     VkShaderModuleCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+
     createInfo.codeSize = code.size();
     createInfo.pCode = reinterpret_cast<const uint32_t *>(code.data());
 
@@ -407,7 +407,6 @@ struct PipelineLayout {
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutInfo.setLayoutCount = 0;
     pipelineLayoutInfo.pushConstantRangeCount = 0;
-
     if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr,
                                &pipelineLayout) != VK_SUCCESS)
       throw std::runtime_error("failed to create pipeline layout!");
@@ -648,7 +647,6 @@ struct Framebuffer {
   }
 
   auto operator=(Framebuffer &&) -> Framebuffer & = delete;
-
   Framebuffer(const Framebuffer &) = delete;
   auto operator=(const Framebuffer &) -> Framebuffer & = delete;
 
@@ -663,7 +661,6 @@ struct CommandPool {
     poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     poolInfo.queueFamilyIndex =
         graphicsSupportingQueueFamilyIndex(physicalDevice);
-
     if (vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool) !=
         VK_SUCCESS)
       throw std::runtime_error("failed to create command pool!");
@@ -726,7 +723,6 @@ struct Fence {
   }
 
   auto operator=(Fence &&) -> Fence & = delete;
-
   Fence(const Fence &) = delete;
   auto operator=(const Fence &) -> Fence & = delete;
 
@@ -740,17 +736,19 @@ struct CommandBuffers {
       : device{device}, commandPool{commandPool}, commandBuffers(size) {
     VkCommandBufferAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.commandPool = commandPool;
-    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandBufferCount = commandBuffers.size();
 
+    allocInfo.commandPool = commandPool;
+
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandBufferCount = static_cast<uint32_t>(commandBuffers.size());
     if (vkAllocateCommandBuffers(device, &allocInfo, commandBuffers.data()) !=
         VK_SUCCESS)
       throw std::runtime_error("failed to allocate command buffers!");
   }
 
   ~CommandBuffers() {
-    vkFreeCommandBuffers(device, commandPool, commandBuffers.size(),
+    vkFreeCommandBuffers(device, commandPool,
+                         static_cast<uint32_t>(commandBuffers.size()),
                          commandBuffers.data());
   }
 
