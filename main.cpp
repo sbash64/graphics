@@ -589,6 +589,53 @@ struct Pipeline {
   VkDevice device;
   VkPipeline pipeline{};
 };
+
+struct Framebuffer {
+  Framebuffer(VkDevice device, VkPhysicalDevice physicalDevice,
+              VkSurfaceKHR surface, VkRenderPass renderPass,
+              VkImageView imageView, GLFWwindow *window)
+      : device{device} {
+    std::array<VkImageView, 1> attachments = {imageView};
+
+    VkFramebufferCreateInfo framebufferInfo{};
+    framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    framebufferInfo.renderPass = renderPass;
+    framebufferInfo.attachmentCount = attachments.size();
+    framebufferInfo.pAttachments = attachments.data();
+
+    VkSurfaceCapabilitiesKHR capabilities;
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface,
+                                              &capabilities);
+    const auto swapChainExtent{swapExtent(capabilities, window)};
+    framebufferInfo.width = swapChainExtent.width;
+    framebufferInfo.height = swapChainExtent.height;
+
+    framebufferInfo.layers = 1;
+
+    if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &framebuffer) !=
+        VK_SUCCESS) {
+      throw std::runtime_error("failed to create framebuffer!");
+    }
+  }
+
+  ~Framebuffer() {
+    if (framebuffer != nullptr)
+      vkDestroyFramebuffer(device, framebuffer, nullptr);
+  }
+
+  Framebuffer(Framebuffer &&other) noexcept
+      : device{other.device}, framebuffer{other.framebuffer} {
+    other.framebuffer = nullptr;
+  }
+
+  auto operator=(Framebuffer &&) -> Framebuffer & = delete;
+
+  Framebuffer(const Framebuffer &) = delete;
+  auto operator=(const Framebuffer &) -> Framebuffer & = delete;
+
+  VkDevice device;
+  VkFramebuffer framebuffer{};
+};
 } // namespace vulkan_wrappers
 
 constexpr auto windowWidth{800};
@@ -735,6 +782,18 @@ static void run(const std::string &vertexShaderCodePath,
       vulkanSurface.surface,       vulkanPipelineLayout.pipelineLayout,
       vulkanRenderPass.renderPass, vertexShaderModule.module,
       fragmentShaderModule.module, glfwWindow.window};
+
+  std::vector<vulkan_wrappers::Framebuffer> frameBuffers;
+  std::transform(swapChainImageViews.begin(), swapChainImageViews.end(),
+                 std::back_inserter(frameBuffers),
+                 [&vulkanDevice, &vulkanPhysicalDevice, &vulkanSurface,
+                  &vulkanRenderPass,
+                  &glfwWindow](const vulkan_wrappers::ImageView &imageView) {
+                   return vulkan_wrappers::Framebuffer{
+                       vulkanDevice.device,   vulkanPhysicalDevice,
+                       vulkanSurface.surface, vulkanRenderPass.renderPass,
+                       imageView.view,        glfwWindow.window};
+                 });
 
   while (glfwWindowShouldClose(glfwWindow.window) == 0) {
     glfwPollEvents();
