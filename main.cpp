@@ -700,7 +700,6 @@ struct Semaphore {
   }
 
   auto operator=(Semaphore &&) -> Semaphore & = delete;
-
   Semaphore(const Semaphore &) = delete;
   auto operator=(const Semaphore &) -> Semaphore & = delete;
 
@@ -744,12 +743,10 @@ static auto suitable(VkPhysicalDevice device, VkSurfaceKHR surface) -> bool {
       vulkanCount(device, [](VkPhysicalDevice device_, uint32_t *count) {
         vkEnumerateDeviceExtensionProperties(device_, nullptr, count, nullptr);
       })};
-
   std::vector<VkExtensionProperties> extensionProperties(
       extensionPropertyCount);
   vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionPropertyCount,
                                        extensionProperties.data());
-
   std::vector<std::string> extensionNames(extensionProperties.size());
   std::transform(extensionProperties.begin(), extensionProperties.end(),
                  extensionNames.begin(),
@@ -774,7 +771,7 @@ static auto suitable(VkPhysicalDevice device, VkSurfaceKHR surface) -> bool {
       }) == 0)
     return false;
 
-  auto index{0U};
+  uint32_t index{0U};
   for (const auto properties :
        queueFamilyProperties(device, queueFamilyPropertiesCount(device))) {
     VkBool32 presentSupport{0U};
@@ -798,9 +795,8 @@ static auto suitableDevice(const std::vector<VkPhysicalDevice> &devices,
 static auto readFile(const std::string &filename) -> std::vector<char> {
   std::ifstream file{filename, std::ios::ate | std::ios::binary};
 
-  if (!file.is_open()) {
+  if (!file.is_open())
     throw std::runtime_error("failed to open file!");
-  }
 
   const auto fileSize{file.tellg()};
   std::vector<char> buffer(fileSize);
@@ -811,6 +807,25 @@ static auto readFile(const std::string &filename) -> std::vector<char> {
   file.close();
 
   return buffer;
+}
+
+static auto vulkanDevices(VkInstance instance)
+    -> std::vector<VkPhysicalDevice> {
+  uint32_t deviceCount{0};
+  vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
+  std::vector<VkPhysicalDevice> devices(deviceCount);
+  vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
+  return devices;
+}
+
+static auto swapChainImages(VkDevice device, VkSwapchainKHR swapChain)
+    -> std::vector<VkImage> {
+  uint32_t imageCount{0};
+  vkGetSwapchainImagesKHR(device, swapChain, &imageCount, nullptr);
+  std::vector<VkImage> swapChainImages(imageCount);
+  vkGetSwapchainImagesKHR(device, swapChain, &imageCount,
+                          swapChainImages.data());
+  return swapChainImages;
 }
 
 static void run(const std::string &vertexShaderCodePath,
@@ -824,13 +839,8 @@ static void run(const std::string &vertexShaderCodePath,
   vulkan_wrappers::Instance vulkanInstance;
   vulkan_wrappers::Surface vulkanSurface{vulkanInstance.instance,
                                          glfwWindow.window};
-  uint32_t deviceCount{0};
-  vkEnumeratePhysicalDevices(vulkanInstance.instance, &deviceCount, nullptr);
-  std::vector<VkPhysicalDevice> devices(deviceCount);
-  vkEnumeratePhysicalDevices(vulkanInstance.instance, &deviceCount,
-                             devices.data());
-
-  auto *vulkanPhysicalDevice{suitableDevice(devices, vulkanSurface.surface)};
+  auto *vulkanPhysicalDevice{suitableDevice(
+      vulkanDevices(vulkanInstance.instance), vulkanSurface.surface)};
   vulkan_wrappers::Device vulkanDevice{vulkanPhysicalDevice,
                                        vulkanSurface.surface};
 
@@ -848,13 +858,8 @@ static void run(const std::string &vertexShaderCodePath,
       vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface,
       glfwWindow.window};
 
-  uint32_t imageCount{0};
-  vkGetSwapchainImagesKHR(vulkanDevice.device, vulkanSwapchain.swapChain,
-                          &imageCount, nullptr);
-  std::vector<VkImage> swapChainImages(imageCount);
-  vkGetSwapchainImagesKHR(vulkanDevice.device, vulkanSwapchain.swapChain,
-                          &imageCount, swapChainImages.data());
-
+  const auto swapChainImages{
+      ::swapChainImages(vulkanDevice.device, vulkanSwapchain.swapChain)};
   std::vector<vulkan_wrappers::ImageView> swapChainImageViews;
   std::transform(
       swapChainImages.begin(), swapChainImages.end(),
