@@ -530,24 +530,24 @@ struct Pipeline {
                                               &capabilities);
     const auto swapChainExtent{swapExtent(capabilities, window)};
 
-    VkViewport viewport{};
-    viewport.x = 0.0F;
-    viewport.y = 0.0F;
-    viewport.width = swapChainExtent.width;
-    viewport.height = swapChainExtent.height;
-    viewport.minDepth = 0.0F;
-    viewport.maxDepth = 1.0F;
+    std::array<VkViewport, 1> viewport{};
+    viewport.at(0).x = 0.0F;
+    viewport.at(0).y = 0.0F;
+    viewport.at(0).width = swapChainExtent.width;
+    viewport.at(0).height = swapChainExtent.height;
+    viewport.at(0).minDepth = 0.0F;
+    viewport.at(0).maxDepth = 1.0F;
 
-    VkRect2D scissor{};
-    scissor.offset = {0, 0};
-    scissor.extent = swapChainExtent;
+    std::array<VkRect2D, 1> scissor{};
+    scissor.at(0).offset = {0, 0};
+    scissor.at(0).extent = swapChainExtent;
 
     VkPipelineViewportStateCreateInfo viewportState{};
     viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-    viewportState.viewportCount = 1;
-    viewportState.pViewports = &viewport;
-    viewportState.scissorCount = 1;
-    viewportState.pScissors = &scissor;
+    viewportState.viewportCount = viewport.size();
+    viewportState.pViewports = viewport.data();
+    viewportState.scissorCount = scissor.size();
+    viewportState.pScissors = scissor.data();
     pipelineInfo.pViewportState = &viewportState;
 
     VkPipelineRasterizationStateCreateInfo rasterizer{};
@@ -569,19 +569,19 @@ struct Pipeline {
     multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
     pipelineInfo.pMultisampleState = &multisampling;
 
-    VkPipelineColorBlendAttachmentState colorBlendAttachment{};
-    colorBlendAttachment.colorWriteMask =
+    std::array<VkPipelineColorBlendAttachmentState, 1> colorBlendAttachment{};
+    colorBlendAttachment.at(0).colorWriteMask =
         VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
         VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachment.blendEnable = VK_FALSE;
+    colorBlendAttachment.at(0).blendEnable = VK_FALSE;
 
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType =
         VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     colorBlending.logicOpEnable = VK_FALSE;
     colorBlending.logicOp = VK_LOGIC_OP_COPY;
-    colorBlending.attachmentCount = 1;
-    colorBlending.pAttachments = &colorBlendAttachment;
+    colorBlending.attachmentCount = colorBlendAttachment.size();
+    colorBlending.pAttachments = colorBlendAttachment.data();
     colorBlending.blendConstants[0] = 0.0F;
     colorBlending.blendConstants[1] = 0.0F;
     colorBlending.blendConstants[2] = 0.0F;
