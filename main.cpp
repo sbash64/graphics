@@ -89,7 +89,7 @@ static auto graphicsSupportingQueueFamilyIndex(VkPhysicalDevice device)
 static auto presentSupportingQueueFamilyIndex(VkPhysicalDevice device,
                                               VkSurfaceKHR surface)
     -> uint32_t {
-  auto index{0U};
+  uint32_t index{0U};
   while (index < queueFamilyPropertiesCount(device)) {
     VkBool32 support{0U};
     vkGetPhysicalDeviceSurfaceSupportKHR(device, index, surface, &support);
@@ -109,7 +109,7 @@ static auto swapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &formats)
     if (format.format == VK_FORMAT_B8G8R8A8_SRGB &&
         format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
       return format;
-  return formats[0];
+  return formats.front();
 }
 
 static auto swapPresentMode(const std::vector<VkPresentModeKHR> &presentModes)
@@ -129,8 +129,8 @@ static auto swapExtent(VkSurfaceCapabilitiesKHR capabilities,
   int height{0};
   glfwGetFramebufferSize(window, &width, &height);
 
-  VkExtent2D extent = {static_cast<uint32_t>(width),
-                       static_cast<uint32_t>(height)};
+  VkExtent2D extent{static_cast<uint32_t>(width),
+                    static_cast<uint32_t>(height)};
   extent.width = std::clamp(extent.width, capabilities.minImageExtent.width,
                             capabilities.maxImageExtent.width);
   extent.height = std::clamp(extent.height, capabilities.minImageExtent.height,
@@ -182,15 +182,15 @@ struct Device {
         graphicsSupportingQueueFamilyIndex(physicalDevice),
         presentSupportingQueueFamilyIndex(physicalDevice, surface)}};
     std::vector<VkDeviceQueueCreateInfo> queueCreateInfos(indices.size());
-    const auto queuePriority{1.0F};
+    const std::array<float, 1> queuePriority{1.0F};
     std::transform(indices.begin(), indices.end(), queueCreateInfos.begin(),
                    [&queuePriority](uint32_t index) {
                      VkDeviceQueueCreateInfo queueCreateInfo{};
                      queueCreateInfo.sType =
                          VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
                      queueCreateInfo.queueFamilyIndex = index;
-                     queueCreateInfo.queueCount = 1;
-                     queueCreateInfo.pQueuePriorities = &queuePriority;
+                     queueCreateInfo.queueCount = queuePriority.size();
+                     queueCreateInfo.pQueuePriorities = queuePriority.data();
                      return queueCreateInfo;
                    });
 
@@ -286,7 +286,7 @@ struct Swapchain {
 
     if (queueFamilyIndices[0] != queueFamilyIndices[1]) {
       createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
-      createInfo.queueFamilyIndexCount = 2;
+      createInfo.queueFamilyIndexCount = queueFamilyIndices.size();
       createInfo.pQueueFamilyIndices = queueFamilyIndices.data();
     } else {
       createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
@@ -386,9 +386,8 @@ struct ShaderModule {
     createInfo.pCode = reinterpret_cast<const uint32_t *>(code.data());
 
     if (vkCreateShaderModule(device, &createInfo, nullptr, &module) !=
-        VK_SUCCESS) {
+        VK_SUCCESS)
       throw std::runtime_error("failed to create shader module!");
-    }
   }
 
   ShaderModule(ShaderModule &&) = delete;
@@ -431,7 +430,7 @@ struct RenderPass {
   RenderPass(VkDevice device, VkPhysicalDevice physicalDevice,
              VkSurfaceKHR surface)
       : device{device} {
-    VkAttachmentDescription colorAttachment{};
+    std::array<VkAttachmentDescription, 1> colorAttachment{};
 
     auto formatCount{vulkanCount(
         physicalDevice, [&surface](VkPhysicalDevice device_, uint32_t *count) {
@@ -441,31 +440,31 @@ struct RenderPass {
     std::vector<VkSurfaceFormatKHR> formats(formatCount);
     vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount,
                                          formats.data());
-    colorAttachment.format = swapSurfaceFormat(formats).format;
+    colorAttachment.at(0).format = swapSurfaceFormat(formats).format;
 
-    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    colorAttachment.at(0).samples = VK_SAMPLE_COUNT_1_BIT;
+    colorAttachment.at(0).loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachment.at(0).storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachment.at(0).stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorAttachment.at(0).stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    colorAttachment.at(0).initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    colorAttachment.at(0).finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
-    VkAttachmentReference colorAttachmentRef{};
-    colorAttachmentRef.attachment = 0;
-    colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    std::array<VkAttachmentReference, 1> colorAttachmentRef{};
+    colorAttachmentRef.at(0).attachment = 0;
+    colorAttachmentRef.at(0).layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-    VkSubpassDescription subpass{};
-    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = &colorAttachmentRef;
+    std::array<VkSubpassDescription, 1> subpass{};
+    subpass.at(0).pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.at(0).colorAttachmentCount = colorAttachmentRef.size();
+    subpass.at(0).pColorAttachments = colorAttachmentRef.data();
 
     VkRenderPassCreateInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    renderPassInfo.attachmentCount = 1;
-    renderPassInfo.pAttachments = &colorAttachment;
-    renderPassInfo.subpassCount = 1;
-    renderPassInfo.pSubpasses = &subpass;
+    renderPassInfo.attachmentCount = colorAttachment.size();
+    renderPassInfo.pAttachments = colorAttachment.data();
+    renderPassInfo.subpassCount = subpass.size();
+    renderPassInfo.pSubpasses = subpass.data();
 
     if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass) !=
         VK_SUCCESS)
@@ -929,9 +928,9 @@ static void run(const std::string &vertexShaderCodePath,
     const auto swapChainExtent{swapExtent(capabilities, glfwWindow.window)};
     renderPassInfo.renderArea.extent = swapChainExtent;
 
-    VkClearValue clearColor = {{{0.0F, 0.0F, 0.0F, 1.0F}}};
-    renderPassInfo.clearValueCount = 1;
-    renderPassInfo.pClearValues = &clearColor;
+    std::array<VkClearValue, 1> clearColor = {{{{{0.0F, 0.0F, 0.0F, 1.0F}}}}};
+    renderPassInfo.clearValueCount = clearColor.size();
+    renderPassInfo.pClearValues = clearColor.data();
 
     vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo,
                          VK_SUBPASS_CONTENTS_INLINE);
