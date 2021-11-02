@@ -657,7 +657,7 @@ struct CommandPool {
 };
 
 struct Semaphore {
-  Semaphore(VkDevice device) : device{device} {
+  explicit Semaphore(VkDevice device) : device{device} {
     VkSemaphoreCreateInfo semaphoreInfo{};
     semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
     if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphore) !=
@@ -666,7 +666,7 @@ struct Semaphore {
   }
 
   ~Semaphore() {
-    if (semaphore)
+    if (semaphore != nullptr)
       vkDestroySemaphore(device, semaphore, nullptr);
   }
 
@@ -685,7 +685,7 @@ struct Semaphore {
 };
 
 struct Fence {
-  Fence(VkDevice device) : device{device} {
+  explicit Fence(VkDevice device) : device{device} {
     VkFenceCreateInfo fenceInfo{};
     fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
     fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
@@ -694,7 +694,7 @@ struct Fence {
   }
 
   ~Fence() {
-    if (fence)
+    if (fence != nullptr)
       vkDestroyFence(device, fence, nullptr);
   }
 
@@ -904,7 +904,7 @@ static void run(const std::string &vertexShaderCodePath,
     const auto swapChainExtent{swapExtent(capabilities, glfwWindow.window)};
     renderPassInfo.renderArea.extent = swapChainExtent;
 
-    VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
+    VkClearValue clearColor = {{{0.0F, 0.0F, 0.0F, 1.0F}}};
     renderPassInfo.clearValueCount = 1;
     renderPassInfo.pClearValues = &clearColor;
 
@@ -958,21 +958,21 @@ static void run(const std::string &vertexShaderCodePath,
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-    VkSemaphore waitSemaphores[] = {
+    std::array<VkSemaphore, 1> waitSemaphores = {
         vulkanImageAvailableSemaphores[currentFrame].semaphore};
-    VkPipelineStageFlags waitStages[] = {
+    std::array<VkPipelineStageFlags, 1> waitStages = {
         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-    submitInfo.waitSemaphoreCount = 1;
-    submitInfo.pWaitSemaphores = waitSemaphores;
-    submitInfo.pWaitDstStageMask = waitStages;
+    submitInfo.waitSemaphoreCount = waitSemaphores.size();
+    submitInfo.pWaitSemaphores = waitSemaphores.data();
+    submitInfo.pWaitDstStageMask = waitStages.data();
 
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &commandBuffers[imageIndex];
 
-    VkSemaphore signalSemaphores[] = {
+    std::array<VkSemaphore, 1> signalSemaphores = {
         vulkanRenderFinishedSemaphores[currentFrame].semaphore};
-    submitInfo.signalSemaphoreCount = 1;
-    submitInfo.pSignalSemaphores = signalSemaphores;
+    submitInfo.signalSemaphoreCount = signalSemaphores.size();
+    submitInfo.pSignalSemaphores = signalSemaphores.data();
 
     vkResetFences(vulkanDevice.device, 1,
                   &vulkanInFlightFences[currentFrame].fence);
@@ -985,18 +985,19 @@ static void run(const std::string &vertexShaderCodePath,
     VkPresentInfoKHR presentInfo{};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 
-    presentInfo.waitSemaphoreCount = 1;
-    presentInfo.pWaitSemaphores = signalSemaphores;
+    presentInfo.waitSemaphoreCount = waitSemaphores.size();
+    presentInfo.pWaitSemaphores = signalSemaphores.data();
 
-    VkSwapchainKHR swapChains[] = {vulkanSwapchain.swapChain};
-    presentInfo.swapchainCount = 1;
-    presentInfo.pSwapchains = swapChains;
+    std::array<VkSwapchainKHR, 1> swapChains = {vulkanSwapchain.swapChain};
+    presentInfo.swapchainCount = swapChains.size();
+    presentInfo.pSwapchains = swapChains.data();
 
     presentInfo.pImageIndices = &imageIndex;
 
     vkQueuePresentKHR(presentQueue, &presentInfo);
 
-    currentFrame = (currentFrame + 1) % maxFramesInFlight;
+    if (++currentFrame == maxFramesInFlight)
+      currentFrame = 0;
   }
 
   vkDeviceWaitIdle(vulkanDevice.device);
