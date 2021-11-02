@@ -655,6 +655,61 @@ struct CommandPool {
   VkDevice device;
   VkCommandPool commandPool{};
 };
+
+struct Semaphore {
+  Semaphore(VkDevice device) : device{device} {
+    VkSemaphoreCreateInfo semaphoreInfo{};
+    semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphore) !=
+        VK_SUCCESS)
+      throw std::runtime_error("failed to create semaphore!");
+  }
+
+  ~Semaphore() {
+    if (semaphore)
+      vkDestroySemaphore(device, semaphore, nullptr);
+  }
+
+  Semaphore(Semaphore &&other) noexcept
+      : device{other.device}, semaphore{other.semaphore} {
+    other.semaphore = nullptr;
+  }
+
+  auto operator=(Semaphore &&) -> Semaphore & = delete;
+
+  Semaphore(const Semaphore &) = delete;
+  auto operator=(const Semaphore &) -> Semaphore & = delete;
+
+  VkDevice device;
+  VkSemaphore semaphore{};
+};
+
+struct Fence {
+  Fence(VkDevice device) : device{device} {
+    VkFenceCreateInfo fenceInfo{};
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+    if (vkCreateFence(device, &fenceInfo, nullptr, &fence) != VK_SUCCESS)
+      throw std::runtime_error("failed to create fence!");
+  }
+
+  ~Fence() {
+    if (fence)
+      vkDestroyFence(device, fence, nullptr);
+  }
+
+  Fence(Fence &&other) noexcept : device{other.device}, fence{other.fence} {
+    other.fence = nullptr;
+  }
+
+  auto operator=(Fence &&) -> Fence & = delete;
+
+  Fence(const Fence &) = delete;
+  auto operator=(const Fence &) -> Fence & = delete;
+
+  VkDevice device;
+  VkFence fence{};
+};
 } // namespace vulkan_wrappers
 
 constexpr auto windowWidth{800};
@@ -868,9 +923,83 @@ static void run(const std::string &vertexShaderCodePath,
     }
   }
 
+  const auto maxFramesInFlight{2};
+
+  std::vector<vulkan_wrappers::Semaphore> vulkanImageAvailableSemaphores;
+  std::vector<vulkan_wrappers::Semaphore> vulkanRenderFinishedSemaphores;
+  std::vector<vulkan_wrappers::Fence> vulkanInFlightFences;
+  for (auto i{0}; i < maxFramesInFlight; ++i) {
+    vulkanImageAvailableSemaphores.emplace_back(vulkanDevice.device);
+    vulkanRenderFinishedSemaphores.emplace_back(vulkanDevice.device);
+    vulkanInFlightFences.emplace_back(vulkanDevice.device);
+  }
+
+  std::vector<VkFence> imagesInFlight(swapChainImages.size(), VK_NULL_HANDLE);
+
+  size_t currentFrame = 0;
   while (glfwWindowShouldClose(glfwWindow.window) == 0) {
     glfwPollEvents();
+    vkWaitForFences(vulkanDevice.device, 1,
+                    &vulkanInFlightFences[currentFrame].fence, VK_TRUE,
+                    UINT64_MAX);
+
+    uint32_t imageIndex = 0;
+    vkAcquireNextImageKHR(
+        vulkanDevice.device, vulkanSwapchain.swapChain, UINT64_MAX,
+        vulkanImageAvailableSemaphores[currentFrame].semaphore, VK_NULL_HANDLE,
+        &imageIndex);
+
+    if (imagesInFlight[imageIndex] != VK_NULL_HANDLE) {
+      vkWaitForFences(vulkanDevice.device, 1, &imagesInFlight[imageIndex],
+                      VK_TRUE, UINT64_MAX);
+    }
+    imagesInFlight[imageIndex] = vulkanInFlightFences[currentFrame].fence;
+
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+
+    VkSemaphore waitSemaphores[] = {
+        vulkanImageAvailableSemaphores[currentFrame].semaphore};
+    VkPipelineStageFlags waitStages[] = {
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+    submitInfo.waitSemaphoreCount = 1;
+    submitInfo.pWaitSemaphores = waitSemaphores;
+    submitInfo.pWaitDstStageMask = waitStages;
+
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &commandBuffers[imageIndex];
+
+    VkSemaphore signalSemaphores[] = {
+        vulkanRenderFinishedSemaphores[currentFrame].semaphore};
+    submitInfo.signalSemaphoreCount = 1;
+    submitInfo.pSignalSemaphores = signalSemaphores;
+
+    vkResetFences(vulkanDevice.device, 1,
+                  &vulkanInFlightFences[currentFrame].fence);
+
+    if (vkQueueSubmit(graphicsQueue, 1, &submitInfo,
+                      vulkanInFlightFences[currentFrame].fence) != VK_SUCCESS) {
+      throw std::runtime_error("failed to submit draw command buffer!");
+    }
+
+    VkPresentInfoKHR presentInfo{};
+    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+
+    presentInfo.waitSemaphoreCount = 1;
+    presentInfo.pWaitSemaphores = signalSemaphores;
+
+    VkSwapchainKHR swapChains[] = {vulkanSwapchain.swapChain};
+    presentInfo.swapchainCount = 1;
+    presentInfo.pSwapchains = swapChains;
+
+    presentInfo.pImageIndices = &imageIndex;
+
+    vkQueuePresentKHR(presentQueue, &presentInfo);
+
+    currentFrame = (currentFrame + 1) % maxFramesInFlight;
   }
+
+  vkDeviceWaitIdle(vulkanDevice.device);
 }
 
 int main(int argc, char *argv[]) {
