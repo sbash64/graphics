@@ -636,6 +636,25 @@ struct Framebuffer {
   VkDevice device;
   VkFramebuffer framebuffer{};
 };
+
+struct CommandPool {
+  CommandPool(VkDevice device, VkPhysicalDevice physicalDevice)
+      : device{device} {
+    VkCommandPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    poolInfo.queueFamilyIndex =
+        graphicsSupportingQueueFamilyIndex(physicalDevice);
+
+    if (vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool) !=
+        VK_SUCCESS)
+      throw std::runtime_error("failed to create command pool!");
+  }
+
+  ~CommandPool() { vkDestroyCommandPool(device, commandPool, nullptr); }
+
+  VkDevice device;
+  VkCommandPool commandPool{};
+};
 } // namespace vulkan_wrappers
 
 constexpr auto windowWidth{800};
@@ -783,9 +802,9 @@ static void run(const std::string &vertexShaderCodePath,
       vulkanRenderPass.renderPass, vertexShaderModule.module,
       fragmentShaderModule.module, glfwWindow.window};
 
-  std::vector<vulkan_wrappers::Framebuffer> frameBuffers;
+  std::vector<vulkan_wrappers::Framebuffer> vulkanFrameBuffers;
   std::transform(swapChainImageViews.begin(), swapChainImageViews.end(),
-                 std::back_inserter(frameBuffers),
+                 std::back_inserter(vulkanFrameBuffers),
                  [&vulkanDevice, &vulkanPhysicalDevice, &vulkanSurface,
                   &vulkanRenderPass,
                   &glfwWindow](const vulkan_wrappers::ImageView &imageView) {
@@ -794,6 +813,60 @@ static void run(const std::string &vertexShaderCodePath,
                        vulkanSurface.surface, vulkanRenderPass.renderPass,
                        imageView.view,        glfwWindow.window};
                  });
+
+  vulkan_wrappers::CommandPool vulkanCommandPool{vulkanDevice.device,
+                                                 vulkanPhysicalDevice};
+  std::vector<VkCommandBuffer> commandBuffers(vulkanFrameBuffers.size());
+
+  VkCommandBufferAllocateInfo allocInfo{};
+  allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+  allocInfo.commandPool = vulkanCommandPool.commandPool;
+  allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+  allocInfo.commandBufferCount = commandBuffers.size();
+
+  if (vkAllocateCommandBuffers(vulkanDevice.device, &allocInfo,
+                               commandBuffers.data()) != VK_SUCCESS) {
+    throw std::runtime_error("failed to allocate command buffers!");
+  }
+
+  for (size_t i = 0; i < commandBuffers.size(); i++) {
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+
+    if (vkBeginCommandBuffer(commandBuffers[i], &beginInfo) != VK_SUCCESS) {
+      throw std::runtime_error("failed to begin recording command buffer!");
+    }
+
+    VkRenderPassBeginInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassInfo.renderPass = vulkanRenderPass.renderPass;
+    renderPassInfo.framebuffer = vulkanFrameBuffers.at(i).framebuffer;
+    renderPassInfo.renderArea.offset = {0, 0};
+
+    VkSurfaceCapabilitiesKHR capabilities;
+    vkGetPhysicalDeviceSurfaceCapabilitiesKHR(
+        vulkanPhysicalDevice, vulkanSurface.surface, &capabilities);
+    const auto swapChainExtent{swapExtent(capabilities, glfwWindow.window)};
+    renderPassInfo.renderArea.extent = swapChainExtent;
+
+    VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
+    renderPassInfo.clearValueCount = 1;
+    renderPassInfo.pClearValues = &clearColor;
+
+    vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo,
+                         VK_SUBPASS_CONTENTS_INLINE);
+
+    vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS,
+                      vulkanPipeline.pipeline);
+
+    vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
+
+    vkCmdEndRenderPass(commandBuffers[i]);
+
+    if (vkEndCommandBuffer(commandBuffers[i]) != VK_SUCCESS) {
+      throw std::runtime_error("failed to record command buffer!");
+    }
+  }
 
   while (glfwWindowShouldClose(glfwWindow.window) == 0) {
     glfwPollEvents();
