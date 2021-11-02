@@ -49,19 +49,19 @@ static auto supportsGraphics(const VkQueueFamilyProperties &properties)
   return (properties.queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0U;
 }
 
-static auto
-vulkanCount(VkPhysicalDevice device,
-            const std::function<void(VkPhysicalDevice, uint32_t *)> &f)
-    -> uint32_t {
+static auto vulkanCountFromPhysicalDevice(
+    VkPhysicalDevice device,
+    const std::function<void(VkPhysicalDevice, uint32_t *)> &f) -> uint32_t {
   uint32_t count{0};
   f(device, &count);
   return count;
 }
 
 static auto queueFamilyPropertiesCount(VkPhysicalDevice device) -> uint32_t {
-  return vulkanCount(device, [](VkPhysicalDevice device_, uint32_t *count) {
-    vkGetPhysicalDeviceQueueFamilyProperties(device_, count, nullptr);
-  });
+  return vulkanCountFromPhysicalDevice(
+      device, [](VkPhysicalDevice device_, uint32_t *count) {
+        vkGetPhysicalDeviceQueueFamilyProperties(device_, count, nullptr);
+      });
 }
 
 static auto queueFamilyProperties(VkPhysicalDevice device, uint32_t count)
@@ -265,7 +265,7 @@ struct Swapchain {
       imageCount = capabilities.maxImageCount;
     }
 
-    auto formatCount{vulkanCount(
+    auto formatCount{vulkanCountFromPhysicalDevice(
         physicalDevice, [&surface](VkPhysicalDevice device_, uint32_t *count) {
           vkGetPhysicalDeviceSurfaceFormatsKHR(device_, surface, count,
                                                nullptr);
@@ -294,7 +294,7 @@ struct Swapchain {
       createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
     }
 
-    auto presentModeCount{vulkanCount(
+    auto presentModeCount{vulkanCountFromPhysicalDevice(
         physicalDevice, [&surface](VkPhysicalDevice device_, uint32_t *count) {
           vkGetPhysicalDeviceSurfacePresentModesKHR(device_, surface, count,
                                                     nullptr);
@@ -336,7 +336,7 @@ struct ImageView {
 
     createInfo.image = image;
 
-    auto formatCount{vulkanCount(
+    auto formatCount{vulkanCountFromPhysicalDevice(
         physicalDevice, [&surface](VkPhysicalDevice device_, uint32_t *count) {
           vkGetPhysicalDeviceSurfaceFormatsKHR(device_, surface, count,
                                                nullptr);
@@ -372,7 +372,6 @@ struct ImageView {
   }
 
   auto operator=(ImageView &&) -> ImageView & = delete;
-
   ImageView(const ImageView &) = delete;
   auto operator=(const ImageView &) -> ImageView & = delete;
 
@@ -435,7 +434,7 @@ struct RenderPass {
       : device{device} {
     std::array<VkAttachmentDescription, 1> colorAttachment{};
 
-    auto formatCount{vulkanCount(
+    auto formatCount{vulkanCountFromPhysicalDevice(
         physicalDevice, [&surface](VkPhysicalDevice device_, uint32_t *count) {
           vkGetPhysicalDeviceSurfaceFormatsKHR(device_, surface, count,
                                                nullptr);
@@ -508,7 +507,7 @@ struct Pipeline {
     fragShaderStageInfo.module = fragmentShaderModule;
     fragShaderStageInfo.pName = "main";
 
-    std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages = {
+    const std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages = {
         vertShaderStageInfo, fragShaderStageInfo};
     pipelineInfo.stageCount = shaderStages.size();
     pipelineInfo.pStages = shaderStages.data();
@@ -766,8 +765,8 @@ constexpr auto windowWidth{800};
 constexpr auto windowHeight{600};
 
 static auto suitable(VkPhysicalDevice device, VkSurfaceKHR surface) -> bool {
-  auto extensionPropertyCount{
-      vulkanCount(device, [](VkPhysicalDevice device_, uint32_t *count) {
+  auto extensionPropertyCount{vulkanCountFromPhysicalDevice(
+      device, [](VkPhysicalDevice device_, uint32_t *count) {
         vkEnumerateDeviceExtensionProperties(device_, nullptr, count, nullptr);
       })};
   std::vector<VkExtensionProperties> extensionProperties(
@@ -785,15 +784,15 @@ static auto suitable(VkPhysicalDevice device, VkSurfaceKHR surface) -> bool {
                      deviceExtensions.begin(), deviceExtensions.end()))
     return false;
 
-  if (vulkanCount(device,
-                  [&surface](VkPhysicalDevice device_, uint32_t *count) {
-                    vkGetPhysicalDeviceSurfacePresentModesKHR(device_, surface,
-                                                              count, nullptr);
-                  }) == 0)
+  if (vulkanCountFromPhysicalDevice(
+          device, [&surface](VkPhysicalDevice device_, uint32_t *count) {
+            vkGetPhysicalDeviceSurfacePresentModesKHR(device_, surface, count,
+                                                      nullptr);
+          }) == 0)
     return false;
 
-  if (vulkanCount(device, [&surface](VkPhysicalDevice device_,
-                                     uint32_t *count) {
+  if (vulkanCountFromPhysicalDevice(device, [&surface](VkPhysicalDevice device_,
+                                                       uint32_t *count) {
         vkGetPhysicalDeviceSurfaceFormatsKHR(device_, surface, count, nullptr);
       }) == 0)
     return false;
@@ -857,19 +856,19 @@ static auto swapChainImages(VkDevice device, VkSwapchainKHR swapChain)
 
 static void run(const std::string &vertexShaderCodePath,
                 const std::string &fragmentShaderCodePath) {
-  glfw_wrappers::Init glfwInitialization;
+  const glfw_wrappers::Init glfwInitialization;
 
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
   glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-  glfw_wrappers::Window glfwWindow{windowWidth, windowHeight};
+  const glfw_wrappers::Window glfwWindow{windowWidth, windowHeight};
 
-  vulkan_wrappers::Instance vulkanInstance;
-  vulkan_wrappers::Surface vulkanSurface{vulkanInstance.instance,
-                                         glfwWindow.window};
+  const vulkan_wrappers::Instance vulkanInstance;
+  const vulkan_wrappers::Surface vulkanSurface{vulkanInstance.instance,
+                                               glfwWindow.window};
   auto *vulkanPhysicalDevice{suitableDevice(
       vulkanDevices(vulkanInstance.instance), vulkanSurface.surface)};
-  vulkan_wrappers::Device vulkanDevice{vulkanPhysicalDevice,
-                                       vulkanSurface.surface};
+  const vulkan_wrappers::Device vulkanDevice{vulkanPhysicalDevice,
+                                             vulkanSurface.surface};
 
   VkQueue graphicsQueue{nullptr};
   vkGetDeviceQueue(vulkanDevice.device,
@@ -881,7 +880,7 @@ static void run(const std::string &vertexShaderCodePath,
                                                      vulkanSurface.surface),
                    0, &presentQueue);
 
-  vulkan_wrappers::Swapchain vulkanSwapchain{
+  const vulkan_wrappers::Swapchain vulkanSwapchain{
       vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface,
       glfwWindow.window};
 
@@ -897,17 +896,18 @@ static void run(const std::string &vertexShaderCodePath,
                                           vulkanSurface.surface, image};
       });
 
-  vulkan_wrappers::RenderPass vulkanRenderPass{
+  const vulkan_wrappers::RenderPass vulkanRenderPass{
       vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface};
 
-  vulkan_wrappers::ShaderModule vertexShaderModule{
+  const vulkan_wrappers::ShaderModule vertexShaderModule{
       vulkanDevice.device, readFile(vertexShaderCodePath)};
-  vulkan_wrappers::ShaderModule fragmentShaderModule{
+  const vulkan_wrappers::ShaderModule fragmentShaderModule{
       vulkanDevice.device, readFile(fragmentShaderCodePath)};
 
-  vulkan_wrappers::PipelineLayout vulkanPipelineLayout{vulkanDevice.device};
+  const vulkan_wrappers::PipelineLayout vulkanPipelineLayout{
+      vulkanDevice.device};
 
-  vulkan_wrappers::Pipeline vulkanPipeline{
+  const vulkan_wrappers::Pipeline vulkanPipeline{
       vulkanDevice.device,         vulkanPhysicalDevice,
       vulkanSurface.surface,       vulkanPipelineLayout.pipelineLayout,
       vulkanRenderPass.renderPass, vertexShaderModule.module,
@@ -925,9 +925,9 @@ static void run(const std::string &vertexShaderCodePath,
                        imageView.view,        glfwWindow.window};
                  });
 
-  vulkan_wrappers::CommandPool vulkanCommandPool{vulkanDevice.device,
-                                                 vulkanPhysicalDevice};
-  vulkan_wrappers::CommandBuffers vulkanCommandBuffers{
+  const vulkan_wrappers::CommandPool vulkanCommandPool{vulkanDevice.device,
+                                                       vulkanPhysicalDevice};
+  const vulkan_wrappers::CommandBuffers vulkanCommandBuffers{
       vulkanDevice.device, vulkanCommandPool.commandPool,
       vulkanFrameBuffers.size()};
 
@@ -947,7 +947,8 @@ static void run(const std::string &vertexShaderCodePath,
     renderPassInfo.renderArea.extent = swapExtent(
         vulkanPhysicalDevice, vulkanSurface.surface, glfwWindow.window);
 
-    std::array<VkClearValue, 1> clearColor = {{{{{0.0F, 0.0F, 0.0F, 1.0F}}}}};
+    const std::array<VkClearValue, 1> clearColor = {
+        {{{{0.0F, 0.0F, 0.0F, 1.0F}}}}};
     renderPassInfo.clearValueCount = clearColor.size();
     renderPassInfo.pClearValues = clearColor.data();
 
@@ -993,18 +994,18 @@ static void run(const std::string &vertexShaderCodePath,
         vulkanImageAvailableSemaphores[currentFrame].semaphore, VK_NULL_HANDLE,
         &imageIndex);
 
-    if (imagesInFlight[imageIndex] != VK_NULL_HANDLE) {
+    if (imagesInFlight[imageIndex] != VK_NULL_HANDLE)
       vkWaitForFences(vulkanDevice.device, 1, &imagesInFlight[imageIndex],
                       VK_TRUE, UINT64_MAX);
-    }
+
     imagesInFlight[imageIndex] = vulkanInFlightFences[currentFrame].fence;
 
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-    std::array<VkSemaphore, 1> waitSemaphores = {
+    const std::array<VkSemaphore, 1> waitSemaphores = {
         vulkanImageAvailableSemaphores[currentFrame].semaphore};
-    std::array<VkPipelineStageFlags, 1> waitStages = {
+    const std::array<VkPipelineStageFlags, 1> waitStages = {
         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
     submitInfo.waitSemaphoreCount = waitSemaphores.size();
     submitInfo.pWaitSemaphores = waitSemaphores.data();
@@ -1014,7 +1015,7 @@ static void run(const std::string &vertexShaderCodePath,
     submitInfo.pCommandBuffers =
         &vulkanCommandBuffers.commandBuffers[imageIndex];
 
-    std::array<VkSemaphore, 1> signalSemaphores = {
+    const std::array<VkSemaphore, 1> signalSemaphores = {
         vulkanRenderFinishedSemaphores[currentFrame].semaphore};
     submitInfo.signalSemaphoreCount = signalSemaphores.size();
     submitInfo.pSignalSemaphores = signalSemaphores.data();
@@ -1023,9 +1024,8 @@ static void run(const std::string &vertexShaderCodePath,
                   &vulkanInFlightFences[currentFrame].fence);
 
     if (vkQueueSubmit(graphicsQueue, 1, &submitInfo,
-                      vulkanInFlightFences[currentFrame].fence) != VK_SUCCESS) {
+                      vulkanInFlightFences[currentFrame].fence) != VK_SUCCESS)
       throw std::runtime_error("failed to submit draw command buffer!");
-    }
 
     VkPresentInfoKHR presentInfo{};
     presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -1033,7 +1033,8 @@ static void run(const std::string &vertexShaderCodePath,
     presentInfo.waitSemaphoreCount = waitSemaphores.size();
     presentInfo.pWaitSemaphores = signalSemaphores.data();
 
-    std::array<VkSwapchainKHR, 1> swapChains = {vulkanSwapchain.swapChain};
+    const std::array<VkSwapchainKHR, 1> swapChains = {
+        vulkanSwapchain.swapChain};
     presentInfo.swapchainCount = swapChains.size();
     presentInfo.pSwapchains = swapChains.data();
 
@@ -1049,8 +1050,8 @@ static void run(const std::string &vertexShaderCodePath,
 }
 
 int main(int argc, char *argv[]) {
-  std::span<char *> arguments{argv,
-                              static_cast<std::span<char *>::size_type>(argc)};
+  const std::span<char *> arguments{
+      argv, static_cast<std::span<char *>::size_type>(argc)};
   if (arguments.size() < 3)
     return EXIT_FAILURE;
   try {
