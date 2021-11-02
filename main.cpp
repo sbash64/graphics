@@ -1030,6 +1030,9 @@ static void run(const std::string &vertexShaderCodePath,
   }
 
   vkDeviceWaitIdle(vulkanDevice.device);
+
+  vkFreeCommandBuffers(vulkanDevice.device, vulkanCommandPool.commandPool,
+                       commandBuffers.size(), commandBuffers.data());
 }
 
 int main(int argc, char *argv[]) {
