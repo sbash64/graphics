@@ -3,8 +3,11 @@
 
 #include <vulkan/vulkan_core.h>
 
+#include <glm/glm.hpp>
+
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdlib>
 #include <exception>
 #include <fstream>
@@ -140,6 +143,36 @@ static auto swapExtent(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface,
   extent.height = std::clamp(extent.height, capabilities.minImageExtent.height,
                              capabilities.maxImageExtent.height);
   return extent;
+}
+
+struct Vertex {
+  glm::vec2 pos;
+  glm::vec3 color;
+};
+
+static auto vertexInputBindingDescription() -> VkVertexInputBindingDescription {
+  VkVertexInputBindingDescription bindingDescription{};
+  bindingDescription.binding = 0;
+  bindingDescription.stride = sizeof(Vertex);
+  bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+  return bindingDescription;
+}
+
+static auto vertexInputAttributeDescriptions()
+    -> std::array<VkVertexInputAttributeDescription, 2> {
+  std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions{};
+
+  attributeDescriptions[0].binding = 0;
+  attributeDescriptions[0].location = 0;
+  attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
+  attributeDescriptions[0].offset = offsetof(Vertex, pos);
+
+  attributeDescriptions[1].binding = 0;
+  attributeDescriptions[1].location = 1;
+  attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+  attributeDescriptions[1].offset = offsetof(Vertex, color);
+
+  return attributeDescriptions;
 }
 
 namespace vulkan_wrappers {
@@ -515,6 +548,16 @@ struct Pipeline {
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
     vertexInputInfo.sType =
         VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+
+    auto bindingDescription = vertexInputBindingDescription();
+    auto attributeDescriptions = vertexInputAttributeDescriptions();
+
+    vertexInputInfo.vertexBindingDescriptionCount = 1;
+    vertexInputInfo.vertexAttributeDescriptionCount =
+        static_cast<uint32_t>(attributeDescriptions.size());
+    vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+    vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
+
     vertexInputInfo.vertexBindingDescriptionCount = 0;
     vertexInputInfo.vertexAttributeDescriptionCount = 0;
 
