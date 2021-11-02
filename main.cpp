@@ -733,6 +733,36 @@ struct Fence {
   VkDevice device;
   VkFence fence{};
 };
+
+struct CommandBuffers {
+  CommandBuffers(VkDevice device, VkCommandPool commandPool,
+                 std::vector<VkCommandBuffer>::size_type size)
+      : device{device}, commandPool{commandPool}, commandBuffers(size) {
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.commandPool = commandPool;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandBufferCount = commandBuffers.size();
+
+    if (vkAllocateCommandBuffers(device, &allocInfo, commandBuffers.data()) !=
+        VK_SUCCESS)
+      throw std::runtime_error("failed to allocate command buffers!");
+  }
+
+  ~CommandBuffers() {
+    vkFreeCommandBuffers(device, commandPool, commandBuffers.size(),
+                         commandBuffers.data());
+  }
+
+  CommandBuffers(CommandBuffers &&) = delete;
+  auto operator=(CommandBuffers &&) -> CommandBuffers & = delete;
+  CommandBuffers(const CommandBuffers &) = delete;
+  auto operator=(const CommandBuffers &) -> CommandBuffers & = delete;
+
+  VkDevice device;
+  VkCommandPool commandPool;
+  std::vector<VkCommandBuffer> commandBuffers;
+};
 } // namespace vulkan_wrappers
 
 constexpr auto windowWidth{800};
@@ -900,24 +930,16 @@ static void run(const std::string &vertexShaderCodePath,
 
   vulkan_wrappers::CommandPool vulkanCommandPool{vulkanDevice.device,
                                                  vulkanPhysicalDevice};
-  std::vector<VkCommandBuffer> commandBuffers(vulkanFrameBuffers.size());
+  vulkan_wrappers::CommandBuffers vulkanCommandBuffers{
+      vulkanDevice.device, vulkanCommandPool.commandPool,
+      vulkanFrameBuffers.size()};
 
-  VkCommandBufferAllocateInfo allocInfo{};
-  allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-  allocInfo.commandPool = vulkanCommandPool.commandPool;
-  allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-  allocInfo.commandBufferCount = commandBuffers.size();
-
-  if (vkAllocateCommandBuffers(vulkanDevice.device, &allocInfo,
-                               commandBuffers.data()) != VK_SUCCESS) {
-    throw std::runtime_error("failed to allocate command buffers!");
-  }
-
-  for (auto i{0}; i < commandBuffers.size(); i++) {
+  for (auto i{0}; i < vulkanCommandBuffers.commandBuffers.size(); i++) {
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
-    if (vkBeginCommandBuffer(commandBuffers[i], &beginInfo) != VK_SUCCESS) {
+    if (vkBeginCommandBuffer(vulkanCommandBuffers.commandBuffers[i],
+                             &beginInfo) != VK_SUCCESS) {
       throw std::runtime_error("failed to begin recording command buffer!");
     }
 
@@ -937,17 +959,18 @@ static void run(const std::string &vertexShaderCodePath,
     renderPassInfo.clearValueCount = clearColor.size();
     renderPassInfo.pClearValues = clearColor.data();
 
-    vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo,
-                         VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBeginRenderPass(vulkanCommandBuffers.commandBuffers[i],
+                         &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS,
-                      vulkanPipeline.pipeline);
+    vkCmdBindPipeline(vulkanCommandBuffers.commandBuffers[i],
+                      VK_PIPELINE_BIND_POINT_GRAPHICS, vulkanPipeline.pipeline);
 
-    vkCmdDraw(commandBuffers[i], 3, 1, 0, 0);
+    vkCmdDraw(vulkanCommandBuffers.commandBuffers[i], 3, 1, 0, 0);
 
-    vkCmdEndRenderPass(commandBuffers[i]);
+    vkCmdEndRenderPass(vulkanCommandBuffers.commandBuffers[i]);
 
-    if (vkEndCommandBuffer(commandBuffers[i]) != VK_SUCCESS) {
+    if (vkEndCommandBuffer(vulkanCommandBuffers.commandBuffers[i]) !=
+        VK_SUCCESS) {
       throw std::runtime_error("failed to record command buffer!");
     }
   }
@@ -996,7 +1019,8 @@ static void run(const std::string &vertexShaderCodePath,
     submitInfo.pWaitDstStageMask = waitStages.data();
 
     submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &commandBuffers[imageIndex];
+    submitInfo.pCommandBuffers =
+        &vulkanCommandBuffers.commandBuffers[imageIndex];
 
     std::array<VkSemaphore, 1> signalSemaphores = {
         vulkanRenderFinishedSemaphores[currentFrame].semaphore};
@@ -1030,9 +1054,6 @@ static void run(const std::string &vertexShaderCodePath,
   }
 
   vkDeviceWaitIdle(vulkanDevice.device);
-
-  vkFreeCommandBuffers(vulkanDevice.device, vulkanCommandPool.commandPool,
-                       commandBuffers.size(), commandBuffers.data());
 }
 
 int main(int argc, char *argv[]) {
