@@ -53,7 +53,7 @@ static auto
 vulkanCount(VkPhysicalDevice device,
             const std::function<void(VkPhysicalDevice, uint32_t *)> &f)
     -> uint32_t {
-  uint32_t count = 0;
+  uint32_t count{0};
   f(device, &count);
   return count;
 }
@@ -125,8 +125,8 @@ static auto swapExtent(VkSurfaceCapabilitiesKHR capabilities,
   if (capabilities.currentExtent.width != UINT32_MAX)
     return capabilities.currentExtent;
 
-  int width = 0;
-  int height = 0;
+  int width{0};
+  int height{0};
   glfwGetFramebufferSize(window, &width, &height);
 
   VkExtent2D extent = {static_cast<uint32_t>(width),
@@ -256,7 +256,7 @@ struct Swapchain {
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface,
                                               &capabilities);
 
-    auto imageCount = capabilities.minImageCount + 1;
+    auto imageCount{capabilities.minImageCount + 1};
     if (capabilities.maxImageCount > 0 &&
         imageCount > capabilities.maxImageCount) {
       imageCount = capabilities.maxImageCount;
@@ -341,7 +341,7 @@ struct ImageView {
     std::vector<VkSurfaceFormatKHR> formats(formatCount);
     vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount,
                                          formats.data());
-    auto surfaceFormat = swapSurfaceFormat(formats);
+    auto surfaceFormat{swapSurfaceFormat(formats)};
     createInfo.format = surfaceFormat.format;
 
     createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
@@ -391,6 +391,11 @@ struct ShaderModule {
     }
   }
 
+  ShaderModule(ShaderModule &&) = delete;
+  auto operator=(ShaderModule &&) -> ShaderModule & = delete;
+  ShaderModule(const ShaderModule &) = delete;
+  auto operator=(const ShaderModule &) -> ShaderModule & = delete;
+
   ~ShaderModule() { vkDestroyShaderModule(device, module, nullptr); }
 
   VkDevice device;
@@ -398,7 +403,7 @@ struct ShaderModule {
 };
 
 struct PipelineLayout {
-  PipelineLayout(VkDevice device) : device{device} {
+  explicit PipelineLayout(VkDevice device) : device{device} {
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutInfo.setLayoutCount = 0;
@@ -408,6 +413,11 @@ struct PipelineLayout {
                                &pipelineLayout) != VK_SUCCESS)
       throw std::runtime_error("failed to create pipeline layout!");
   }
+
+  PipelineLayout(PipelineLayout &&) = delete;
+  auto operator=(PipelineLayout &&) -> PipelineLayout & = delete;
+  PipelineLayout(const PipelineLayout &) = delete;
+  auto operator=(const PipelineLayout &) -> PipelineLayout & = delete;
 
   ~PipelineLayout() {
     vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
@@ -464,6 +474,11 @@ struct RenderPass {
 
   ~RenderPass() { vkDestroyRenderPass(device, renderPass, nullptr); }
 
+  RenderPass(RenderPass &&) = delete;
+  auto operator=(RenderPass &&) -> RenderPass & = delete;
+  RenderPass(const RenderPass &) = delete;
+  auto operator=(const RenderPass &) -> RenderPass & = delete;
+
   VkDevice device;
   VkRenderPass renderPass{};
 };
@@ -476,7 +491,6 @@ struct Pipeline {
       : device{device} {
     VkGraphicsPipelineCreateInfo pipelineInfo{};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    pipelineInfo.stageCount = 2;
 
     VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
     vertShaderStageInfo.sType =
@@ -492,9 +506,10 @@ struct Pipeline {
     fragShaderStageInfo.module = fragmentShaderModule;
     fragShaderStageInfo.pName = "main";
 
-    VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo,
-                                                      fragShaderStageInfo};
-    pipelineInfo.pStages = shaderStages;
+    std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages = {
+        vertShaderStageInfo, fragShaderStageInfo};
+    pipelineInfo.stageCount = shaderStages.size();
+    pipelineInfo.pStages = shaderStages.data();
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
     vertexInputInfo.sType =
@@ -586,6 +601,11 @@ struct Pipeline {
 
   ~Pipeline() { vkDestroyPipeline(device, pipeline, nullptr); }
 
+  Pipeline(Pipeline &&) = delete;
+  auto operator=(Pipeline &&) -> Pipeline & = delete;
+  Pipeline(const Pipeline &) = delete;
+  auto operator=(const Pipeline &) -> Pipeline & = delete;
+
   VkDevice device;
   VkPipeline pipeline{};
 };
@@ -651,6 +671,11 @@ struct CommandPool {
   }
 
   ~CommandPool() { vkDestroyCommandPool(device, commandPool, nullptr); }
+
+  CommandPool(CommandPool &&) = delete;
+  auto operator=(CommandPool &&) -> CommandPool & = delete;
+  CommandPool(const CommandPool &) = delete;
+  auto operator=(const CommandPool &) -> CommandPool & = delete;
 
   VkDevice device;
   VkCommandPool commandPool{};
@@ -778,7 +803,7 @@ static auto readFile(const std::string &filename) -> std::vector<char> {
     throw std::runtime_error("failed to open file!");
   }
 
-  const auto fileSize = file.tellg();
+  const auto fileSize{file.tellg()};
   std::vector<char> buffer(fileSize);
 
   file.seekg(0);
@@ -884,7 +909,7 @@ static void run(const std::string &vertexShaderCodePath,
     throw std::runtime_error("failed to allocate command buffers!");
   }
 
-  for (size_t i = 0; i < commandBuffers.size(); i++) {
+  for (auto i{0}; i < commandBuffers.size(); i++) {
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 
@@ -936,14 +961,14 @@ static void run(const std::string &vertexShaderCodePath,
 
   std::vector<VkFence> imagesInFlight(swapChainImages.size(), VK_NULL_HANDLE);
 
-  size_t currentFrame = 0;
+  auto currentFrame{0};
   while (glfwWindowShouldClose(glfwWindow.window) == 0) {
     glfwPollEvents();
     vkWaitForFences(vulkanDevice.device, 1,
                     &vulkanInFlightFences[currentFrame].fence, VK_TRUE,
                     UINT64_MAX);
 
-    uint32_t imageIndex = 0;
+    uint32_t imageIndex{0};
     vkAcquireNextImageKHR(
         vulkanDevice.device, vulkanSwapchain.swapChain, UINT64_MAX,
         vulkanImageAvailableSemaphores[currentFrame].semaphore, VK_NULL_HANDLE,
