@@ -854,13 +854,32 @@ static auto swapChainImages(VkDevice device, VkSwapchainKHR swapChain)
   return swapChainImages;
 }
 
+static void framebufferResizeCallback(GLFWwindow *window, int width,
+                                      int height) {
+  auto *framebufferResized =
+      static_cast<bool *>(glfwGetWindowUserPointer(window));
+  *framebufferResized = true;
+}
+
+static void prepareForSwapChainRecreation(GLFWwindow *window) {
+  int width{0};
+  int height{0};
+  glfwGetFramebufferSize(window, &width, &height);
+  while (width == 0 || height == 0) {
+    glfwGetFramebufferSize(window, &width, &height);
+    glfwWaitEvents();
+  }
+}
+
 static void run(const std::string &vertexShaderCodePath,
                 const std::string &fragmentShaderCodePath) {
   const glfw_wrappers::Init glfwInitialization;
 
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-  glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
   const glfw_wrappers::Window glfwWindow{windowWidth, windowHeight};
+  auto framebufferResized{false};
+  glfwSetWindowUserPointer(glfwWindow.window, &framebufferResized);
+  glfwSetFramebufferSizeCallback(glfwWindow.window, framebufferResizeCallback);
 
   const vulkan_wrappers::Instance vulkanInstance;
   const vulkan_wrappers::Surface vulkanSurface{vulkanInstance.instance,
@@ -880,170 +899,200 @@ static void run(const std::string &vertexShaderCodePath,
                                                      vulkanSurface.surface),
                    0, &presentQueue);
 
-  const vulkan_wrappers::Swapchain vulkanSwapchain{
-      vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface,
-      glfwWindow.window};
+  auto playing{true};
+  while (playing) {
+    const vulkan_wrappers::Swapchain vulkanSwapchain{
+        vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface,
+        glfwWindow.window};
 
-  const auto swapChainImages{
-      ::swapChainImages(vulkanDevice.device, vulkanSwapchain.swapChain)};
-  std::vector<vulkan_wrappers::ImageView> swapChainImageViews;
-  std::transform(
-      swapChainImages.begin(), swapChainImages.end(),
-      std::back_inserter(swapChainImageViews),
-      [&vulkanDevice, &vulkanPhysicalDevice, &vulkanSurface](VkImage image) {
-        return vulkan_wrappers::ImageView{vulkanDevice.device,
-                                          vulkanPhysicalDevice,
-                                          vulkanSurface.surface, image};
-      });
+    const auto swapChainImages{
+        ::swapChainImages(vulkanDevice.device, vulkanSwapchain.swapChain)};
+    std::vector<vulkan_wrappers::ImageView> swapChainImageViews;
+    std::transform(
+        swapChainImages.begin(), swapChainImages.end(),
+        std::back_inserter(swapChainImageViews),
+        [&vulkanDevice, &vulkanPhysicalDevice, &vulkanSurface](VkImage image) {
+          return vulkan_wrappers::ImageView{vulkanDevice.device,
+                                            vulkanPhysicalDevice,
+                                            vulkanSurface.surface, image};
+        });
 
-  const vulkan_wrappers::RenderPass vulkanRenderPass{
-      vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface};
+    const vulkan_wrappers::RenderPass vulkanRenderPass{
+        vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface};
 
-  const vulkan_wrappers::ShaderModule vertexShaderModule{
-      vulkanDevice.device, readFile(vertexShaderCodePath)};
-  const vulkan_wrappers::ShaderModule fragmentShaderModule{
-      vulkanDevice.device, readFile(fragmentShaderCodePath)};
+    const vulkan_wrappers::ShaderModule vertexShaderModule{
+        vulkanDevice.device, readFile(vertexShaderCodePath)};
+    const vulkan_wrappers::ShaderModule fragmentShaderModule{
+        vulkanDevice.device, readFile(fragmentShaderCodePath)};
 
-  const vulkan_wrappers::PipelineLayout vulkanPipelineLayout{
-      vulkanDevice.device};
+    const vulkan_wrappers::PipelineLayout vulkanPipelineLayout{
+        vulkanDevice.device};
 
-  const vulkan_wrappers::Pipeline vulkanPipeline{
-      vulkanDevice.device,         vulkanPhysicalDevice,
-      vulkanSurface.surface,       vulkanPipelineLayout.pipelineLayout,
-      vulkanRenderPass.renderPass, vertexShaderModule.module,
-      fragmentShaderModule.module, glfwWindow.window};
+    const vulkan_wrappers::Pipeline vulkanPipeline{
+        vulkanDevice.device,         vulkanPhysicalDevice,
+        vulkanSurface.surface,       vulkanPipelineLayout.pipelineLayout,
+        vulkanRenderPass.renderPass, vertexShaderModule.module,
+        fragmentShaderModule.module, glfwWindow.window};
 
-  std::vector<vulkan_wrappers::Framebuffer> vulkanFrameBuffers;
-  std::transform(swapChainImageViews.begin(), swapChainImageViews.end(),
-                 std::back_inserter(vulkanFrameBuffers),
-                 [&vulkanDevice, &vulkanPhysicalDevice, &vulkanSurface,
-                  &vulkanRenderPass,
-                  &glfwWindow](const vulkan_wrappers::ImageView &imageView) {
-                   return vulkan_wrappers::Framebuffer{
-                       vulkanDevice.device,   vulkanPhysicalDevice,
-                       vulkanSurface.surface, vulkanRenderPass.renderPass,
-                       imageView.view,        glfwWindow.window};
-                 });
+    std::vector<vulkan_wrappers::Framebuffer> vulkanFrameBuffers;
+    std::transform(swapChainImageViews.begin(), swapChainImageViews.end(),
+                   std::back_inserter(vulkanFrameBuffers),
+                   [&vulkanDevice, &vulkanPhysicalDevice, &vulkanSurface,
+                    &vulkanRenderPass,
+                    &glfwWindow](const vulkan_wrappers::ImageView &imageView) {
+                     return vulkan_wrappers::Framebuffer{
+                         vulkanDevice.device,   vulkanPhysicalDevice,
+                         vulkanSurface.surface, vulkanRenderPass.renderPass,
+                         imageView.view,        glfwWindow.window};
+                   });
 
-  const vulkan_wrappers::CommandPool vulkanCommandPool{vulkanDevice.device,
-                                                       vulkanPhysicalDevice};
-  const vulkan_wrappers::CommandBuffers vulkanCommandBuffers{
-      vulkanDevice.device, vulkanCommandPool.commandPool,
-      vulkanFrameBuffers.size()};
+    const vulkan_wrappers::CommandPool vulkanCommandPool{vulkanDevice.device,
+                                                         vulkanPhysicalDevice};
+    const vulkan_wrappers::CommandBuffers vulkanCommandBuffers{
+        vulkanDevice.device, vulkanCommandPool.commandPool,
+        vulkanFrameBuffers.size()};
 
-  for (auto i{0}; i < vulkanCommandBuffers.commandBuffers.size(); i++) {
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    if (vkBeginCommandBuffer(vulkanCommandBuffers.commandBuffers[i],
-                             &beginInfo) != VK_SUCCESS)
-      throw std::runtime_error("failed to begin recording command buffer!");
+    for (auto i{0}; i < vulkanCommandBuffers.commandBuffers.size(); i++) {
+      VkCommandBufferBeginInfo beginInfo{};
+      beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+      if (vkBeginCommandBuffer(vulkanCommandBuffers.commandBuffers[i],
+                               &beginInfo) != VK_SUCCESS)
+        throw std::runtime_error("failed to begin recording command buffer!");
 
-    VkRenderPassBeginInfo renderPassInfo{};
-    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    renderPassInfo.renderPass = vulkanRenderPass.renderPass;
-    renderPassInfo.framebuffer = vulkanFrameBuffers.at(i).framebuffer;
-    renderPassInfo.renderArea.offset = {0, 0};
+      VkRenderPassBeginInfo renderPassInfo{};
+      renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+      renderPassInfo.renderPass = vulkanRenderPass.renderPass;
+      renderPassInfo.framebuffer = vulkanFrameBuffers.at(i).framebuffer;
+      renderPassInfo.renderArea.offset = {0, 0};
 
-    renderPassInfo.renderArea.extent = swapExtent(
-        vulkanPhysicalDevice, vulkanSurface.surface, glfwWindow.window);
+      renderPassInfo.renderArea.extent = swapExtent(
+          vulkanPhysicalDevice, vulkanSurface.surface, glfwWindow.window);
 
-    const std::array<VkClearValue, 1> clearColor = {
-        {{{{0.0F, 0.0F, 0.0F, 1.0F}}}}};
-    renderPassInfo.clearValueCount = clearColor.size();
-    renderPassInfo.pClearValues = clearColor.data();
+      const std::array<VkClearValue, 1> clearColor = {
+          {{{{0.0F, 0.0F, 0.0F, 1.0F}}}}};
+      renderPassInfo.clearValueCount = clearColor.size();
+      renderPassInfo.pClearValues = clearColor.data();
 
-    vkCmdBeginRenderPass(vulkanCommandBuffers.commandBuffers[i],
-                         &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+      vkCmdBeginRenderPass(vulkanCommandBuffers.commandBuffers[i],
+                           &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    vkCmdBindPipeline(vulkanCommandBuffers.commandBuffers[i],
-                      VK_PIPELINE_BIND_POINT_GRAPHICS, vulkanPipeline.pipeline);
+      vkCmdBindPipeline(vulkanCommandBuffers.commandBuffers[i],
+                        VK_PIPELINE_BIND_POINT_GRAPHICS,
+                        vulkanPipeline.pipeline);
 
-    vkCmdDraw(vulkanCommandBuffers.commandBuffers[i], 3, 1, 0, 0);
+      vkCmdDraw(vulkanCommandBuffers.commandBuffers[i], 3, 1, 0, 0);
 
-    vkCmdEndRenderPass(vulkanCommandBuffers.commandBuffers[i]);
+      vkCmdEndRenderPass(vulkanCommandBuffers.commandBuffers[i]);
 
-    if (vkEndCommandBuffer(vulkanCommandBuffers.commandBuffers[i]) !=
-        VK_SUCCESS) {
-      throw std::runtime_error("failed to record command buffer!");
+      if (vkEndCommandBuffer(vulkanCommandBuffers.commandBuffers[i]) !=
+          VK_SUCCESS) {
+        throw std::runtime_error("failed to record command buffer!");
+      }
     }
-  }
 
-  const auto maxFramesInFlight{2};
+    const auto maxFramesInFlight{2};
 
-  std::vector<vulkan_wrappers::Semaphore> vulkanImageAvailableSemaphores;
-  std::vector<vulkan_wrappers::Semaphore> vulkanRenderFinishedSemaphores;
-  std::vector<vulkan_wrappers::Fence> vulkanInFlightFences;
-  for (auto i{0}; i < maxFramesInFlight; ++i) {
-    vulkanImageAvailableSemaphores.emplace_back(vulkanDevice.device);
-    vulkanRenderFinishedSemaphores.emplace_back(vulkanDevice.device);
-    vulkanInFlightFences.emplace_back(vulkanDevice.device);
-  }
+    std::vector<vulkan_wrappers::Semaphore> vulkanImageAvailableSemaphores;
+    std::vector<vulkan_wrappers::Semaphore> vulkanRenderFinishedSemaphores;
+    std::vector<vulkan_wrappers::Fence> vulkanInFlightFences;
+    for (auto i{0}; i < maxFramesInFlight; ++i) {
+      vulkanImageAvailableSemaphores.emplace_back(vulkanDevice.device);
+      vulkanRenderFinishedSemaphores.emplace_back(vulkanDevice.device);
+      vulkanInFlightFences.emplace_back(vulkanDevice.device);
+    }
 
-  std::vector<VkFence> imagesInFlight(swapChainImages.size(), VK_NULL_HANDLE);
+    std::vector<VkFence> imagesInFlight(swapChainImages.size(), VK_NULL_HANDLE);
 
-  auto currentFrame{0};
-  while (glfwWindowShouldClose(glfwWindow.window) == 0) {
-    glfwPollEvents();
-    vkWaitForFences(vulkanDevice.device, 1,
-                    &vulkanInFlightFences[currentFrame].fence, VK_TRUE,
-                    UINT64_MAX);
+    auto currentFrame{0};
+    auto recreatingSwapChain{false};
+    while (!recreatingSwapChain) {
+      if (glfwWindowShouldClose(glfwWindow.window) != 0) {
+        playing = false;
+        break;
+      }
 
-    uint32_t imageIndex{0};
-    vkAcquireNextImageKHR(
-        vulkanDevice.device, vulkanSwapchain.swapChain, UINT64_MAX,
-        vulkanImageAvailableSemaphores[currentFrame].semaphore, VK_NULL_HANDLE,
-        &imageIndex);
+      glfwPollEvents();
+      vkWaitForFences(vulkanDevice.device, 1,
+                      &vulkanInFlightFences[currentFrame].fence, VK_TRUE,
+                      UINT64_MAX);
 
-    if (imagesInFlight[imageIndex] != VK_NULL_HANDLE)
-      vkWaitForFences(vulkanDevice.device, 1, &imagesInFlight[imageIndex],
-                      VK_TRUE, UINT64_MAX);
+      uint32_t imageIndex{0};
+      {
+        const auto result{vkAcquireNextImageKHR(
+            vulkanDevice.device, vulkanSwapchain.swapChain, UINT64_MAX,
+            vulkanImageAvailableSemaphores[currentFrame].semaphore,
+            VK_NULL_HANDLE, &imageIndex)};
 
-    imagesInFlight[imageIndex] = vulkanInFlightFences[currentFrame].fence;
+        if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+          prepareForSwapChainRecreation(glfwWindow.window);
+          recreatingSwapChain = true;
+          continue;
+        }
+        if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
+          throw std::runtime_error("failed to acquire swap chain image!");
+      }
 
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+      if (imagesInFlight[imageIndex] != VK_NULL_HANDLE)
+        vkWaitForFences(vulkanDevice.device, 1, &imagesInFlight[imageIndex],
+                        VK_TRUE, UINT64_MAX);
 
-    const std::array<VkSemaphore, 1> waitSemaphores = {
-        vulkanImageAvailableSemaphores[currentFrame].semaphore};
-    const std::array<VkPipelineStageFlags, 1> waitStages = {
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-    submitInfo.waitSemaphoreCount = waitSemaphores.size();
-    submitInfo.pWaitSemaphores = waitSemaphores.data();
-    submitInfo.pWaitDstStageMask = waitStages.data();
+      imagesInFlight[imageIndex] = vulkanInFlightFences[currentFrame].fence;
 
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers =
-        &vulkanCommandBuffers.commandBuffers[imageIndex];
+      VkSubmitInfo submitInfo{};
+      submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-    const std::array<VkSemaphore, 1> signalSemaphores = {
-        vulkanRenderFinishedSemaphores[currentFrame].semaphore};
-    submitInfo.signalSemaphoreCount = signalSemaphores.size();
-    submitInfo.pSignalSemaphores = signalSemaphores.data();
+      const std::array<VkSemaphore, 1> waitSemaphores = {
+          vulkanImageAvailableSemaphores[currentFrame].semaphore};
+      const std::array<VkPipelineStageFlags, 1> waitStages = {
+          VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+      submitInfo.waitSemaphoreCount = waitSemaphores.size();
+      submitInfo.pWaitSemaphores = waitSemaphores.data();
+      submitInfo.pWaitDstStageMask = waitStages.data();
 
-    vkResetFences(vulkanDevice.device, 1,
-                  &vulkanInFlightFences[currentFrame].fence);
+      submitInfo.commandBufferCount = 1;
+      submitInfo.pCommandBuffers =
+          &vulkanCommandBuffers.commandBuffers[imageIndex];
 
-    if (vkQueueSubmit(graphicsQueue, 1, &submitInfo,
-                      vulkanInFlightFences[currentFrame].fence) != VK_SUCCESS)
-      throw std::runtime_error("failed to submit draw command buffer!");
+      const std::array<VkSemaphore, 1> signalSemaphores = {
+          vulkanRenderFinishedSemaphores[currentFrame].semaphore};
+      submitInfo.signalSemaphoreCount = signalSemaphores.size();
+      submitInfo.pSignalSemaphores = signalSemaphores.data();
 
-    VkPresentInfoKHR presentInfo{};
-    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+      vkResetFences(vulkanDevice.device, 1,
+                    &vulkanInFlightFences[currentFrame].fence);
 
-    presentInfo.waitSemaphoreCount = waitSemaphores.size();
-    presentInfo.pWaitSemaphores = signalSemaphores.data();
+      if (vkQueueSubmit(graphicsQueue, 1, &submitInfo,
+                        vulkanInFlightFences[currentFrame].fence) != VK_SUCCESS)
+        throw std::runtime_error("failed to submit draw command buffer!");
 
-    const std::array<VkSwapchainKHR, 1> swapChains = {
-        vulkanSwapchain.swapChain};
-    presentInfo.swapchainCount = swapChains.size();
-    presentInfo.pSwapchains = swapChains.data();
+      VkPresentInfoKHR presentInfo{};
+      presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 
-    presentInfo.pImageIndices = &imageIndex;
+      presentInfo.waitSemaphoreCount = waitSemaphores.size();
+      presentInfo.pWaitSemaphores = signalSemaphores.data();
 
-    vkQueuePresentKHR(presentQueue, &presentInfo);
+      const std::array<VkSwapchainKHR, 1> swapChains = {
+          vulkanSwapchain.swapChain};
+      presentInfo.swapchainCount = swapChains.size();
+      presentInfo.pSwapchains = swapChains.data();
 
-    if (++currentFrame == maxFramesInFlight)
-      currentFrame = 0;
+      presentInfo.pImageIndices = &imageIndex;
+
+      {
+        const auto result{vkQueuePresentKHR(presentQueue, &presentInfo)};
+
+        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR ||
+            framebufferResized) {
+          framebufferResized = false;
+          prepareForSwapChainRecreation(glfwWindow.window);
+          recreatingSwapChain = true;
+        } else if (result != VK_SUCCESS)
+          throw std::runtime_error("failed to present swap chain image!");
+      }
+
+      if (++currentFrame == maxFramesInFlight)
+        currentFrame = 0;
+    }
   }
 
   vkDeviceWaitIdle(vulkanDevice.device);
