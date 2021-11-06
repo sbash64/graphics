@@ -846,7 +846,7 @@ struct Buffer {
 
 struct DeviceMemory {
   DeviceMemory(VkDevice device, VkPhysicalDevice physicalDevice,
-               VkBuffer buffer)
+               VkBuffer buffer, VkMemoryPropertyFlags properties)
       : device{device} {
     VkMemoryRequirements memoryRequirements;
     vkGetBufferMemoryRequirements(device, buffer, &memoryRequirements);
@@ -854,10 +854,8 @@ struct DeviceMemory {
     VkMemoryAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     allocInfo.allocationSize = memoryRequirements.size;
-    allocInfo.memoryTypeIndex =
-        findMemoryType(physicalDevice, memoryRequirements.memoryTypeBits,
-                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                           VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    allocInfo.memoryTypeIndex = findMemoryType(
+        physicalDevice, memoryRequirements.memoryTypeBits, properties);
 
     if (vkAllocateMemory(device, &allocInfo, nullptr, &memory) != VK_SUCCESS)
       throw std::runtime_error("failed to allocate vertex buffer memory!");
@@ -1013,7 +1011,9 @@ static void run(const std::string &vertexShaderCodePath,
   const vulkan_wrappers::Buffer vulkanVertexBuffer{vulkanDevice.device,
                                                    bufferInfo};
   const vulkan_wrappers::DeviceMemory vulkanVertexBufferMemory{
-      vulkanDevice.device, vulkanPhysicalDevice, vulkanVertexBuffer.buffer};
+      vulkanDevice.device, vulkanPhysicalDevice, vulkanVertexBuffer.buffer,
+      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+          VK_MEMORY_PROPERTY_HOST_COHERENT_BIT};
   vkBindBufferMemory(vulkanDevice.device, vulkanVertexBuffer.buffer,
                      vulkanVertexBufferMemory.memory, 0);
 
