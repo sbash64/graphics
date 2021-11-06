@@ -165,31 +165,6 @@ struct Vertex {
   glm::vec3 color;
 };
 
-static auto vertexInputBindingDescription() -> VkVertexInputBindingDescription {
-  VkVertexInputBindingDescription bindingDescription{};
-  bindingDescription.binding = 0;
-  bindingDescription.stride = sizeof(Vertex);
-  bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-  return bindingDescription;
-}
-
-static auto vertexInputAttributeDescriptions()
-    -> std::array<VkVertexInputAttributeDescription, 2> {
-  std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions{};
-
-  attributeDescriptions[0].binding = 0;
-  attributeDescriptions[0].location = 0;
-  attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
-  attributeDescriptions[0].offset = offsetof(Vertex, pos);
-
-  attributeDescriptions[1].binding = 0;
-  attributeDescriptions[1].location = 1;
-  attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-  attributeDescriptions[1].offset = offsetof(Vertex, color);
-
-  return attributeDescriptions;
-}
-
 static auto readFile(const std::string &filename) -> std::vector<char> {
   std::ifstream file{filename, std::ios::ate | std::ios::binary};
 
@@ -587,13 +562,27 @@ struct Pipeline {
     vertexInputInfo.sType =
         VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
 
-    auto bindingDescription = vertexInputBindingDescription();
-    auto attributeDescriptions = vertexInputAttributeDescriptions();
+    std::array<VkVertexInputBindingDescription, 1> bindingDescription{};
+    bindingDescription.at(0).binding = 0;
+    bindingDescription.at(0).stride = sizeof(Vertex);
+    bindingDescription.at(0).inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    vertexInputInfo.vertexBindingDescriptionCount = 1;
+    std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions{};
+
+    attributeDescriptions[0].binding = 0;
+    attributeDescriptions[0].location = 0;
+    attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
+    attributeDescriptions[0].offset = offsetof(Vertex, pos);
+
+    attributeDescriptions[1].binding = 0;
+    attributeDescriptions[1].location = 1;
+    attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+    attributeDescriptions[1].offset = offsetof(Vertex, color);
+
+    vertexInputInfo.vertexBindingDescriptionCount = bindingDescription.size();
     vertexInputInfo.vertexAttributeDescriptionCount =
-        static_cast<uint32_t>(attributeDescriptions.size());
-    vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+        attributeDescriptions.size();
+    vertexInputInfo.pVertexBindingDescriptions = bindingDescription.data();
     vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
 
     VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
