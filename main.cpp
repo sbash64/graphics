@@ -1032,26 +1032,12 @@ static void run(const std::string &vertexShaderCodePath,
   const vulkan_wrappers::CommandPool vulkanCommandPool{vulkanDevice.device,
                                                        vulkanPhysicalDevice};
 
-  const std::vector<Vertex> vertices = {{{0.0F, -0.5F}, {1.0F, 0.0F, 0.0F}},
-                                        {{0.5F, 0.5F}, {0.0F, 1.0F, 0.0F}},
-                                        {{-0.5F, 0.5F}, {0.0F, 0.0F, 1.0F}}};
+  const std::vector<Vertex> vertices = {{{-0.5F, -0.5F}, {1.0F, 0.0F, 0.0F}},
+                                        {{0.5F, -0.5F}, {0.0F, 1.0F, 0.0F}},
+                                        {{0.5F, 0.5F}, {0.0F, 0.0F, 1.0F}},
+                                        {{-0.5F, 0.5F}, {1.0F, 1.0F, 1.0F}}};
 
   VkDeviceSize bufferSize{sizeof(vertices[0]) * vertices.size()};
-
-  const vulkan_wrappers::Buffer vulkanStagingBuffer{
-      vulkanDevice.device, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, bufferSize};
-  const vulkan_wrappers::DeviceMemory vulkanStaginBufferMemory{
-      vulkanDevice.device, vulkanPhysicalDevice, vulkanStagingBuffer.buffer,
-      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-          VK_MEMORY_PROPERTY_HOST_COHERENT_BIT};
-  vkBindBufferMemory(vulkanDevice.device, vulkanStagingBuffer.buffer,
-                     vulkanStaginBufferMemory.memory, 0);
-
-  void *data = nullptr;
-  vkMapMemory(vulkanDevice.device, vulkanStaginBufferMemory.memory, 0,
-              bufferSize, 0, &data);
-  memcpy(data, vertices.data(), bufferSize);
-  vkUnmapMemory(vulkanDevice.device, vulkanStaginBufferMemory.memory);
 
   const vulkan_wrappers::Buffer vulkanVertexBuffer{
       vulkanDevice.device,
@@ -1062,9 +1048,26 @@ static void run(const std::string &vertexShaderCodePath,
       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT};
   vkBindBufferMemory(vulkanDevice.device, vulkanVertexBuffer.buffer,
                      vulkanVertexBufferMemory.memory, 0);
+  {
+    const vulkan_wrappers::Buffer vulkanStagingBuffer{
+        vulkanDevice.device, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, bufferSize};
+    const vulkan_wrappers::DeviceMemory vulkanStaginBufferMemory{
+        vulkanDevice.device, vulkanPhysicalDevice, vulkanStagingBuffer.buffer,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT};
+    vkBindBufferMemory(vulkanDevice.device, vulkanStagingBuffer.buffer,
+                       vulkanStaginBufferMemory.memory, 0);
 
-  copyBuffer(vulkanDevice.device, vulkanCommandPool.commandPool, graphicsQueue,
-             vulkanStagingBuffer.buffer, vulkanVertexBuffer.buffer, bufferSize);
+    void *data = nullptr;
+    vkMapMemory(vulkanDevice.device, vulkanStaginBufferMemory.memory, 0,
+                bufferSize, 0, &data);
+    memcpy(data, vertices.data(), bufferSize);
+    vkUnmapMemory(vulkanDevice.device, vulkanStaginBufferMemory.memory);
+
+    copyBuffer(vulkanDevice.device, vulkanCommandPool.commandPool,
+               graphicsQueue, vulkanStagingBuffer.buffer,
+               vulkanVertexBuffer.buffer, bufferSize);
+  }
 
   const auto maxFramesInFlight{2};
 
