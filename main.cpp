@@ -827,11 +827,12 @@ struct CommandBuffers {
 };
 
 struct Buffer {
-  Buffer(VkDevice device, VkDeviceSize bufferSize) : device{device} {
+  Buffer(VkDevice device, VkBufferUsageFlags usage, VkDeviceSize bufferSize)
+      : device{device} {
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
     bufferInfo.size = bufferSize;
-    bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    bufferInfo.usage = usage;
     bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     if (vkCreateBuffer(device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS)
       throw std::runtime_error("failed to create buffer!");
@@ -1009,8 +1010,8 @@ static void run(const std::string &vertexShaderCodePath,
 
   VkDeviceSize bufferSize{sizeof(vertices[0]) * vertices.size()};
 
-  const vulkan_wrappers::Buffer vulkanVertexBuffer{vulkanDevice.device,
-                                                   bufferSize};
+  const vulkan_wrappers::Buffer vulkanVertexBuffer{
+      vulkanDevice.device, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, bufferSize};
   const vulkan_wrappers::DeviceMemory vulkanVertexBufferMemory{
       vulkanDevice.device, vulkanPhysicalDevice, vulkanVertexBuffer.buffer,
       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
