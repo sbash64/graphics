@@ -530,7 +530,6 @@ struct Pipeline {
            VkRenderPass renderPass, const std::string &vertexShaderCodePath,
            const std::string &fragmentShaderCodePath, GLFWwindow *window)
       : device{device} {
-
     const vulkan_wrappers::ShaderModule vertexShaderModule{
         device, readFile(vertexShaderCodePath)};
     const vulkan_wrappers::ShaderModule fragmentShaderModule{
@@ -1002,9 +1001,9 @@ static void run(const std::string &vertexShaderCodePath,
   const vulkan_wrappers::CommandPool vulkanCommandPool{vulkanDevice.device,
                                                        vulkanPhysicalDevice};
 
-  const std::vector<Vertex> vertices = {{{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-                                        {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-                                        {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}};
+  const std::vector<Vertex> vertices = {{{0.0F, -0.5F}, {1.0F, 0.0F, 0.0F}},
+                                        {{0.5F, 0.5F}, {0.0F, 1.0F, 0.0F}},
+                                        {{-0.5F, 0.5F}, {0.0F, 0.0F, 1.0F}}};
 
   VkBufferCreateInfo bufferInfo{};
   bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
