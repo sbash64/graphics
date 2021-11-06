@@ -976,36 +976,29 @@ static void prepareForSwapChainRecreation(VkDevice device, GLFWwindow *window) {
 static void copyBuffer(VkDevice device, VkCommandPool commandPool,
                        VkQueue graphicsQueue, VkBuffer srcBuffer,
                        VkBuffer dstBuffer, VkDeviceSize size) {
-  VkCommandBufferAllocateInfo allocInfo{};
-  allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-  allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-  allocInfo.commandPool = commandPool;
-  allocInfo.commandBufferCount = 1;
-
-  VkCommandBuffer commandBuffer = nullptr;
-  vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);
+  vulkan_wrappers::CommandBuffers vulkanCommandBuffers{device, commandPool, 1};
 
   VkCommandBufferBeginInfo beginInfo{};
   beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
   beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-  vkBeginCommandBuffer(commandBuffer, &beginInfo);
+  vkBeginCommandBuffer(vulkanCommandBuffers.commandBuffers.at(0), &beginInfo);
 
   VkBufferCopy copyRegion{};
   copyRegion.size = size;
-  vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
+  vkCmdCopyBuffer(vulkanCommandBuffers.commandBuffers.at(0), srcBuffer,
+                  dstBuffer, 1, &copyRegion);
 
-  vkEndCommandBuffer(commandBuffer);
+  vkEndCommandBuffer(vulkanCommandBuffers.commandBuffers.at(0));
 
   VkSubmitInfo submitInfo{};
   submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-  submitInfo.commandBufferCount = 1;
-  submitInfo.pCommandBuffers = &commandBuffer;
+  submitInfo.commandBufferCount =
+      static_cast<uint32_t>(vulkanCommandBuffers.commandBuffers.size());
+  submitInfo.pCommandBuffers = vulkanCommandBuffers.commandBuffers.data();
 
   vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
   vkQueueWaitIdle(graphicsQueue);
-
-  vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
 }
 
 static void run(const std::string &vertexShaderCodePath,
