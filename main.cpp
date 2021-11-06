@@ -145,6 +145,21 @@ static auto swapExtent(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface,
   return extent;
 }
 
+static auto findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter,
+                           VkMemoryPropertyFlags properties) -> uint32_t {
+  VkPhysicalDeviceMemoryProperties memoryProperties;
+  vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memoryProperties);
+  for (uint32_t i = 0; i < memoryProperties.memoryTypeCount; i++) {
+    if (((typeFilter & (1 << i)) != 0U) &&
+        (memoryProperties.memoryTypes[i].propertyFlags & properties) ==
+            properties) {
+      return i;
+    }
+  }
+
+  throw std::runtime_error("failed to find suitable memory type!");
+}
+
 struct Vertex {
   glm::vec2 pos;
   glm::vec3 color;
@@ -173,6 +188,23 @@ static auto vertexInputAttributeDescriptions()
   attributeDescriptions[1].offset = offsetof(Vertex, color);
 
   return attributeDescriptions;
+}
+
+static auto readFile(const std::string &filename) -> std::vector<char> {
+  std::ifstream file{filename, std::ios::ate | std::ios::binary};
+
+  if (!file.is_open())
+    throw std::runtime_error("failed to open file!");
+
+  const auto fileSize{file.tellg()};
+  std::vector<char> buffer(fileSize);
+
+  file.seekg(0);
+  file.read(buffer.data(), fileSize);
+
+  file.close();
+
+  return buffer;
 }
 
 namespace vulkan_wrappers {
@@ -520,9 +552,15 @@ struct RenderPass {
 struct Pipeline {
   Pipeline(VkDevice device, VkPhysicalDevice physicalDevice,
            VkSurfaceKHR surface, VkPipelineLayout pipelineLayout,
-           VkRenderPass renderPass, VkShaderModule vertexShaderModule,
-           VkShaderModule fragmentShaderModule, GLFWwindow *window)
+           VkRenderPass renderPass, const std::string &vertexShaderCodePath,
+           const std::string &fragmentShaderCodePath, GLFWwindow *window)
       : device{device} {
+
+    const vulkan_wrappers::ShaderModule vertexShaderModule{
+        device, readFile(vertexShaderCodePath)};
+    const vulkan_wrappers::ShaderModule fragmentShaderModule{
+        device, readFile(fragmentShaderCodePath)};
+
     VkGraphicsPipelineCreateInfo pipelineInfo{};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
 
@@ -530,14 +568,14 @@ struct Pipeline {
     vertShaderStageInfo.sType =
         VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
-    vertShaderStageInfo.module = vertexShaderModule;
+    vertShaderStageInfo.module = vertexShaderModule.module;
     vertShaderStageInfo.pName = "main";
 
     VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
     fragShaderStageInfo.sType =
         VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    fragShaderStageInfo.module = fragmentShaderModule;
+    fragShaderStageInfo.module = fragmentShaderModule.module;
     fragShaderStageInfo.pName = "main";
 
     const std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages = {
@@ -557,9 +595,6 @@ struct Pipeline {
         static_cast<uint32_t>(attributeDescriptions.size());
     vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
     vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
-
-    vertexInputInfo.vertexBindingDescriptionCount = 0;
-    vertexInputInfo.vertexAttributeDescriptionCount = 0;
 
     VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
     inputAssembly.sType =
@@ -802,6 +837,54 @@ struct CommandBuffers {
   VkCommandPool commandPool;
   std::vector<VkCommandBuffer> commandBuffers;
 };
+
+struct Buffer {
+  Buffer(VkDevice device, const VkBufferCreateInfo &bufferInfo)
+      : device{device} {
+    if (vkCreateBuffer(device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS)
+      throw std::runtime_error("failed to create buffer!");
+  }
+
+  ~Buffer() { vkDestroyBuffer(device, buffer, nullptr); }
+
+  Buffer(Buffer &&) = delete;
+  auto operator=(Buffer &&) -> Buffer & = delete;
+  Buffer(const Buffer &) = delete;
+  auto operator=(const Buffer &) -> Buffer & = delete;
+
+  VkDevice device;
+  VkBuffer buffer{};
+};
+
+struct DeviceMemory {
+  DeviceMemory(VkDevice device, VkPhysicalDevice physicalDevice,
+               VkBuffer buffer)
+      : device{device} {
+    VkMemoryRequirements memoryRequirements;
+    vkGetBufferMemoryRequirements(device, buffer, &memoryRequirements);
+
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memoryRequirements.size;
+    allocInfo.memoryTypeIndex =
+        findMemoryType(physicalDevice, memoryRequirements.memoryTypeBits,
+                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                           VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+    if (vkAllocateMemory(device, &allocInfo, nullptr, &memory) != VK_SUCCESS)
+      throw std::runtime_error("failed to allocate vertex buffer memory!");
+  }
+
+  ~DeviceMemory() { vkFreeMemory(device, memory, nullptr); }
+
+  DeviceMemory(DeviceMemory &&) = delete;
+  auto operator=(DeviceMemory &&) -> DeviceMemory & = delete;
+  DeviceMemory(const DeviceMemory &) = delete;
+  auto operator=(const DeviceMemory &) -> DeviceMemory & = delete;
+
+  VkDevice device;
+  VkDeviceMemory memory{};
+};
 } // namespace vulkan_wrappers
 
 constexpr auto windowWidth{800};
@@ -861,23 +944,6 @@ static auto suitableDevice(const std::vector<VkPhysicalDevice> &devices,
   throw std::runtime_error("failed to find a suitable GPU!");
 }
 
-static auto readFile(const std::string &filename) -> std::vector<char> {
-  std::ifstream file{filename, std::ios::ate | std::ios::binary};
-
-  if (!file.is_open())
-    throw std::runtime_error("failed to open file!");
-
-  const auto fileSize{file.tellg()};
-  std::vector<char> buffer(fileSize);
-
-  file.seekg(0);
-  file.read(buffer.data(), fileSize);
-
-  file.close();
-
-  return buffer;
-}
-
 static auto vulkanDevices(VkInstance instance)
     -> std::vector<VkPhysicalDevice> {
   uint32_t deviceCount{0};
@@ -904,7 +970,7 @@ static void framebufferResizeCallback(GLFWwindow *window, int width,
   *framebufferResized = true;
 }
 
-static void prepareForSwapChainRecreation(GLFWwindow *window) {
+static void prepareForSwapChainRecreation(VkDevice device, GLFWwindow *window) {
   int width{0};
   int height{0};
   glfwGetFramebufferSize(window, &width, &height);
@@ -912,6 +978,8 @@ static void prepareForSwapChainRecreation(GLFWwindow *window) {
     glfwGetFramebufferSize(window, &width, &height);
     glfwWaitEvents();
   }
+
+  vkDeviceWaitIdle(device);
 }
 
 static void run(const std::string &vertexShaderCodePath,
@@ -942,6 +1010,45 @@ static void run(const std::string &vertexShaderCodePath,
                                                      vulkanSurface.surface),
                    0, &presentQueue);
 
+  const vulkan_wrappers::CommandPool vulkanCommandPool{vulkanDevice.device,
+                                                       vulkanPhysicalDevice};
+
+  const std::vector<Vertex> vertices = {{{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+                                        {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
+                                        {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}};
+
+  VkBufferCreateInfo bufferInfo{};
+  bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+  bufferInfo.size = sizeof(vertices[0]) * vertices.size();
+  bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+  bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+  const vulkan_wrappers::Buffer vulkanVertexBuffer{vulkanDevice.device,
+                                                   bufferInfo};
+  const vulkan_wrappers::DeviceMemory vulkanVertexBufferMemory{
+      vulkanDevice.device, vulkanPhysicalDevice, vulkanVertexBuffer.buffer};
+  vkBindBufferMemory(vulkanDevice.device, vulkanVertexBuffer.buffer,
+                     vulkanVertexBufferMemory.memory, 0);
+
+  void *data = nullptr;
+  vkMapMemory(vulkanDevice.device, vulkanVertexBufferMemory.memory, 0,
+              bufferInfo.size, 0, &data);
+  memcpy(data, vertices.data(), bufferInfo.size);
+  vkUnmapMemory(vulkanDevice.device, vulkanVertexBufferMemory.memory);
+
+  const auto maxFramesInFlight{2};
+
+  std::vector<vulkan_wrappers::Semaphore> vulkanImageAvailableSemaphores;
+  std::vector<vulkan_wrappers::Semaphore> vulkanRenderFinishedSemaphores;
+  std::vector<vulkan_wrappers::Fence> vulkanInFlightFences;
+  for (auto i{0}; i < maxFramesInFlight; ++i) {
+    vulkanImageAvailableSemaphores.emplace_back(vulkanDevice.device);
+    vulkanRenderFinishedSemaphores.emplace_back(vulkanDevice.device);
+    vulkanInFlightFences.emplace_back(vulkanDevice.device);
+  }
+
+  std::vector<VkFence> imagesInFlight;
+
+  auto currentFrame{0};
   auto playing{true};
   while (playing) {
     const vulkan_wrappers::Swapchain vulkanSwapchain{
@@ -954,7 +1061,7 @@ static void run(const std::string &vertexShaderCodePath,
     std::transform(
         swapChainImages.begin(), swapChainImages.end(),
         std::back_inserter(swapChainImageViews),
-        [&vulkanDevice, &vulkanPhysicalDevice, &vulkanSurface](VkImage image) {
+        [&vulkanDevice, vulkanPhysicalDevice, &vulkanSurface](VkImage image) {
           return vulkan_wrappers::ImageView{vulkanDevice.device,
                                             vulkanPhysicalDevice,
                                             vulkanSurface.surface, image};
@@ -963,24 +1070,19 @@ static void run(const std::string &vertexShaderCodePath,
     const vulkan_wrappers::RenderPass vulkanRenderPass{
         vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface};
 
-    const vulkan_wrappers::ShaderModule vertexShaderModule{
-        vulkanDevice.device, readFile(vertexShaderCodePath)};
-    const vulkan_wrappers::ShaderModule fragmentShaderModule{
-        vulkanDevice.device, readFile(fragmentShaderCodePath)};
-
     const vulkan_wrappers::PipelineLayout vulkanPipelineLayout{
         vulkanDevice.device};
 
     const vulkan_wrappers::Pipeline vulkanPipeline{
         vulkanDevice.device,         vulkanPhysicalDevice,
         vulkanSurface.surface,       vulkanPipelineLayout.pipelineLayout,
-        vulkanRenderPass.renderPass, vertexShaderModule.module,
-        fragmentShaderModule.module, glfwWindow.window};
+        vulkanRenderPass.renderPass, vertexShaderCodePath,
+        fragmentShaderCodePath,      glfwWindow.window};
 
     std::vector<vulkan_wrappers::Framebuffer> vulkanFrameBuffers;
     std::transform(swapChainImageViews.begin(), swapChainImageViews.end(),
                    std::back_inserter(vulkanFrameBuffers),
-                   [&vulkanDevice, &vulkanPhysicalDevice, &vulkanSurface,
+                   [&vulkanDevice, vulkanPhysicalDevice, &vulkanSurface,
                     &vulkanRenderPass,
                     &glfwWindow](const vulkan_wrappers::ImageView &imageView) {
                      return vulkan_wrappers::Framebuffer{
@@ -988,9 +1090,6 @@ static void run(const std::string &vertexShaderCodePath,
                          vulkanSurface.surface, vulkanRenderPass.renderPass,
                          imageView.view,        glfwWindow.window};
                    });
-
-    const vulkan_wrappers::CommandPool vulkanCommandPool{vulkanDevice.device,
-                                                         vulkanPhysicalDevice};
     const vulkan_wrappers::CommandBuffers vulkanCommandBuffers{
         vulkanDevice.device, vulkanCommandPool.commandPool,
         vulkanFrameBuffers.size()};
@@ -1023,30 +1122,22 @@ static void run(const std::string &vertexShaderCodePath,
                         VK_PIPELINE_BIND_POINT_GRAPHICS,
                         vulkanPipeline.pipeline);
 
-      vkCmdDraw(vulkanCommandBuffers.commandBuffers[i], 3, 1, 0, 0);
+      std::array<VkBuffer, 1> vertexBuffers = {vulkanVertexBuffer.buffer};
+      std::array<VkDeviceSize, 1> offsets = {0};
+      vkCmdBindVertexBuffers(vulkanCommandBuffers.commandBuffers[i], 0, 1,
+                             vertexBuffers.data(), offsets.data());
+
+      vkCmdDraw(vulkanCommandBuffers.commandBuffers[i],
+                static_cast<uint32_t>(vertices.size()), 1, 0, 0);
 
       vkCmdEndRenderPass(vulkanCommandBuffers.commandBuffers[i]);
 
       if (vkEndCommandBuffer(vulkanCommandBuffers.commandBuffers[i]) !=
-          VK_SUCCESS) {
+          VK_SUCCESS)
         throw std::runtime_error("failed to record command buffer!");
-      }
     }
 
-    const auto maxFramesInFlight{2};
-
-    std::vector<vulkan_wrappers::Semaphore> vulkanImageAvailableSemaphores;
-    std::vector<vulkan_wrappers::Semaphore> vulkanRenderFinishedSemaphores;
-    std::vector<vulkan_wrappers::Fence> vulkanInFlightFences;
-    for (auto i{0}; i < maxFramesInFlight; ++i) {
-      vulkanImageAvailableSemaphores.emplace_back(vulkanDevice.device);
-      vulkanRenderFinishedSemaphores.emplace_back(vulkanDevice.device);
-      vulkanInFlightFences.emplace_back(vulkanDevice.device);
-    }
-
-    std::vector<VkFence> imagesInFlight(swapChainImages.size(), VK_NULL_HANDLE);
-
-    auto currentFrame{0};
+    imagesInFlight.resize(swapChainImages.size(), VK_NULL_HANDLE);
     auto recreatingSwapChain{false};
     while (!recreatingSwapChain) {
       if (glfwWindowShouldClose(glfwWindow.window) != 0) {
@@ -1067,7 +1158,7 @@ static void run(const std::string &vertexShaderCodePath,
             VK_NULL_HANDLE, &imageIndex)};
 
         if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-          prepareForSwapChainRecreation(glfwWindow.window);
+          prepareForSwapChainRecreation(vulkanDevice.device, glfwWindow.window);
           recreatingSwapChain = true;
           continue;
         }
@@ -1127,7 +1218,7 @@ static void run(const std::string &vertexShaderCodePath,
         if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR ||
             framebufferResized) {
           framebufferResized = false;
-          prepareForSwapChainRecreation(glfwWindow.window);
+          prepareForSwapChainRecreation(vulkanDevice.device, glfwWindow.window);
           recreatingSwapChain = true;
         } else if (result != VK_SUCCESS)
           throw std::runtime_error("failed to present swap chain image!");
