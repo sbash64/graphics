@@ -150,6 +150,14 @@ static void copyBuffer(VkDevice device, VkCommandPool commandPool,
   vkQueueWaitIdle(graphicsQueue);
 }
 
+static void mapMemory(VkDevice device, VkDeviceMemory memory,
+                      const void *source, size_t size) {
+  void *data = nullptr;
+  vkMapMemory(device, memory, 0, size, 0, &data);
+  memcpy(data, source, size);
+  vkUnmapMemory(device, memory);
+}
+
 static void run(const std::string &vertexShaderCodePath,
                 const std::string &fragmentShaderCodePath) {
   const glfw_wrappers::Init glfwInitialization;
@@ -210,11 +218,8 @@ static void run(const std::string &vertexShaderCodePath,
     vkBindBufferMemory(vulkanDevice.device, vulkanStagingBuffer.buffer,
                        vulkanStagingBufferMemory.memory, 0);
 
-    void *data = nullptr;
-    vkMapMemory(vulkanDevice.device, vulkanStagingBufferMemory.memory, 0,
-                vertexBufferSize, 0, &data);
-    memcpy(data, vertices.data(), vertexBufferSize);
-    vkUnmapMemory(vulkanDevice.device, vulkanStagingBufferMemory.memory);
+    mapMemory(vulkanDevice.device, vulkanStagingBufferMemory.memory,
+              vertices.data(), vertexBufferSize);
 
     copyBuffer(vulkanDevice.device, vulkanCommandPool.commandPool,
                graphicsQueue, vulkanStagingBuffer.buffer,
@@ -354,17 +359,18 @@ static void run(const std::string &vertexShaderCodePath,
         bufferInfo.offset = 0;
         bufferInfo.range = sizeof(UniformBufferObject);
 
-        VkWriteDescriptorSet descriptorWrite{};
-        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrite.dstSet = descriptorSets[i];
-        descriptorWrite.dstBinding = 0;
-        descriptorWrite.dstArrayElement = 0;
-        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        descriptorWrite.descriptorCount = 1;
-        descriptorWrite.pBufferInfo = &bufferInfo;
+        std::array<VkWriteDescriptorSet, 1> descriptorWrite{};
+        descriptorWrite.at(0).sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrite.at(0).dstSet = descriptorSets[i];
+        descriptorWrite.at(0).dstBinding = 0;
+        descriptorWrite.at(0).dstArrayElement = 0;
+        descriptorWrite.at(0).descriptorType =
+            VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptorWrite.at(0).descriptorCount = 1;
+        descriptorWrite.at(0).pBufferInfo = &bufferInfo;
 
-        vkUpdateDescriptorSets(vulkanDevice.device, 1, &descriptorWrite, 0,
-                               nullptr);
+        vkUpdateDescriptorSets(vulkanDevice.device, descriptorWrite.size(),
+                               descriptorWrite.data(), 0, nullptr);
       }
     }
 
