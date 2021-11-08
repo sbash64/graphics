@@ -1,12 +1,13 @@
+#ifndef SBASH64_GRAPHICS_GLFW_WRAPPERS_HPP_
+#define SBASH64_GRAPHICS_GLFW_WRAPPERS_HPP_
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
 namespace glfw_wrappers {
 struct Init {
-  Init() { glfwInit(); }
-
-  ~Init() { glfwTerminate(); }
+  Init();
+  ~Init();
 
   Init(const Init &) = delete;
   auto operator=(const Init &) -> Init & = delete;
@@ -15,10 +16,8 @@ struct Init {
 };
 
 struct Window {
-  Window(int width, int height)
-      : window{glfwCreateWindow(width, height, "Vulkan", nullptr, nullptr)} {}
-
-  ~Window() { glfwDestroyWindow(window); }
+  Window(int width, int height);
+  ~Window();
 
   Window(const Window &) = delete;
   auto operator=(const Window &) -> Window & = delete;
@@ -28,3 +27,5 @@ struct Window {
   GLFWwindow *window;
 };
 } // namespace glfw_wrappers
+
+#endif
