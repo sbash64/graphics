@@ -1,7 +1,6 @@
 #include <sbash64/graphics/glfw-wrappers.hpp>
 #include <sbash64/graphics/vulkan-wrappers.hpp>
 
-#define GLM_FORCE_RADIANS
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -150,8 +149,8 @@ static void copyBuffer(VkDevice device, VkCommandPool commandPool,
   vkQueueWaitIdle(graphicsQueue);
 }
 
-static void mapMemory(VkDevice device, VkDeviceMemory memory,
-                      const void *source, size_t size) {
+static void copy(VkDevice device, VkDeviceMemory memory, const void *source,
+                 size_t size) {
   void *data = nullptr;
   vkMapMemory(device, memory, 0, size, 0, &data);
   memcpy(data, source, size);
@@ -218,8 +217,8 @@ static void run(const std::string &vertexShaderCodePath,
     vkBindBufferMemory(vulkanDevice.device, vulkanStagingBuffer.buffer,
                        vulkanStagingBufferMemory.memory, 0);
 
-    mapMemory(vulkanDevice.device, vulkanStagingBufferMemory.memory,
-              vertices.data(), vertexBufferSize);
+    copy(vulkanDevice.device, vulkanStagingBufferMemory.memory, vertices.data(),
+         vertexBufferSize);
 
     copyBuffer(vulkanDevice.device, vulkanCommandPool.commandPool,
                graphicsQueue, vulkanStagingBuffer.buffer,
@@ -247,8 +246,8 @@ static void run(const std::string &vertexShaderCodePath,
     vkBindBufferMemory(vulkanDevice.device, vulkanStagingBuffer.buffer,
                        vulkanStagingBufferMemory.memory, 0);
 
-    mapMemory(vulkanDevice.device, vulkanStagingBufferMemory.memory,
-              indices.data(), indexBufferSize);
+    copy(vulkanDevice.device, vulkanStagingBufferMemory.memory, indices.data(),
+         indexBufferSize);
 
     copyBuffer(vulkanDevice.device, vulkanCommandPool.commandPool,
                graphicsQueue, vulkanStagingBuffer.buffer,
@@ -477,9 +476,8 @@ static void run(const std::string &vertexShaderCodePath,
             0.1f, 10.0f);
         ubo.proj[1][1] *= -1;
 
-        mapMemory(vulkanDevice.device,
-                  vulkanUniformBuffersMemory[imageIndex].memory, &ubo,
-                  sizeof(ubo));
+        copy(vulkanDevice.device, vulkanUniformBuffersMemory[imageIndex].memory,
+             &ubo, sizeof(ubo));
       }
 
       if (imagesInFlight[imageIndex] != VK_NULL_HANDLE)
