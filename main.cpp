@@ -1,8 +1,6 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
-#include <vulkan/vulkan_core.h>
-
 #define GLM_FORCE_RADIANS
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -196,9 +194,9 @@ struct Instance {
   Instance() {
     VkApplicationInfo applicationInfo{};
     applicationInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-    applicationInfo.pApplicationName = "Hello Triangle";
+    applicationInfo.pApplicationName = "Nope";
     applicationInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-    applicationInfo.pEngineName = "No Engine";
+    applicationInfo.pEngineName = "N/A";
     applicationInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
     applicationInfo.apiVersion = VK_API_VERSION_1_0;
 
@@ -459,7 +457,7 @@ struct PipelineLayout {
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 
-    std::array<VkDescriptorSetLayout, 1> descriptorSetLayouts{
+    const std::array<VkDescriptorSetLayout, 1> descriptorSetLayouts{
         descriptorSetLayout};
     pipelineLayoutInfo.setLayoutCount = descriptorSetLayouts.size();
     pipelineLayoutInfo.pSetLayouts = descriptorSetLayouts.data();
@@ -548,8 +546,8 @@ struct Pipeline {
     const vulkan_wrappers::ShaderModule fragmentShaderModule{
         device, readFile(fragmentShaderCodePath)};
 
-    VkGraphicsPipelineCreateInfo pipelineInfo{};
-    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    std::array<VkGraphicsPipelineCreateInfo, 1> pipelineInfo{};
+    pipelineInfo.at(0).sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
 
     VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
     vertShaderStageInfo.sType =
@@ -567,8 +565,8 @@ struct Pipeline {
 
     const std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages = {
         vertShaderStageInfo, fragShaderStageInfo};
-    pipelineInfo.stageCount = shaderStages.size();
-    pipelineInfo.pStages = shaderStages.data();
+    pipelineInfo.at(0).stageCount = shaderStages.size();
+    pipelineInfo.at(0).pStages = shaderStages.data();
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
     vertexInputInfo.sType =
@@ -603,8 +601,8 @@ struct Pipeline {
     inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     inputAssembly.primitiveRestartEnable = VK_FALSE;
 
-    pipelineInfo.pVertexInputState = &vertexInputInfo;
-    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    pipelineInfo.at(0).pVertexInputState = &vertexInputInfo;
+    pipelineInfo.at(0).pInputAssemblyState = &inputAssembly;
 
     std::array<VkViewport, 1> viewport{};
     viewport.at(0).x = 0.0F;
@@ -627,7 +625,7 @@ struct Pipeline {
     viewportState.pViewports = viewport.data();
     viewportState.scissorCount = scissor.size();
     viewportState.pScissors = scissor.data();
-    pipelineInfo.pViewportState = &viewportState;
+    pipelineInfo.at(0).pViewportState = &viewportState;
 
     VkPipelineRasterizationStateCreateInfo rasterizer{};
     rasterizer.sType =
@@ -639,14 +637,14 @@ struct Pipeline {
     rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
     rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rasterizer.depthBiasEnable = VK_FALSE;
-    pipelineInfo.pRasterizationState = &rasterizer;
+    pipelineInfo.at(0).pRasterizationState = &rasterizer;
 
     VkPipelineMultisampleStateCreateInfo multisampling{};
     multisampling.sType =
         VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
     multisampling.sampleShadingEnable = VK_FALSE;
     multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-    pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.at(0).pMultisampleState = &multisampling;
 
     std::array<VkPipelineColorBlendAttachmentState, 1> colorBlendAttachment{};
     colorBlendAttachment.at(0).colorWriteMask =
@@ -665,15 +663,16 @@ struct Pipeline {
     colorBlending.blendConstants[1] = 0.0F;
     colorBlending.blendConstants[2] = 0.0F;
     colorBlending.blendConstants[3] = 0.0F;
-    pipelineInfo.pColorBlendState = &colorBlending;
+    pipelineInfo.at(0).pColorBlendState = &colorBlending;
 
-    pipelineInfo.layout = pipelineLayout;
-    pipelineInfo.renderPass = renderPass;
-    pipelineInfo.subpass = 0;
-    pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
+    pipelineInfo.at(0).layout = pipelineLayout;
+    pipelineInfo.at(0).renderPass = renderPass;
+    pipelineInfo.at(0).subpass = 0;
+    pipelineInfo.at(0).basePipelineHandle = VK_NULL_HANDLE;
 
-    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo,
-                                  nullptr, &pipeline) != VK_SUCCESS)
+    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, pipelineInfo.size(),
+                                  pipelineInfo.data(), nullptr,
+                                  &pipeline) != VK_SUCCESS)
       throw std::runtime_error("failed to create graphics pipeline!");
   }
 
@@ -938,20 +937,20 @@ struct DescriptorSetLayout {
 struct DescriptorPool {
   DescriptorPool(VkDevice device, const std::vector<VkImage> &swapChainImages)
       : device{device} {
-    VkDescriptorPoolSize poolSize{};
-    poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSize.descriptorCount = static_cast<uint32_t>(swapChainImages.size());
+    std::array<VkDescriptorPoolSize, 1> poolSize{};
+    poolSize.at(0).type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    poolSize.at(0).descriptorCount =
+        static_cast<uint32_t>(swapChainImages.size());
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.poolSizeCount = 1;
-    poolInfo.pPoolSizes = &poolSize;
+    poolInfo.poolSizeCount = poolSize.size();
+    poolInfo.pPoolSizes = poolSize.data();
     poolInfo.maxSets = static_cast<uint32_t>(swapChainImages.size());
 
     if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) !=
-        VK_SUCCESS) {
+        VK_SUCCESS)
       throw std::runtime_error("failed to create descriptor pool!");
-    }
   }
 
   ~DescriptorPool() {
@@ -1064,8 +1063,8 @@ static void prepareForSwapChainRecreation(VkDevice device, GLFWwindow *window) {
 }
 
 static void copyBuffer(VkDevice device, VkCommandPool commandPool,
-                       VkQueue graphicsQueue, VkBuffer srcBuffer,
-                       VkBuffer dstBuffer, VkDeviceSize size) {
+                       VkQueue graphicsQueue, VkBuffer sourceBuffer,
+                       VkBuffer destinationBuffer, VkDeviceSize size) {
   vulkan_wrappers::CommandBuffers vulkanCommandBuffers{device, commandPool, 1};
 
   VkCommandBufferBeginInfo beginInfo{};
@@ -1074,20 +1073,21 @@ static void copyBuffer(VkDevice device, VkCommandPool commandPool,
 
   vkBeginCommandBuffer(vulkanCommandBuffers.commandBuffers.at(0), &beginInfo);
 
-  VkBufferCopy copyRegion{};
-  copyRegion.size = size;
-  vkCmdCopyBuffer(vulkanCommandBuffers.commandBuffers.at(0), srcBuffer,
-                  dstBuffer, 1, &copyRegion);
+  std::array<VkBufferCopy, 1> copyRegion{};
+  copyRegion.at(0).size = size;
+  vkCmdCopyBuffer(vulkanCommandBuffers.commandBuffers.at(0), sourceBuffer,
+                  destinationBuffer, copyRegion.size(), copyRegion.data());
 
   vkEndCommandBuffer(vulkanCommandBuffers.commandBuffers.at(0));
 
-  VkSubmitInfo submitInfo{};
-  submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-  submitInfo.commandBufferCount =
+  std::array<VkSubmitInfo, 1> submitInfo{};
+  submitInfo.at(0).sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+  submitInfo.at(0).commandBufferCount =
       static_cast<uint32_t>(vulkanCommandBuffers.commandBuffers.size());
-  submitInfo.pCommandBuffers = vulkanCommandBuffers.commandBuffers.data();
+  submitInfo.at(0).pCommandBuffers = vulkanCommandBuffers.commandBuffers.data();
 
-  vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+  vkQueueSubmit(graphicsQueue, submitInfo.size(), submitInfo.data(),
+                VK_NULL_HANDLE);
   vkQueueWaitIdle(graphicsQueue);
 }
 
