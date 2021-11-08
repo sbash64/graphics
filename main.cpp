@@ -247,11 +247,8 @@ static void run(const std::string &vertexShaderCodePath,
     vkBindBufferMemory(vulkanDevice.device, vulkanStagingBuffer.buffer,
                        vulkanStagingBufferMemory.memory, 0);
 
-    void *data = nullptr;
-    vkMapMemory(vulkanDevice.device, vulkanStagingBufferMemory.memory, 0,
-                indexBufferSize, 0, &data);
-    memcpy(data, indices.data(), indexBufferSize);
-    vkUnmapMemory(vulkanDevice.device, vulkanStagingBufferMemory.memory);
+    mapMemory(vulkanDevice.device, vulkanStagingBufferMemory.memory,
+              indices.data(), indexBufferSize);
 
     copyBuffer(vulkanDevice.device, vulkanCommandPool.commandPool,
                graphicsQueue, vulkanStagingBuffer.buffer,
@@ -480,13 +477,9 @@ static void run(const std::string &vertexShaderCodePath,
             0.1f, 10.0f);
         ubo.proj[1][1] *= -1;
 
-        void *data = nullptr;
-        vkMapMemory(vulkanDevice.device,
-                    vulkanUniformBuffersMemory[imageIndex].memory, 0,
-                    sizeof(ubo), 0, &data);
-        memcpy(data, &ubo, sizeof(ubo));
-        vkUnmapMemory(vulkanDevice.device,
-                      vulkanUniformBuffersMemory[imageIndex].memory);
+        mapMemory(vulkanDevice.device,
+                  vulkanUniformBuffersMemory[imageIndex].memory, &ubo,
+                  sizeof(ubo));
       }
 
       if (imagesInFlight[imageIndex] != VK_NULL_HANDLE)
