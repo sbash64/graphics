@@ -7,12 +7,10 @@
 #include <glm/glm.hpp>
 
 #include <array>
-#include <fstream>
 #include <functional>
-#include <set>
-#include <stdexcept>
 #include <vector>
 
+namespace sbash64::graphics {
 struct Vertex {
   glm::vec2 pos;
   glm::vec3 color;
@@ -21,83 +19,21 @@ struct Vertex {
 constexpr std::array<const char *, 1> deviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
-static auto supportsGraphics(const VkQueueFamilyProperties &properties)
-    -> bool {
-  return (properties.queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0U;
-}
-
-static auto vulkanCountFromPhysicalDevice(
+auto supportsGraphics(const VkQueueFamilyProperties &properties) -> bool;
+auto vulkanCountFromPhysicalDevice(
     VkPhysicalDevice device,
-    const std::function<void(VkPhysicalDevice, uint32_t *)> &f) -> uint32_t {
-  uint32_t count{0};
-  f(device, &count);
-  return count;
-}
-
-static auto queueFamilyPropertiesCount(VkPhysicalDevice device) -> uint32_t {
-  return vulkanCountFromPhysicalDevice(
-      device, [](VkPhysicalDevice device_, uint32_t *count) {
-        vkGetPhysicalDeviceQueueFamilyProperties(device_, count, nullptr);
-      });
-}
-
-static auto queueFamilyProperties(VkPhysicalDevice device, uint32_t count)
-    -> std::vector<VkQueueFamilyProperties> {
-  std::vector<VkQueueFamilyProperties> properties(count);
-  vkGetPhysicalDeviceQueueFamilyProperties(device, &count, properties.data());
-  return properties;
-}
-
-static auto graphicsSupportingQueueFamilyIndex(
+    const std::function<void(VkPhysicalDevice, uint32_t *)> &f) -> uint32_t;
+auto queueFamilyPropertiesCount(VkPhysicalDevice device) -> uint32_t;
+auto queueFamilyProperties(VkPhysicalDevice device, uint32_t count)
+    -> std::vector<VkQueueFamilyProperties>;
+auto graphicsSupportingQueueFamilyIndex(
     const std::vector<VkQueueFamilyProperties> &queueFamilyProperties)
-    -> uint32_t {
-  return static_cast<uint32_t>(std::distance(
-      queueFamilyProperties.begin(),
-      std::find_if(queueFamilyProperties.begin(), queueFamilyProperties.end(),
-                   supportsGraphics)));
-}
-
-static auto graphicsSupportingQueueFamilyIndex(VkPhysicalDevice device)
-    -> uint32_t {
-  return graphicsSupportingQueueFamilyIndex(
-      queueFamilyProperties(device, queueFamilyPropertiesCount(device)));
-}
-
-static auto presentSupportingQueueFamilyIndex(VkPhysicalDevice device,
-                                              VkSurfaceKHR surface)
-    -> uint32_t {
-  uint32_t index{0U};
-  while (index < queueFamilyPropertiesCount(device)) {
-    VkBool32 support{0U};
-    vkGetPhysicalDeviceSurfaceSupportKHR(device, index, surface, &support);
-    if (support != 0U)
-      return index;
-    ++index;
-  }
-  throw std::runtime_error{"no present support index found"};
-}
-
-static auto swapExtent(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface,
-                       GLFWwindow *window) -> VkExtent2D {
-  VkSurfaceCapabilitiesKHR capabilities;
-  vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface,
-                                            &capabilities);
-
-  if (capabilities.currentExtent.width != UINT32_MAX)
-    return capabilities.currentExtent;
-
-  int width{0};
-  int height{0};
-  glfwGetFramebufferSize(window, &width, &height);
-
-  VkExtent2D extent{static_cast<uint32_t>(width),
-                    static_cast<uint32_t>(height)};
-  extent.width = std::clamp(extent.width, capabilities.minImageExtent.width,
-                            capabilities.maxImageExtent.width);
-  extent.height = std::clamp(extent.height, capabilities.minImageExtent.height,
-                             capabilities.maxImageExtent.height);
-  return extent;
-}
+    -> uint32_t;
+auto graphicsSupportingQueueFamilyIndex(VkPhysicalDevice device) -> uint32_t;
+auto presentSupportingQueueFamilyIndex(VkPhysicalDevice device,
+                                       VkSurfaceKHR surface) -> uint32_t;
+auto swapExtent(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface,
+                GLFWwindow *window) -> VkExtent2D;
 
 namespace vulkan_wrappers {
 struct Instance {
@@ -342,5 +278,6 @@ struct DescriptorPool {
   VkDescriptorPool descriptorPool{};
 };
 } // namespace vulkan_wrappers
+} // namespace sbash64::graphics
 
 #endif

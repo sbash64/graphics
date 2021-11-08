@@ -11,16 +11,15 @@
 #include <cstddef>
 #include <cstdlib>
 #include <exception>
-#include <fstream>
 #include <functional>
 #include <iostream>
 #include <iterator>
-#include <set>
 #include <span>
 #include <stdexcept>
 #include <string_view>
 #include <vector>
 
+namespace sbash64::graphics {
 struct UniformBufferObject {
   alignas(16) glm::mat4 model;
   alignas(16) glm::mat4 view;
@@ -277,8 +276,8 @@ static void run(const std::string &vertexShaderCodePath,
         vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface,
         glfwWindow.window};
 
-    const auto swapChainImages{
-        ::swapChainImages(vulkanDevice.device, vulkanSwapchain.swapChain)};
+    const auto swapChainImages{graphics::swapChainImages(
+        vulkanDevice.device, vulkanSwapchain.swapChain)};
     std::vector<vulkan_wrappers::ImageView> swapChainImageViews;
     std::transform(
         swapChainImages.begin(), swapChainImages.end(),
@@ -549,6 +548,7 @@ static void run(const std::string &vertexShaderCodePath,
 
   vkDeviceWaitIdle(vulkanDevice.device);
 }
+} // namespace sbash64::graphics
 
 int main(int argc, char *argv[]) {
   const std::span<char *> arguments{
@@ -556,7 +556,7 @@ int main(int argc, char *argv[]) {
   if (arguments.size() < 3)
     return EXIT_FAILURE;
   try {
-    run(arguments[1], arguments[2]);
+    sbash64::graphics::run(arguments[1], arguments[2]);
   } catch (const std::exception &e) {
     std::cerr << e.what() << std::endl;
     return EXIT_FAILURE;

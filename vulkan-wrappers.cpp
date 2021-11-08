@@ -1,7 +1,11 @@
 #include <sbash64/graphics/vulkan-wrappers.hpp>
 
 #include <algorithm>
+#include <fstream>
+#include <set>
+#include <stdexcept>
 
+namespace sbash64::graphics {
 static auto swapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &formats)
     -> VkSurfaceFormatKHR {
   for (const auto &format : formats)
@@ -24,7 +28,7 @@ static auto findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter,
   VkPhysicalDeviceMemoryProperties memoryProperties;
   vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memoryProperties);
   for (uint32_t i = 0; i < memoryProperties.memoryTypeCount; i++) {
-    if (((typeFilter & (1 << i)) != 0U) &&
+    if (((typeFilter & (1U << i)) != 0U) &&
         (memoryProperties.memoryTypes[i].propertyFlags & properties) ==
             properties) {
       return i;
@@ -661,3 +665,79 @@ DescriptorPool::~DescriptorPool() {
   vkDestroyDescriptorPool(device, descriptorPool, nullptr);
 }
 } // namespace vulkan_wrappers
+
+auto supportsGraphics(const VkQueueFamilyProperties &properties) -> bool {
+  return (properties.queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0U;
+}
+
+auto vulkanCountFromPhysicalDevice(
+    VkPhysicalDevice device,
+    const std::function<void(VkPhysicalDevice, uint32_t *)> &f) -> uint32_t {
+  uint32_t count{0};
+  f(device, &count);
+  return count;
+}
+
+auto queueFamilyPropertiesCount(VkPhysicalDevice device) -> uint32_t {
+  return vulkanCountFromPhysicalDevice(
+      device, [](VkPhysicalDevice device_, uint32_t *count) {
+        vkGetPhysicalDeviceQueueFamilyProperties(device_, count, nullptr);
+      });
+}
+
+auto queueFamilyProperties(VkPhysicalDevice device, uint32_t count)
+    -> std::vector<VkQueueFamilyProperties> {
+  std::vector<VkQueueFamilyProperties> properties(count);
+  vkGetPhysicalDeviceQueueFamilyProperties(device, &count, properties.data());
+  return properties;
+}
+
+auto graphicsSupportingQueueFamilyIndex(
+    const std::vector<VkQueueFamilyProperties> &queueFamilyProperties)
+    -> uint32_t {
+  return static_cast<uint32_t>(std::distance(
+      queueFamilyProperties.begin(),
+      std::find_if(queueFamilyProperties.begin(), queueFamilyProperties.end(),
+                   supportsGraphics)));
+}
+
+auto graphicsSupportingQueueFamilyIndex(VkPhysicalDevice device) -> uint32_t {
+  return graphicsSupportingQueueFamilyIndex(
+      queueFamilyProperties(device, queueFamilyPropertiesCount(device)));
+}
+
+auto presentSupportingQueueFamilyIndex(VkPhysicalDevice device,
+                                       VkSurfaceKHR surface) -> uint32_t {
+  uint32_t index{0U};
+  while (index < queueFamilyPropertiesCount(device)) {
+    VkBool32 support{0U};
+    vkGetPhysicalDeviceSurfaceSupportKHR(device, index, surface, &support);
+    if (support != 0U)
+      return index;
+    ++index;
+  }
+  throw std::runtime_error{"no present support index found"};
+}
+
+auto swapExtent(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface,
+                GLFWwindow *window) -> VkExtent2D {
+  VkSurfaceCapabilitiesKHR capabilities;
+  vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface,
+                                            &capabilities);
+
+  if (capabilities.currentExtent.width != UINT32_MAX)
+    return capabilities.currentExtent;
+
+  int width{0};
+  int height{0};
+  glfwGetFramebufferSize(window, &width, &height);
+
+  VkExtent2D extent{static_cast<uint32_t>(width),
+                    static_cast<uint32_t>(height)};
+  extent.width = std::clamp(extent.width, capabilities.minImageExtent.width,
+                            capabilities.maxImageExtent.width);
+  extent.height = std::clamp(extent.height, capabilities.minImageExtent.height,
+                             capabilities.maxImageExtent.height);
+  return extent;
+}
+} // namespace sbash64::graphics
