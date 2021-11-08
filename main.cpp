@@ -1,3 +1,4 @@
+#include <sbash64/graphics/glfw-wrappers.hpp>
 #include <sbash64/graphics/vulkan-wrappers.hpp>
 
 #define GLM_FORCE_RADIANS
@@ -19,33 +20,6 @@
 #include <stdexcept>
 #include <string_view>
 #include <vector>
-
-namespace glfw_wrappers {
-struct Init {
-  Init() { glfwInit(); }
-
-  ~Init() { glfwTerminate(); }
-
-  Init(const Init &) = delete;
-  auto operator=(const Init &) -> Init & = delete;
-  Init(Init &&) = delete;
-  auto operator=(Init &&) -> Init & = delete;
-};
-
-struct Window {
-  Window(int width, int height)
-      : window{glfwCreateWindow(width, height, "Vulkan", nullptr, nullptr)} {}
-
-  ~Window() { glfwDestroyWindow(window); }
-
-  Window(const Window &) = delete;
-  auto operator=(const Window &) -> Window & = delete;
-  Window(Window &&) = delete;
-  auto operator=(Window &&) -> Window & = delete;
-
-  GLFWwindow *window;
-};
-} // namespace glfw_wrappers
 
 struct UniformBufferObject {
   alignas(16) glm::mat4 model;
