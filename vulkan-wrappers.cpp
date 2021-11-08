@@ -1,5 +1,7 @@
 #include <sbash64/graphics/vulkan-wrappers.hpp>
 
+#include <algorithm>
+
 static auto swapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &formats)
     -> VkSurfaceFormatKHR {
   for (const auto &format : formats)

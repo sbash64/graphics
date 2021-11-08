@@ -1,3 +1,6 @@
+#ifndef SBASH64_GRAPHICS_VULKAN_WRAPPERS_HPP_
+#define SBASH64_GRAPHICS_VULKAN_WRAPPERS_HPP_
+
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
@@ -99,7 +102,6 @@ static auto swapExtent(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface,
 namespace vulkan_wrappers {
 struct Instance {
   Instance();
-
   ~Instance();
 
   Instance(const Instance &) = delete;
@@ -112,7 +114,6 @@ struct Instance {
 
 struct Device {
   Device(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface);
-
   ~Device();
 
   Device(const Device &) = delete;
@@ -125,7 +126,6 @@ struct Device {
 
 struct Surface {
   Surface(VkInstance instance, GLFWwindow *window);
-
   ~Surface();
 
   Surface(const Surface &) = delete;
@@ -154,10 +154,8 @@ struct Swapchain {
 struct ImageView {
   ImageView(VkDevice device, VkPhysicalDevice physicalDevice,
             VkSurfaceKHR surface, VkImage image);
-
   ~ImageView();
-
-  ImageView(ImageView &&other) noexcept;
+  ImageView(ImageView &&) noexcept;
 
   auto operator=(ImageView &&) -> ImageView & = delete;
   ImageView(const ImageView &) = delete;
@@ -169,13 +167,12 @@ struct ImageView {
 
 struct ShaderModule {
   ShaderModule(VkDevice device, const std::vector<char> &code);
+  ~ShaderModule();
 
   ShaderModule(ShaderModule &&) = delete;
   auto operator=(ShaderModule &&) -> ShaderModule & = delete;
   ShaderModule(const ShaderModule &) = delete;
   auto operator=(const ShaderModule &) -> ShaderModule & = delete;
-
-  ~ShaderModule();
 
   VkDevice device;
   VkShaderModule module{};
@@ -183,13 +180,12 @@ struct ShaderModule {
 
 struct PipelineLayout {
   PipelineLayout(VkDevice device, VkDescriptorSetLayout descriptorSetLayout);
+  ~PipelineLayout();
 
   PipelineLayout(PipelineLayout &&) = delete;
   auto operator=(PipelineLayout &&) -> PipelineLayout & = delete;
   PipelineLayout(const PipelineLayout &) = delete;
   auto operator=(const PipelineLayout &) -> PipelineLayout & = delete;
-
-  ~PipelineLayout();
 
   VkDevice device;
   VkPipelineLayout pipelineLayout{};
@@ -198,7 +194,6 @@ struct PipelineLayout {
 struct RenderPass {
   RenderPass(VkDevice device, VkPhysicalDevice physicalDevice,
              VkSurfaceKHR surface);
-
   ~RenderPass();
 
   RenderPass(RenderPass &&) = delete;
@@ -215,7 +210,6 @@ struct Pipeline {
            VkSurfaceKHR surface, VkPipelineLayout pipelineLayout,
            VkRenderPass renderPass, const std::string &vertexShaderCodePath,
            const std::string &fragmentShaderCodePath, GLFWwindow *window);
-
   ~Pipeline();
 
   Pipeline(Pipeline &&) = delete;
@@ -228,13 +222,10 @@ struct Pipeline {
 };
 
 struct Framebuffer {
-  Framebuffer(VkDevice device, VkPhysicalDevice physicalDevice,
-              VkSurfaceKHR surface, VkRenderPass renderPass,
+  Framebuffer(VkDevice, VkPhysicalDevice, VkSurfaceKHR, VkRenderPass,
               VkImageView imageView, GLFWwindow *window);
-
   ~Framebuffer();
-
-  Framebuffer(Framebuffer &&other) noexcept;
+  Framebuffer(Framebuffer &&) noexcept;
 
   auto operator=(Framebuffer &&) -> Framebuffer & = delete;
   Framebuffer(const Framebuffer &) = delete;
@@ -245,8 +236,7 @@ struct Framebuffer {
 };
 
 struct CommandPool {
-  CommandPool(VkDevice device, VkPhysicalDevice physicalDevice);
-
+  CommandPool(VkDevice, VkPhysicalDevice);
   ~CommandPool();
 
   CommandPool(CommandPool &&) = delete;
@@ -259,11 +249,9 @@ struct CommandPool {
 };
 
 struct Semaphore {
-  explicit Semaphore(VkDevice device);
-
+  explicit Semaphore(VkDevice);
   ~Semaphore();
-
-  Semaphore(Semaphore &&other) noexcept;
+  Semaphore(Semaphore &&) noexcept;
 
   auto operator=(Semaphore &&) -> Semaphore & = delete;
   Semaphore(const Semaphore &) = delete;
@@ -274,11 +262,9 @@ struct Semaphore {
 };
 
 struct Fence {
-  explicit Fence(VkDevice device);
-
+  explicit Fence(VkDevice);
   ~Fence();
-
-  Fence(Fence &&other) noexcept;
+  Fence(Fence &&) noexcept;
 
   auto operator=(Fence &&) -> Fence & = delete;
   Fence(const Fence &) = delete;
@@ -289,9 +275,8 @@ struct Fence {
 };
 
 struct CommandBuffers {
-  CommandBuffers(VkDevice device, VkCommandPool commandPool,
+  CommandBuffers(VkDevice, VkCommandPool,
                  std::vector<VkCommandBuffer>::size_type size);
-
   ~CommandBuffers();
 
   CommandBuffers(CommandBuffers &&) = delete;
@@ -305,11 +290,9 @@ struct CommandBuffers {
 };
 
 struct Buffer {
-  Buffer(VkDevice device, VkBufferUsageFlags usage, VkDeviceSize bufferSize);
-
+  Buffer(VkDevice, VkBufferUsageFlags usage, VkDeviceSize bufferSize);
   ~Buffer();
-
-  Buffer(Buffer &&other) noexcept;
+  Buffer(Buffer &&) noexcept;
 
   auto operator=(Buffer &&) -> Buffer & = delete;
   Buffer(const Buffer &) = delete;
@@ -320,12 +303,10 @@ struct Buffer {
 };
 
 struct DeviceMemory {
-  DeviceMemory(VkDevice device, VkPhysicalDevice physicalDevice,
-               VkBuffer buffer, VkMemoryPropertyFlags properties);
-
+  DeviceMemory(VkDevice, VkPhysicalDevice, VkBuffer buffer,
+               VkMemoryPropertyFlags properties);
   ~DeviceMemory();
-
-  DeviceMemory(DeviceMemory &&other) noexcept;
+  DeviceMemory(DeviceMemory &&) noexcept;
 
   auto operator=(DeviceMemory &&) -> DeviceMemory & = delete;
   DeviceMemory(const DeviceMemory &) = delete;
@@ -336,8 +317,7 @@ struct DeviceMemory {
 };
 
 struct DescriptorSetLayout {
-  explicit DescriptorSetLayout(VkDevice device);
-
+  explicit DescriptorSetLayout(VkDevice);
   ~DescriptorSetLayout();
 
   DescriptorSetLayout(DescriptorSetLayout &&) = delete;
@@ -350,8 +330,7 @@ struct DescriptorSetLayout {
 };
 
 struct DescriptorPool {
-  DescriptorPool(VkDevice device, const std::vector<VkImage> &swapChainImages);
-
+  DescriptorPool(VkDevice, const std::vector<VkImage> &swapChainImages);
   ~DescriptorPool();
 
   DescriptorPool(DescriptorPool &&) = delete;
@@ -363,3 +342,5 @@ struct DescriptorPool {
   VkDescriptorPool descriptorPool{};
 };
 } // namespace vulkan_wrappers
+
+#endif
