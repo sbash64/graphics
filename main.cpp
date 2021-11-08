@@ -3,10 +3,13 @@
 
 #include <vulkan/vulkan_core.h>
 
+#define GLM_FORCE_RADIANS
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <cstdlib>
 #include <exception>
@@ -163,6 +166,12 @@ static auto findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter,
 struct Vertex {
   glm::vec2 pos;
   glm::vec3 color;
+};
+
+struct UniformBufferObject {
+  alignas(16) glm::mat4 model;
+  alignas(16) glm::mat4 view;
+  alignas(16) glm::mat4 proj;
 };
 
 static auto readFile(const std::string &filename) -> std::vector<char> {
@@ -445,11 +454,15 @@ struct ShaderModule {
 };
 
 struct PipelineLayout {
-  explicit PipelineLayout(VkDevice device) : device{device} {
+  PipelineLayout(VkDevice device, VkDescriptorSetLayout descriptorSetLayout)
+      : device{device} {
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 0;
-    pipelineLayoutInfo.pushConstantRangeCount = 0;
+
+    std::array<VkDescriptorSetLayout, 1> descriptorSetLayouts{
+        descriptorSetLayout};
+    pipelineLayoutInfo.setLayoutCount = descriptorSetLayouts.size();
+    pipelineLayoutInfo.pSetLayouts = descriptorSetLayouts.data();
     if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr,
                                &pipelineLayout) != VK_SUCCESS)
       throw std::runtime_error("failed to create pipeline layout!");
@@ -624,7 +637,7 @@ struct Pipeline {
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0F;
     rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-    rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     rasterizer.depthBiasEnable = VK_FALSE;
     pipelineInfo.pRasterizationState = &rasterizer;
 
@@ -838,9 +851,15 @@ struct Buffer {
       throw std::runtime_error("failed to create buffer!");
   }
 
-  ~Buffer() { vkDestroyBuffer(device, buffer, nullptr); }
+  ~Buffer() {
+    if (buffer != nullptr)
+      vkDestroyBuffer(device, buffer, nullptr);
+  }
 
-  Buffer(Buffer &&) = delete;
+  Buffer(Buffer &&other) noexcept : device{other.device}, buffer{other.buffer} {
+    other.buffer = nullptr;
+  }
+
   auto operator=(Buffer &&) -> Buffer & = delete;
   Buffer(const Buffer &) = delete;
   auto operator=(const Buffer &) -> Buffer & = delete;
@@ -866,15 +885,86 @@ struct DeviceMemory {
       throw std::runtime_error("failed to allocate vertex buffer memory!");
   }
 
-  ~DeviceMemory() { vkFreeMemory(device, memory, nullptr); }
+  ~DeviceMemory() {
+    if (memory != nullptr)
+      vkFreeMemory(device, memory, nullptr);
+  }
 
-  DeviceMemory(DeviceMemory &&) = delete;
+  DeviceMemory(DeviceMemory &&other) noexcept
+      : device{other.device}, memory{other.memory} {
+    other.memory = nullptr;
+  }
+
   auto operator=(DeviceMemory &&) -> DeviceMemory & = delete;
   DeviceMemory(const DeviceMemory &) = delete;
   auto operator=(const DeviceMemory &) -> DeviceMemory & = delete;
 
   VkDevice device;
   VkDeviceMemory memory{};
+};
+
+struct DescriptorSetLayout {
+  explicit DescriptorSetLayout(VkDevice device) : device{device} {
+    VkDescriptorSetLayoutBinding uboLayoutBinding{};
+    uboLayoutBinding.binding = 0;
+    uboLayoutBinding.descriptorCount = 1;
+    uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    uboLayoutBinding.pImmutableSamplers = nullptr;
+    uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = 1;
+    layoutInfo.pBindings = &uboLayoutBinding;
+
+    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr,
+                                    &descriptorSetLayout) != VK_SUCCESS)
+      throw std::runtime_error("failed to create descriptor set layout!");
+  }
+
+  ~DescriptorSetLayout() {
+    vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
+  }
+
+  DescriptorSetLayout(DescriptorSetLayout &&) = delete;
+  auto operator=(DescriptorSetLayout &&) -> DescriptorSetLayout & = delete;
+  DescriptorSetLayout(const DescriptorSetLayout &) = delete;
+  auto operator=(const DescriptorSetLayout &) -> DescriptorSetLayout & = delete;
+
+  VkDevice device;
+  VkDescriptorSetLayout descriptorSetLayout{};
+};
+
+struct DescriptorPool {
+  DescriptorPool(VkDevice device, const std::vector<VkImage> &swapChainImages)
+      : device{device} {
+    VkDescriptorPoolSize poolSize{};
+    poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    poolSize.descriptorCount = static_cast<uint32_t>(swapChainImages.size());
+
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.poolSizeCount = 1;
+    poolInfo.pPoolSizes = &poolSize;
+    poolInfo.maxSets = static_cast<uint32_t>(swapChainImages.size());
+
+    if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) !=
+        VK_SUCCESS) {
+      throw std::runtime_error("failed to create descriptor pool!");
+    }
+  }
+
+  ~DescriptorPool() {
+    vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+  }
+
+  DescriptorPool(DescriptorPool &&) = delete;
+  auto operator=(DescriptorPool &&) -> DescriptorPool & = delete;
+  DescriptorPool(const DescriptorPool &) = delete;
+  auto operator=(const DescriptorPool &) -> DescriptorPool & = delete;
+
+  VkDevice device;
+  VkDescriptorPool descriptorPool{};
 };
 } // namespace vulkan_wrappers
 
@@ -1117,6 +1207,9 @@ static void run(const std::string &vertexShaderCodePath,
 
   std::vector<VkFence> imagesInFlight;
 
+  const vulkan_wrappers::DescriptorSetLayout vulkanDescriptorSetLayout{
+      vulkanDevice.device};
+
   auto currentFrame{0};
   auto playing{true};
   while (playing) {
@@ -1140,7 +1233,7 @@ static void run(const std::string &vertexShaderCodePath,
         vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface};
 
     const vulkan_wrappers::PipelineLayout vulkanPipelineLayout{
-        vulkanDevice.device};
+        vulkanDevice.device, vulkanDescriptorSetLayout.descriptorSetLayout};
 
     const vulkan_wrappers::Pipeline vulkanPipeline{
         vulkanDevice.device,         vulkanPhysicalDevice,
@@ -1159,6 +1252,63 @@ static void run(const std::string &vertexShaderCodePath,
                          vulkanSurface.surface, vulkanRenderPass.renderPass,
                          imageView.view,        glfwWindow.window};
                    });
+
+    std::vector<vulkan_wrappers::Buffer> vulkanUniformBuffers;
+    std::vector<vulkan_wrappers::DeviceMemory> vulkanUniformBuffersMemory;
+
+    for (size_t i = 0; i < swapChainImages.size(); i++) {
+      VkDeviceSize bufferSize = sizeof(UniformBufferObject);
+      vulkanUniformBuffers.emplace_back(
+          vulkanDevice.device, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, bufferSize);
+      vulkanUniformBuffersMemory.emplace_back(
+          vulkanDevice.device, vulkanPhysicalDevice,
+          vulkanUniformBuffers.back().buffer,
+          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+              VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+      vkBindBufferMemory(vulkanDevice.device,
+                         vulkanUniformBuffers.back().buffer,
+                         vulkanUniformBuffersMemory.back().memory, 0);
+    }
+
+    const vulkan_wrappers::DescriptorPool vulkanDescriptorPool{
+        vulkanDevice.device, swapChainImages};
+    std::vector<VkDescriptorSet> descriptorSets(swapChainImages.size());
+    {
+      std::vector<VkDescriptorSetLayout> layouts(
+          swapChainImages.size(),
+          vulkanDescriptorSetLayout.descriptorSetLayout);
+      VkDescriptorSetAllocateInfo allocInfo{};
+      allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+      allocInfo.descriptorPool = vulkanDescriptorPool.descriptorPool;
+      allocInfo.descriptorSetCount =
+          static_cast<uint32_t>(swapChainImages.size());
+      allocInfo.pSetLayouts = layouts.data();
+
+      if (vkAllocateDescriptorSets(vulkanDevice.device, &allocInfo,
+                                   descriptorSets.data()) != VK_SUCCESS) {
+        throw std::runtime_error("failed to allocate descriptor sets!");
+      }
+
+      for (size_t i = 0; i < swapChainImages.size(); i++) {
+        VkDescriptorBufferInfo bufferInfo{};
+        bufferInfo.buffer = vulkanUniformBuffers[i].buffer;
+        bufferInfo.offset = 0;
+        bufferInfo.range = sizeof(UniformBufferObject);
+
+        VkWriteDescriptorSet descriptorWrite{};
+        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrite.dstSet = descriptorSets[i];
+        descriptorWrite.dstBinding = 0;
+        descriptorWrite.dstArrayElement = 0;
+        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptorWrite.descriptorCount = 1;
+        descriptorWrite.pBufferInfo = &bufferInfo;
+
+        vkUpdateDescriptorSets(vulkanDevice.device, 1, &descriptorWrite, 0,
+                               nullptr);
+      }
+    }
+
     const vulkan_wrappers::CommandBuffers vulkanCommandBuffers{
         vulkanDevice.device, vulkanCommandPool.commandPool,
         vulkanFrameBuffers.size()};
@@ -1199,6 +1349,11 @@ static void run(const std::string &vertexShaderCodePath,
       vkCmdBindIndexBuffer(vulkanCommandBuffers.commandBuffers[i],
                            vulkanIndexBuffer.buffer, 0, VK_INDEX_TYPE_UINT16);
 
+      vkCmdBindDescriptorSets(vulkanCommandBuffers.commandBuffers[i],
+                              VK_PIPELINE_BIND_POINT_GRAPHICS,
+                              vulkanPipelineLayout.pipelineLayout, 0, 1,
+                              &descriptorSets[i], 0, nullptr);
+
       vkCmdDrawIndexed(vulkanCommandBuffers.commandBuffers[i],
                        static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 
@@ -1208,6 +1363,9 @@ static void run(const std::string &vertexShaderCodePath,
           VK_SUCCESS)
         throw std::runtime_error("failed to record command buffer!");
     }
+
+    const auto swapChainExtent{swapExtent(
+        vulkanPhysicalDevice, vulkanSurface.surface, glfwWindow.window)};
 
     imagesInFlight.resize(swapChainImages.size(), VK_NULL_HANDLE);
     auto recreatingSwapChain{false};
@@ -1236,6 +1394,34 @@ static void run(const std::string &vertexShaderCodePath,
         }
         if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
           throw std::runtime_error("failed to acquire swap chain image!");
+      }
+      {
+        static auto startTime = std::chrono::high_resolution_clock::now();
+
+        auto currentTime = std::chrono::high_resolution_clock::now();
+        float time = std::chrono::duration<float, std::chrono::seconds::period>(
+                         currentTime - startTime)
+                         .count();
+
+        UniformBufferObject ubo{};
+        ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f),
+                                glm::vec3(0.0f, 0.0f, 1.0f));
+        ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f),
+                               glm::vec3(0.0f, 0.0f, 0.0f),
+                               glm::vec3(0.0f, 0.0f, 1.0f));
+        ubo.proj = glm::perspective(
+            glm::radians(45.0f),
+            swapChainExtent.width / static_cast<float>(swapChainExtent.height),
+            0.1f, 10.0f);
+        ubo.proj[1][1] *= -1;
+
+        void *data = nullptr;
+        vkMapMemory(vulkanDevice.device,
+                    vulkanUniformBuffersMemory[imageIndex].memory, 0,
+                    sizeof(ubo), 0, &data);
+        memcpy(data, &ubo, sizeof(ubo));
+        vkUnmapMemory(vulkanDevice.device,
+                      vulkanUniformBuffersMemory[imageIndex].memory);
       }
 
       if (imagesInFlight[imageIndex] != VK_NULL_HANDLE)
