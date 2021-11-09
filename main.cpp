@@ -643,7 +643,7 @@ static void run(const std::string &vertexShaderCodePath,
 
     imagesInFlight.resize(swapChainImages.size(), VK_NULL_HANDLE);
     auto recreatingSwapChain{false};
-    auto rotationAngleDegrees{0};
+    auto rotationAngleCentidegrees{0};
     while (!recreatingSwapChain) {
       if (glfwWindowShouldClose(glfwWindow.window) != 0) {
         playing = false;
@@ -673,7 +673,7 @@ static void run(const std::string &vertexShaderCodePath,
       {
         UniformBufferObject ubo{};
         ubo.model = glm::rotate(glm::mat4(1.0f),
-                                glm::radians(rotationAngleDegrees * 1.F),
+                                glm::radians(rotationAngleCentidegrees / 100.F),
                                 glm::vec3(0.0f, 0.0f, 1.0f));
         ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f),
                                glm::vec3(0.0f, 0.0f, 0.0f),
@@ -687,8 +687,8 @@ static void run(const std::string &vertexShaderCodePath,
         copy(vulkanDevice.device, vulkanUniformBuffersMemory[imageIndex].memory,
              &ubo, sizeof(ubo));
 
-        if (++rotationAngleDegrees == 360)
-          rotationAngleDegrees = 0;
+        if (++rotationAngleCentidegrees == 36000)
+          rotationAngleCentidegrees = 0;
       }
 
       if (imagesInFlight[imageIndex] != VK_NULL_HANDLE)
