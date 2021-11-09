@@ -367,10 +367,11 @@ static void run(const std::string &vertexShaderCodePath,
   const vulkan_wrappers::Sampler vulkanTextureSampler{vulkanDevice.device,
                                                       vulkanPhysicalDevice};
 
-  const std::vector<Vertex> vertices = {{{-0.5F, -0.5F}, {1.0F, 0.0F, 0.0F}},
-                                        {{0.5F, -0.5F}, {0.0F, 1.0F, 0.0F}},
-                                        {{0.5F, 0.5F}, {0.0F, 0.0F, 1.0F}},
-                                        {{-0.5F, 0.5F}, {1.0F, 1.0F, 1.0F}}};
+  const std::vector<Vertex> vertices = {
+      {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+      {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+      {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+      {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}};
 
   const std::vector<uint16_t> indices = {0, 1, 2, 2, 3, 0};
 
@@ -563,7 +564,12 @@ static void run(const std::string &vertexShaderCodePath,
         bufferInfo.offset = 0;
         bufferInfo.range = sizeof(UniformBufferObject);
 
-        std::array<VkWriteDescriptorSet, 1> descriptorWrite{};
+        VkDescriptorImageInfo imageInfo{};
+        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        imageInfo.imageView = vulkanTextureImageView.view;
+        imageInfo.sampler = vulkanTextureSampler.sampler;
+
+        std::array<VkWriteDescriptorSet, 2> descriptorWrite{};
         descriptorWrite.at(0).sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         descriptorWrite.at(0).dstSet = descriptorSets[i];
         descriptorWrite.at(0).dstBinding = 0;
@@ -572,6 +578,15 @@ static void run(const std::string &vertexShaderCodePath,
             VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         descriptorWrite.at(0).descriptorCount = 1;
         descriptorWrite.at(0).pBufferInfo = &bufferInfo;
+
+        descriptorWrite[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrite[1].dstSet = descriptorSets[i];
+        descriptorWrite[1].dstBinding = 1;
+        descriptorWrite[1].dstArrayElement = 0;
+        descriptorWrite[1].descriptorType =
+            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrite[1].descriptorCount = 1;
+        descriptorWrite[1].pImageInfo = &imageInfo;
 
         vkUpdateDescriptorSets(vulkanDevice.device, descriptorWrite.size(),
                                descriptorWrite.data(), 0, nullptr);

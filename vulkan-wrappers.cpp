@@ -355,7 +355,7 @@ Pipeline::Pipeline(VkDevice device, VkPhysicalDevice physicalDevice,
   bindingDescription.at(0).stride = sizeof(Vertex);
   bindingDescription.at(0).inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-  std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions{};
+  std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions{};
 
   attributeDescriptions[0].binding = 0;
   attributeDescriptions[0].location = 0;
@@ -366,6 +366,11 @@ Pipeline::Pipeline(VkDevice device, VkPhysicalDevice physicalDevice,
   attributeDescriptions[1].location = 1;
   attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
   attributeDescriptions[1].offset = offsetof(Vertex, color);
+
+  attributeDescriptions[2].binding = 0;
+  attributeDescriptions[2].location = 2;
+  attributeDescriptions[2].format = VK_FORMAT_R32G32_SFLOAT;
+  attributeDescriptions[2].offset = offsetof(Vertex, texCoord);
 
   vertexInputInfo.vertexBindingDescriptionCount = bindingDescription.size();
   vertexInputInfo.vertexAttributeDescriptionCount =
@@ -615,10 +620,20 @@ DescriptorSetLayout::DescriptorSetLayout(VkDevice device) : device{device} {
   uboLayoutBinding.pImmutableSamplers = nullptr;
   uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
+  VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+  samplerLayoutBinding.binding = 1;
+  samplerLayoutBinding.descriptorCount = 1;
+  samplerLayoutBinding.descriptorType =
+      VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  samplerLayoutBinding.pImmutableSamplers = nullptr;
+  samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+  std::array<VkDescriptorSetLayoutBinding, 2> bindings = {uboLayoutBinding,
+                                                          samplerLayoutBinding};
   VkDescriptorSetLayoutCreateInfo layoutInfo{};
   layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-  layoutInfo.bindingCount = 1;
-  layoutInfo.pBindings = &uboLayoutBinding;
+  layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+  layoutInfo.pBindings = bindings.data();
 
   if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr,
                                   &descriptorSetLayout) != VK_SUCCESS)
@@ -632,10 +647,12 @@ DescriptorSetLayout::~DescriptorSetLayout() {
 DescriptorPool::DescriptorPool(VkDevice device,
                                const std::vector<VkImage> &swapChainImages)
     : device{device} {
-  std::array<VkDescriptorPoolSize, 1> poolSize{};
+  std::array<VkDescriptorPoolSize, 2> poolSize{};
   poolSize.at(0).type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
   poolSize.at(0).descriptorCount =
       static_cast<uint32_t>(swapChainImages.size());
+  poolSize[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  poolSize[1].descriptorCount = static_cast<uint32_t>(swapChainImages.size());
 
   VkDescriptorPoolCreateInfo poolInfo{};
   poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;

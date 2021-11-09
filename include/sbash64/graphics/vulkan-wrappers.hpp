@@ -15,6 +15,7 @@ namespace sbash64::graphics {
 struct Vertex {
   glm::vec2 pos;
   glm::vec3 color;
+  glm::vec2 texCoord;
 };
 
 constexpr std::array<const char *, 1> deviceExtensions = {
