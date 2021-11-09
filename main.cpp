@@ -194,8 +194,8 @@ static void transitionImageLayout(VkDevice device, VkCommandPool commandPool,
   barrier.subresourceRange.baseArrayLayer = 0;
   barrier.subresourceRange.layerCount = 1;
 
-  VkPipelineStageFlags sourceStage = 0;
-  VkPipelineStageFlags destinationStage = 0;
+  VkPipelineStageFlags sourceStage{0};
+  VkPipelineStageFlags destinationStage{0};
 
   if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
       newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
@@ -325,8 +325,8 @@ static void run(const std::string &vertexShaderCodePath,
                     vulkanImageMemory.memory, 0);
 
   {
-    VkDeviceSize imageSize =
-        static_cast<long>(stbiTextureImage.width) * stbiTextureImage.height * 4;
+    VkDeviceSize imageSize{static_cast<unsigned long>(stbiTextureImage.width) *
+                           stbiTextureImage.height * 4};
 
     const vulkan_wrappers::Buffer vulkanStagingBuffer{
         vulkanDevice.device, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, imageSize};
@@ -519,8 +519,8 @@ static void run(const std::string &vertexShaderCodePath,
     std::vector<vulkan_wrappers::Buffer> vulkanUniformBuffers;
     std::vector<vulkan_wrappers::DeviceMemory> vulkanUniformBuffersMemory;
 
-    for (size_t i = 0; i < swapChainImages.size(); i++) {
-      VkDeviceSize bufferSize = sizeof(UniformBufferObject);
+    for (size_t i{0}; i < swapChainImages.size(); i++) {
+      VkDeviceSize bufferSize{sizeof(UniformBufferObject)};
       vulkanUniformBuffers.emplace_back(
           vulkanDevice.device, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, bufferSize);
       VkMemoryRequirements memoryRequirements;
@@ -556,7 +556,7 @@ static void run(const std::string &vertexShaderCodePath,
         throw std::runtime_error("failed to allocate descriptor sets!");
       }
 
-      for (size_t i = 0; i < swapChainImages.size(); i++) {
+      for (size_t i{0}; i < swapChainImages.size(); i++) {
         VkDescriptorBufferInfo bufferInfo{};
         bufferInfo.buffer = vulkanUniformBuffers[i].buffer;
         bufferInfo.offset = 0;
