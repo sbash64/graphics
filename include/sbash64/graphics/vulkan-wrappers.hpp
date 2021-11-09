@@ -1,7 +1,6 @@
 #ifndef SBASH64_GRAPHICS_VULKAN_WRAPPERS_HPP_
 #define SBASH64_GRAPHICS_VULKAN_WRAPPERS_HPP_
 
-#include <vulkan/vulkan_core.h>
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
@@ -23,19 +22,18 @@ constexpr std::array<const char *, 1> deviceExtensions = {
 
 auto supportsGraphics(const VkQueueFamilyProperties &properties) -> bool;
 auto vulkanCountFromPhysicalDevice(
-    VkPhysicalDevice device,
+    VkPhysicalDevice,
     const std::function<void(VkPhysicalDevice, uint32_t *)> &f) -> uint32_t;
 auto queueFamilyPropertiesCount(VkPhysicalDevice device) -> uint32_t;
-auto queueFamilyProperties(VkPhysicalDevice device, uint32_t count)
+auto queueFamilyProperties(VkPhysicalDevice, uint32_t count)
     -> std::vector<VkQueueFamilyProperties>;
 auto graphicsSupportingQueueFamilyIndex(
     const std::vector<VkQueueFamilyProperties> &queueFamilyProperties)
     -> uint32_t;
 auto graphicsSupportingQueueFamilyIndex(VkPhysicalDevice device) -> uint32_t;
-auto presentSupportingQueueFamilyIndex(VkPhysicalDevice device,
-                                       VkSurfaceKHR surface) -> uint32_t;
-auto swapExtent(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface,
-                GLFWwindow *window) -> VkExtent2D;
+auto presentSupportingQueueFamilyIndex(VkPhysicalDevice, VkSurfaceKHR)
+    -> uint32_t;
+auto swapExtent(VkPhysicalDevice, VkSurfaceKHR, GLFWwindow *) -> VkExtent2D;
 auto swapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &formats)
     -> VkSurfaceFormatKHR;
 
@@ -53,7 +51,7 @@ struct Instance {
 };
 
 struct Device {
-  Device(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface);
+  Device(VkPhysicalDevice, VkSurfaceKHR);
   ~Device();
 
   Device(const Device &) = delete;
@@ -65,7 +63,7 @@ struct Device {
 };
 
 struct Surface {
-  Surface(VkInstance instance, GLFWwindow *window);
+  Surface(VkInstance, GLFWwindow *);
   ~Surface();
 
   Surface(const Surface &) = delete;
@@ -78,8 +76,7 @@ struct Surface {
 };
 
 struct Swapchain {
-  Swapchain(VkDevice device, VkPhysicalDevice physicalDevice,
-            VkSurfaceKHR surface, GLFWwindow *window);
+  Swapchain(VkDevice, VkPhysicalDevice, VkSurfaceKHR, GLFWwindow *);
   ~Swapchain();
 
   Swapchain(const Swapchain &) = delete;
@@ -92,31 +89,9 @@ struct Swapchain {
 };
 
 struct Image {
-  Image(VkDevice device, uint32_t width, uint32_t height, VkFormat format,
-        VkImageTiling tiling, VkImageUsageFlags usage,
-        VkMemoryPropertyFlags properties)
-      : device{device} {
-    VkImageCreateInfo imageInfo{};
-    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    imageInfo.imageType = VK_IMAGE_TYPE_2D;
-    imageInfo.extent.width = width;
-    imageInfo.extent.height = height;
-    imageInfo.extent.depth = 1;
-    imageInfo.mipLevels = 1;
-    imageInfo.arrayLayers = 1;
-    imageInfo.format = format;
-    imageInfo.tiling = tiling;
-    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    imageInfo.usage = usage;
-    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-    if (vkCreateImage(device, &imageInfo, nullptr, &image) != VK_SUCCESS) {
-      throw std::runtime_error("failed to create image!");
-    }
-  }
-
-  ~Image() { vkDestroyImage(device, image, nullptr); }
+  Image(VkDevice, uint32_t width, uint32_t height, VkFormat, VkImageTiling,
+        VkImageUsageFlags, VkMemoryPropertyFlags);
+  ~Image();
 
   Image(const Image &) = delete;
   auto operator=(const Image &) -> Image & = delete;
@@ -128,7 +103,7 @@ struct Image {
 };
 
 struct ImageView {
-  ImageView(VkDevice device, VkImage image, VkFormat format);
+  ImageView(VkDevice, VkImage, VkFormat);
   ~ImageView();
   ImageView(ImageView &&) noexcept;
 
@@ -141,36 +116,8 @@ struct ImageView {
 };
 
 struct Sampler {
-  Sampler(VkDevice device, VkPhysicalDevice physicalDevice) : device{device} {
-    VkSamplerCreateInfo samplerInfo{};
-    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    samplerInfo.magFilter = VK_FILTER_LINEAR;
-    samplerInfo.minFilter = VK_FILTER_LINEAR;
-    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.anisotropyEnable = VK_TRUE;
-
-    VkPhysicalDeviceProperties properties{};
-    vkGetPhysicalDeviceProperties(physicalDevice, &properties);
-    samplerInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
-
-    samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-    samplerInfo.unnormalizedCoordinates = VK_FALSE;
-    samplerInfo.compareEnable = VK_FALSE;
-    samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
-    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-    samplerInfo.mipLodBias = 0.0f;
-    samplerInfo.minLod = 0.0f;
-    samplerInfo.maxLod = 0.0f;
-
-    if (vkCreateSampler(device, &samplerInfo, nullptr, &sampler) !=
-        VK_SUCCESS) {
-      throw std::runtime_error("failed to create texture sampler!");
-    }
-  }
-
-  ~Sampler() { vkDestroySampler(device, sampler, nullptr); }
+  Sampler(VkDevice, VkPhysicalDevice);
+  ~Sampler();
 
   Sampler(Sampler &&) = delete;
   auto operator=(Sampler &&) -> Sampler & = delete;
@@ -182,7 +129,7 @@ struct Sampler {
 };
 
 struct ShaderModule {
-  ShaderModule(VkDevice device, const std::vector<char> &code);
+  ShaderModule(VkDevice, const std::vector<char> &code);
   ~ShaderModule();
 
   ShaderModule(ShaderModule &&) = delete;
@@ -195,7 +142,7 @@ struct ShaderModule {
 };
 
 struct PipelineLayout {
-  PipelineLayout(VkDevice device, VkDescriptorSetLayout descriptorSetLayout);
+  PipelineLayout(VkDevice, VkDescriptorSetLayout);
   ~PipelineLayout();
 
   PipelineLayout(PipelineLayout &&) = delete;
@@ -208,8 +155,7 @@ struct PipelineLayout {
 };
 
 struct RenderPass {
-  RenderPass(VkDevice device, VkPhysicalDevice physicalDevice,
-             VkSurfaceKHR surface);
+  RenderPass(VkDevice, VkPhysicalDevice, VkSurfaceKHR);
   ~RenderPass();
 
   RenderPass(RenderPass &&) = delete;
@@ -222,10 +168,9 @@ struct RenderPass {
 };
 
 struct Pipeline {
-  Pipeline(VkDevice device, VkPhysicalDevice physicalDevice,
-           VkSurfaceKHR surface, VkPipelineLayout pipelineLayout,
-           VkRenderPass renderPass, const std::string &vertexShaderCodePath,
-           const std::string &fragmentShaderCodePath, GLFWwindow *window);
+  Pipeline(VkDevice, VkPhysicalDevice, VkSurfaceKHR, VkPipelineLayout,
+           VkRenderPass, const std::string &vertexShaderCodePath,
+           const std::string &fragmentShaderCodePath, GLFWwindow *);
   ~Pipeline();
 
   Pipeline(Pipeline &&) = delete;
@@ -239,7 +184,7 @@ struct Pipeline {
 
 struct Framebuffer {
   Framebuffer(VkDevice, VkPhysicalDevice, VkSurfaceKHR, VkRenderPass,
-              VkImageView imageView, GLFWwindow *window);
+              VkImageView, GLFWwindow *);
   ~Framebuffer();
   Framebuffer(Framebuffer &&) noexcept;
 
@@ -306,7 +251,7 @@ struct CommandBuffers {
 };
 
 struct Buffer {
-  Buffer(VkDevice, VkBufferUsageFlags usage, VkDeviceSize bufferSize);
+  Buffer(VkDevice, VkBufferUsageFlags, VkDeviceSize);
   ~Buffer();
   Buffer(Buffer &&) noexcept;
 
