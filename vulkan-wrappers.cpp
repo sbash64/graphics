@@ -6,7 +6,7 @@
 #include <stdexcept>
 
 namespace sbash64::graphics {
-static auto swapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &formats)
+auto swapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &formats)
     -> VkSurfaceFormatKHR {
   for (const auto &format : formats)
     if (format.format == VK_FORMAT_B8G8R8A8_SRGB &&
@@ -101,6 +101,7 @@ Device::Device(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface) {
                  });
 
   VkPhysicalDeviceFeatures deviceFeatures{};
+  deviceFeatures.samplerAnisotropy = VK_TRUE;
 
   VkDeviceCreateInfo createInfo{};
   createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -200,25 +201,13 @@ Swapchain::Swapchain(VkDevice device, VkPhysicalDevice physicalDevice,
 
 Swapchain::~Swapchain() { vkDestroySwapchainKHR(device, swapChain, nullptr); }
 
-ImageView::ImageView(VkDevice device, VkPhysicalDevice physicalDevice,
-                     VkSurfaceKHR surface, VkImage image)
+ImageView::ImageView(VkDevice device, VkImage image, VkFormat format)
     : device{device} {
   VkImageViewCreateInfo createInfo{};
   createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
   createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-
   createInfo.image = image;
-
-  auto formatCount{vulkanCountFromPhysicalDevice(
-      physicalDevice, [&surface](VkPhysicalDevice device_, uint32_t *count) {
-        vkGetPhysicalDeviceSurfaceFormatsKHR(device_, surface, count, nullptr);
-      })};
-  std::vector<VkSurfaceFormatKHR> formats(formatCount);
-  vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount,
-                                       formats.data());
-  const auto surfaceFormat{swapSurfaceFormat(formats)};
-  createInfo.format = surfaceFormat.format;
-
+  createInfo.format = format;
   createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
   createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
   createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;

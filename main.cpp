@@ -64,6 +64,12 @@ static auto suitable(VkPhysicalDevice device, VkSurfaceKHR surface) -> bool {
       }) == 0)
     return false;
 
+  VkPhysicalDeviceFeatures supportedFeatures;
+  vkGetPhysicalDeviceFeatures(device, &supportedFeatures);
+
+  if (supportedFeatures.samplerAnisotropy == 0U)
+    return false;
+
   uint32_t index{0U};
   for (const auto properties :
        queueFamilyProperties(device, queueFamilyPropertiesCount(device))) {
@@ -355,6 +361,12 @@ static void run(const std::string &vertexShaderCodePath,
                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
   }
 
+  const vulkan_wrappers::ImageView vulkanTextureImageView{
+      vulkanDevice.device, vulkanTextureImage.image, VK_FORMAT_R8G8B8A8_SRGB};
+
+  const vulkan_wrappers::Sampler vulkanTextureSampler{vulkanDevice.device,
+                                                      vulkanPhysicalDevice};
+
   const std::vector<Vertex> vertices = {{{-0.5F, -0.5F}, {1.0F, 0.0F, 0.0F}},
                                         {{0.5F, -0.5F}, {0.0F, 1.0F, 0.0F}},
                                         {{0.5F, 0.5F}, {0.0F, 0.0F, 1.0F}},
@@ -460,15 +472,26 @@ static void run(const std::string &vertexShaderCodePath,
 
     const auto swapChainImages{graphics::swapChainImages(
         vulkanDevice.device, vulkanSwapchain.swapChain)};
+
+    auto formatCount{vulkanCountFromPhysicalDevice(
+        vulkanPhysicalDevice,
+        [&vulkanSurface](VkPhysicalDevice device_, uint32_t *count) {
+          vkGetPhysicalDeviceSurfaceFormatsKHR(device_, vulkanSurface.surface,
+                                               count, nullptr);
+        })};
+    std::vector<VkSurfaceFormatKHR> formats(formatCount);
+    vkGetPhysicalDeviceSurfaceFormatsKHR(vulkanPhysicalDevice,
+                                         vulkanSurface.surface, &formatCount,
+                                         formats.data());
+    const auto surfaceFormat{swapSurfaceFormat(formats)};
+
     std::vector<vulkan_wrappers::ImageView> swapChainImageViews;
-    std::transform(
-        swapChainImages.begin(), swapChainImages.end(),
-        std::back_inserter(swapChainImageViews),
-        [&vulkanDevice, vulkanPhysicalDevice, &vulkanSurface](VkImage image) {
-          return vulkan_wrappers::ImageView{vulkanDevice.device,
-                                            vulkanPhysicalDevice,
-                                            vulkanSurface.surface, image};
-        });
+    std::transform(swapChainImages.begin(), swapChainImages.end(),
+                   std::back_inserter(swapChainImageViews),
+                   [&vulkanDevice, surfaceFormat](VkImage image) {
+                     return vulkan_wrappers::ImageView{
+                         vulkanDevice.device, image, surfaceFormat.format};
+                   });
 
     const vulkan_wrappers::RenderPass vulkanRenderPass{
         vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface};

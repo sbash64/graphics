@@ -35,6 +35,8 @@ auto presentSupportingQueueFamilyIndex(VkPhysicalDevice device,
                                        VkSurfaceKHR surface) -> uint32_t;
 auto swapExtent(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface,
                 GLFWwindow *window) -> VkExtent2D;
+auto swapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &formats)
+    -> VkSurfaceFormatKHR;
 
 namespace vulkan_wrappers {
 struct Instance {
@@ -125,8 +127,7 @@ struct Image {
 };
 
 struct ImageView {
-  ImageView(VkDevice device, VkPhysicalDevice physicalDevice,
-            VkSurfaceKHR surface, VkImage image);
+  ImageView(VkDevice device, VkImage image, VkFormat format);
   ~ImageView();
   ImageView(ImageView &&) noexcept;
 
@@ -136,6 +137,47 @@ struct ImageView {
 
   VkDevice device;
   VkImageView view{};
+};
+
+struct Sampler {
+  Sampler(VkDevice device, VkPhysicalDevice physicalDevice) : device{device} {
+    VkSamplerCreateInfo samplerInfo{};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerInfo.magFilter = VK_FILTER_LINEAR;
+    samplerInfo.minFilter = VK_FILTER_LINEAR;
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.anisotropyEnable = VK_TRUE;
+
+    VkPhysicalDeviceProperties properties{};
+    vkGetPhysicalDeviceProperties(physicalDevice, &properties);
+    samplerInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
+
+    samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+    samplerInfo.unnormalizedCoordinates = VK_FALSE;
+    samplerInfo.compareEnable = VK_FALSE;
+    samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    samplerInfo.mipLodBias = 0.0f;
+    samplerInfo.minLod = 0.0f;
+    samplerInfo.maxLod = 0.0f;
+
+    if (vkCreateSampler(device, &samplerInfo, nullptr, &sampler) !=
+        VK_SUCCESS) {
+      throw std::runtime_error("failed to create texture sampler!");
+    }
+  }
+
+  ~Sampler() { vkDestroySampler(device, sampler, nullptr); }
+
+  Sampler(Sampler &&) = delete;
+  auto operator=(Sampler &&) -> Sampler & = delete;
+  Sampler(const Sampler &) = delete;
+  auto operator=(const Sampler &) -> Sampler & = delete;
+
+  VkDevice device;
+  VkSampler sampler{};
 };
 
 struct ShaderModule {
