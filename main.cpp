@@ -129,6 +129,20 @@ static void prepareForSwapChainRecreation(VkDevice device, GLFWwindow *window) {
   vkDeviceWaitIdle(device);
 }
 
+static void
+submitAndWait(const vulkan_wrappers::CommandBuffers &vulkanCommandBuffers,
+              VkQueue graphicsQueue) {
+  std::array<VkSubmitInfo, 1> submitInfo{};
+  submitInfo.at(0).sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+  submitInfo.at(0).commandBufferCount =
+      static_cast<uint32_t>(vulkanCommandBuffers.commandBuffers.size());
+  submitInfo.at(0).pCommandBuffers = vulkanCommandBuffers.commandBuffers.data();
+
+  vkQueueSubmit(graphicsQueue, submitInfo.size(), submitInfo.data(),
+                VK_NULL_HANDLE);
+  vkQueueWaitIdle(graphicsQueue);
+}
+
 static void copyBuffer(VkDevice device, VkCommandPool commandPool,
                        VkQueue graphicsQueue, VkBuffer sourceBuffer,
                        VkBuffer destinationBuffer, VkDeviceSize size) {
@@ -147,15 +161,7 @@ static void copyBuffer(VkDevice device, VkCommandPool commandPool,
 
   vkEndCommandBuffer(vulkanCommandBuffers.commandBuffers.at(0));
 
-  std::array<VkSubmitInfo, 1> submitInfo{};
-  submitInfo.at(0).sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-  submitInfo.at(0).commandBufferCount =
-      static_cast<uint32_t>(vulkanCommandBuffers.commandBuffers.size());
-  submitInfo.at(0).pCommandBuffers = vulkanCommandBuffers.commandBuffers.data();
-
-  vkQueueSubmit(graphicsQueue, submitInfo.size(), submitInfo.data(),
-                VK_NULL_HANDLE);
-  vkQueueWaitIdle(graphicsQueue);
+  submitAndWait(vulkanCommandBuffers, graphicsQueue);
 }
 
 static void copy(VkDevice device, VkDeviceMemory memory, const void *source,
@@ -218,15 +224,7 @@ static void transitionImageLayout(VkDevice device, VkCommandPool commandPool,
 
   vkEndCommandBuffer(vulkanCommandBuffers.commandBuffers.at(0));
 
-  std::array<VkSubmitInfo, 1> submitInfo{};
-  submitInfo.at(0).sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-  submitInfo.at(0).commandBufferCount =
-      static_cast<uint32_t>(vulkanCommandBuffers.commandBuffers.size());
-  submitInfo.at(0).pCommandBuffers = vulkanCommandBuffers.commandBuffers.data();
-
-  vkQueueSubmit(graphicsQueue, submitInfo.size(), submitInfo.data(),
-                VK_NULL_HANDLE);
-  vkQueueWaitIdle(graphicsQueue);
+  submitAndWait(vulkanCommandBuffers, graphicsQueue);
 }
 
 static void copyBufferToImage(VkDevice device, VkCommandPool commandPool,
@@ -257,15 +255,7 @@ static void copyBufferToImage(VkDevice device, VkCommandPool commandPool,
 
   vkEndCommandBuffer(vulkanCommandBuffers.commandBuffers.at(0));
 
-  std::array<VkSubmitInfo, 1> submitInfo{};
-  submitInfo.at(0).sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-  submitInfo.at(0).commandBufferCount =
-      static_cast<uint32_t>(vulkanCommandBuffers.commandBuffers.size());
-  submitInfo.at(0).pCommandBuffers = vulkanCommandBuffers.commandBuffers.data();
-
-  vkQueueSubmit(graphicsQueue, submitInfo.size(), submitInfo.data(),
-                VK_NULL_HANDLE);
-  vkQueueWaitIdle(graphicsQueue);
+  submitAndWait(vulkanCommandBuffers, graphicsQueue);
 }
 
 static void run(const std::string &vertexShaderCodePath,
