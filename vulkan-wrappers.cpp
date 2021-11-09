@@ -595,11 +595,9 @@ Buffer::Buffer(Buffer &&other) noexcept
 }
 
 DeviceMemory::DeviceMemory(VkDevice device, VkPhysicalDevice physicalDevice,
-                           VkBuffer buffer, VkMemoryPropertyFlags properties)
+                           VkMemoryPropertyFlags properties,
+                           const VkMemoryRequirements &memoryRequirements)
     : device{device} {
-  VkMemoryRequirements memoryRequirements;
-  vkGetBufferMemoryRequirements(device, buffer, &memoryRequirements);
-
   VkMemoryAllocateInfo allocInfo{};
   allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
   allocInfo.allocationSize = memoryRequirements.size;
@@ -607,7 +605,7 @@ DeviceMemory::DeviceMemory(VkDevice device, VkPhysicalDevice physicalDevice,
       physicalDevice, memoryRequirements.memoryTypeBits, properties);
 
   if (vkAllocateMemory(device, &allocInfo, nullptr, &memory) != VK_SUCCESS)
-    throw std::runtime_error("failed to allocate vertex buffer memory!");
+    throw std::runtime_error("failed to allocate device memory!");
 }
 
 DeviceMemory::~DeviceMemory() {

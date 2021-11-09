@@ -4,6 +4,9 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
+
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -157,8 +160,111 @@ static void copy(VkDevice device, VkDeviceMemory memory, const void *source,
   vkUnmapMemory(device, memory);
 }
 
+static void transitionImageLayout(VkDevice device, VkCommandPool commandPool,
+                                  VkQueue graphicsQueue, VkImage image,
+                                  VkImageLayout oldLayout,
+                                  VkImageLayout newLayout) {
+  vulkan_wrappers::CommandBuffers vulkanCommandBuffers{device, commandPool, 1};
+
+  VkCommandBufferBeginInfo beginInfo{};
+  beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+  beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+  vkBeginCommandBuffer(vulkanCommandBuffers.commandBuffers.at(0), &beginInfo);
+
+  VkImageMemoryBarrier barrier{};
+  barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+  barrier.oldLayout = oldLayout;
+  barrier.newLayout = newLayout;
+  barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  barrier.image = image;
+  barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  barrier.subresourceRange.baseMipLevel = 0;
+  barrier.subresourceRange.levelCount = 1;
+  barrier.subresourceRange.baseArrayLayer = 0;
+  barrier.subresourceRange.layerCount = 1;
+
+  VkPipelineStageFlags sourceStage;
+  VkPipelineStageFlags destinationStage;
+
+  if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
+      newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+    barrier.srcAccessMask = 0;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+    sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+    destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+  } else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL &&
+             newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+    sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+  } else {
+    throw std::invalid_argument("unsupported layout transition!");
+  }
+
+  vkCmdPipelineBarrier(vulkanCommandBuffers.commandBuffers.at(0), sourceStage,
+                       destinationStage, 0, 0, nullptr, 0, nullptr, 1,
+                       &barrier);
+
+  vkEndCommandBuffer(vulkanCommandBuffers.commandBuffers.at(0));
+
+  std::array<VkSubmitInfo, 1> submitInfo{};
+  submitInfo.at(0).sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+  submitInfo.at(0).commandBufferCount =
+      static_cast<uint32_t>(vulkanCommandBuffers.commandBuffers.size());
+  submitInfo.at(0).pCommandBuffers = vulkanCommandBuffers.commandBuffers.data();
+
+  vkQueueSubmit(graphicsQueue, submitInfo.size(), submitInfo.data(),
+                VK_NULL_HANDLE);
+  vkQueueWaitIdle(graphicsQueue);
+}
+
+static void copyBufferToImage(VkDevice device, VkCommandPool commandPool,
+                              VkQueue graphicsQueue, VkBuffer buffer,
+                              VkImage image, uint32_t width, uint32_t height) {
+  vulkan_wrappers::CommandBuffers vulkanCommandBuffers{device, commandPool, 1};
+
+  VkCommandBufferBeginInfo beginInfo{};
+  beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+  beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+  vkBeginCommandBuffer(vulkanCommandBuffers.commandBuffers.at(0), &beginInfo);
+
+  VkBufferImageCopy region{};
+  region.bufferOffset = 0;
+  region.bufferRowLength = 0;
+  region.bufferImageHeight = 0;
+  region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  region.imageSubresource.mipLevel = 0;
+  region.imageSubresource.baseArrayLayer = 0;
+  region.imageSubresource.layerCount = 1;
+  region.imageOffset = {0, 0, 0};
+  region.imageExtent = {width, height, 1};
+
+  vkCmdCopyBufferToImage(vulkanCommandBuffers.commandBuffers.at(0), buffer,
+                         image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
+                         &region);
+
+  vkEndCommandBuffer(vulkanCommandBuffers.commandBuffers.at(0));
+
+  std::array<VkSubmitInfo, 1> submitInfo{};
+  submitInfo.at(0).sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+  submitInfo.at(0).commandBufferCount =
+      static_cast<uint32_t>(vulkanCommandBuffers.commandBuffers.size());
+  submitInfo.at(0).pCommandBuffers = vulkanCommandBuffers.commandBuffers.data();
+
+  vkQueueSubmit(graphicsQueue, submitInfo.size(), submitInfo.data(),
+                VK_NULL_HANDLE);
+  vkQueueWaitIdle(graphicsQueue);
+}
+
 static void run(const std::string &vertexShaderCodePath,
-                const std::string &fragmentShaderCodePath) {
+                const std::string &fragmentShaderCodePath,
+                const std::string &textureImagePath) {
   const glfw_wrappers::Init glfwInitialization;
 
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -187,6 +293,67 @@ static void run(const std::string &vertexShaderCodePath,
 
   const vulkan_wrappers::CommandPool vulkanCommandPool{vulkanDevice.device,
                                                        vulkanPhysicalDevice};
+  int texWidth = 0;
+  int texHeight = 0;
+  int texChannels = 0;
+  auto *pixels = stbi_load(textureImagePath.c_str(), &texWidth, &texHeight,
+                           &texChannels, STBI_rgb_alpha);
+
+  if (pixels == nullptr) {
+    throw std::runtime_error("failed to load texture image!");
+  }
+
+  const vulkan_wrappers::Image vulkanTextureImage{
+      vulkanDevice.device,
+      static_cast<uint32_t>(texWidth),
+      static_cast<uint32_t>(texHeight),
+      VK_FORMAT_R8G8B8A8_SRGB,
+      VK_IMAGE_TILING_OPTIMAL,
+      VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT};
+  VkMemoryRequirements memoryRequirements;
+  vkGetImageMemoryRequirements(vulkanDevice.device, vulkanTextureImage.image,
+                               &memoryRequirements);
+  const vulkan_wrappers::DeviceMemory vulkanImageMemory{
+      vulkanDevice.device, vulkanPhysicalDevice,
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, memoryRequirements};
+  vkBindImageMemory(vulkanDevice.device, vulkanTextureImage.image,
+                    vulkanImageMemory.memory, 0);
+
+  {
+    VkDeviceSize imageSize = static_cast<long>(texWidth) * texHeight * 4;
+
+    const vulkan_wrappers::Buffer vulkanStagingBuffer{
+        vulkanDevice.device, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, imageSize};
+    VkMemoryRequirements memoryRequirements;
+    vkGetBufferMemoryRequirements(
+        vulkanDevice.device, vulkanStagingBuffer.buffer, &memoryRequirements);
+    const vulkan_wrappers::DeviceMemory vulkanStagingBufferMemory{
+        vulkanDevice.device, vulkanPhysicalDevice,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        memoryRequirements};
+    vkBindBufferMemory(vulkanDevice.device, vulkanStagingBuffer.buffer,
+                       vulkanStagingBufferMemory.memory, 0);
+
+    copy(vulkanDevice.device, vulkanStagingBufferMemory.memory, pixels,
+         imageSize);
+
+    stbi_image_free(pixels);
+
+    transitionImageLayout(vulkanDevice.device, vulkanCommandPool.commandPool,
+                          graphicsQueue, vulkanTextureImage.image,
+                          VK_IMAGE_LAYOUT_UNDEFINED,
+                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    copyBufferToImage(vulkanDevice.device, vulkanCommandPool.commandPool,
+                      graphicsQueue, vulkanStagingBuffer.buffer,
+                      vulkanTextureImage.image, static_cast<uint32_t>(texWidth),
+                      static_cast<uint32_t>(texHeight));
+    transitionImageLayout(vulkanDevice.device, vulkanCommandPool.commandPool,
+                          graphicsQueue, vulkanTextureImage.image,
+                          VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+  }
 
   const std::vector<Vertex> vertices = {{{-0.5F, -0.5F}, {1.0F, 0.0F, 0.0F}},
                                         {{0.5F, -0.5F}, {0.0F, 1.0F, 0.0F}},
@@ -201,19 +368,26 @@ static void run(const std::string &vertexShaderCodePath,
       vulkanDevice.device,
       VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
       vertexBufferSize};
+  // VkMemoryRequirements memoryRequirements;
+  vkGetBufferMemoryRequirements(vulkanDevice.device, vulkanVertexBuffer.buffer,
+                                &memoryRequirements);
   const vulkan_wrappers::DeviceMemory vulkanVertexBufferMemory{
-      vulkanDevice.device, vulkanPhysicalDevice, vulkanVertexBuffer.buffer,
-      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT};
+      vulkanDevice.device, vulkanPhysicalDevice,
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, memoryRequirements};
   vkBindBufferMemory(vulkanDevice.device, vulkanVertexBuffer.buffer,
                      vulkanVertexBufferMemory.memory, 0);
   {
     const vulkan_wrappers::Buffer vulkanStagingBuffer{
         vulkanDevice.device, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
         vertexBufferSize};
+    VkMemoryRequirements memoryRequirements;
+    vkGetBufferMemoryRequirements(
+        vulkanDevice.device, vulkanStagingBuffer.buffer, &memoryRequirements);
     const vulkan_wrappers::DeviceMemory vulkanStagingBufferMemory{
-        vulkanDevice.device, vulkanPhysicalDevice, vulkanStagingBuffer.buffer,
+        vulkanDevice.device, vulkanPhysicalDevice,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT};
+            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        memoryRequirements};
     vkBindBufferMemory(vulkanDevice.device, vulkanStagingBuffer.buffer,
                        vulkanStagingBufferMemory.memory, 0);
 
@@ -231,18 +405,25 @@ static void run(const std::string &vertexShaderCodePath,
       vulkanDevice.device,
       VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
       indexBufferSize};
+  // VkMemoryRequirements memoryRequirements;
+  vkGetBufferMemoryRequirements(vulkanDevice.device, vulkanIndexBuffer.buffer,
+                                &memoryRequirements);
   const vulkan_wrappers::DeviceMemory vulkanIndexBufferMemory{
-      vulkanDevice.device, vulkanPhysicalDevice, vulkanIndexBuffer.buffer,
-      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT};
+      vulkanDevice.device, vulkanPhysicalDevice,
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, memoryRequirements};
   vkBindBufferMemory(vulkanDevice.device, vulkanIndexBuffer.buffer,
                      vulkanIndexBufferMemory.memory, 0);
   {
     const vulkan_wrappers::Buffer vulkanStagingBuffer{
         vulkanDevice.device, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, indexBufferSize};
+    VkMemoryRequirements memoryRequirements;
+    vkGetBufferMemoryRequirements(
+        vulkanDevice.device, vulkanStagingBuffer.buffer, &memoryRequirements);
     const vulkan_wrappers::DeviceMemory vulkanStagingBufferMemory{
-        vulkanDevice.device, vulkanPhysicalDevice, vulkanStagingBuffer.buffer,
+        vulkanDevice.device, vulkanPhysicalDevice,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT};
+            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+        memoryRequirements};
     vkBindBufferMemory(vulkanDevice.device, vulkanStagingBuffer.buffer,
                        vulkanStagingBufferMemory.memory, 0);
 
@@ -320,11 +501,15 @@ static void run(const std::string &vertexShaderCodePath,
       VkDeviceSize bufferSize = sizeof(UniformBufferObject);
       vulkanUniformBuffers.emplace_back(
           vulkanDevice.device, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, bufferSize);
+      VkMemoryRequirements memoryRequirements;
+      vkGetBufferMemoryRequirements(vulkanDevice.device,
+                                    vulkanUniformBuffers.back().buffer,
+                                    &memoryRequirements);
       vulkanUniformBuffersMemory.emplace_back(
           vulkanDevice.device, vulkanPhysicalDevice,
-          vulkanUniformBuffers.back().buffer,
           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-              VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+              VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+          memoryRequirements);
       vkBindBufferMemory(vulkanDevice.device,
                          vulkanUniformBuffers.back().buffer,
                          vulkanUniformBuffersMemory.back().memory, 0);
@@ -550,10 +735,10 @@ static void run(const std::string &vertexShaderCodePath,
 int main(int argc, char *argv[]) {
   const std::span<char *> arguments{
       argv, static_cast<std::span<char *>::size_type>(argc)};
-  if (arguments.size() < 3)
+  if (arguments.size() < 4)
     return EXIT_FAILURE;
   try {
-    sbash64::graphics::run(arguments[1], arguments[2]);
+    sbash64::graphics::run(arguments[1], arguments[2], arguments[3]);
   } catch (const std::exception &e) {
     std::cerr << e.what() << std::endl;
     return EXIT_FAILURE;
