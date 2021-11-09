@@ -194,8 +194,8 @@ static void transitionImageLayout(VkDevice device, VkCommandPool commandPool,
   barrier.subresourceRange.baseArrayLayer = 0;
   barrier.subresourceRange.layerCount = 1;
 
-  VkPipelineStageFlags sourceStage;
-  VkPipelineStageFlags destinationStage;
+  VkPipelineStageFlags sourceStage = 0;
+  VkPipelineStageFlags destinationStage = 0;
 
   if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
       newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
@@ -251,6 +251,30 @@ static void copyBufferToImage(VkDevice device, VkCommandPool commandPool,
   submitAndWait(vulkanCommandBuffers, graphicsQueue);
 }
 
+namespace stbi_wrappers {
+struct Image {
+  explicit Image(const std::string &imagePath) {
+    pixels = stbi_load(imagePath.c_str(), &width, &height, &channels,
+                       STBI_rgb_alpha);
+    if (pixels == nullptr) {
+      throw std::runtime_error("failed to load texture image!");
+    }
+  }
+
+  ~Image() { stbi_image_free(pixels); }
+
+  Image(Image &&) = delete;
+  auto operator=(Image &&) -> Image & = delete;
+  Image(const Image &) = delete;
+  auto operator=(const Image &) -> Image & = delete;
+
+  stbi_uc *pixels;
+  int width{};
+  int height{};
+  int channels{};
+};
+} // namespace stbi_wrappers
+
 static void run(const std::string &vertexShaderCodePath,
                 const std::string &fragmentShaderCodePath,
                 const std::string &textureImagePath) {
@@ -282,20 +306,11 @@ static void run(const std::string &vertexShaderCodePath,
 
   const vulkan_wrappers::CommandPool vulkanCommandPool{vulkanDevice.device,
                                                        vulkanPhysicalDevice};
-  int texWidth = 0;
-  int texHeight = 0;
-  int texChannels = 0;
-  auto *pixels = stbi_load(textureImagePath.c_str(), &texWidth, &texHeight,
-                           &texChannels, STBI_rgb_alpha);
-
-  if (pixels == nullptr) {
-    throw std::runtime_error("failed to load texture image!");
-  }
-
+  const stbi_wrappers::Image stbiTextureImage{textureImagePath};
   const vulkan_wrappers::Image vulkanTextureImage{
       vulkanDevice.device,
-      static_cast<uint32_t>(texWidth),
-      static_cast<uint32_t>(texHeight),
+      static_cast<uint32_t>(stbiTextureImage.width),
+      static_cast<uint32_t>(stbiTextureImage.height),
       VK_FORMAT_R8G8B8A8_SRGB,
       VK_IMAGE_TILING_OPTIMAL,
       VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
@@ -310,7 +325,8 @@ static void run(const std::string &vertexShaderCodePath,
                     vulkanImageMemory.memory, 0);
 
   {
-    VkDeviceSize imageSize = static_cast<long>(texWidth) * texHeight * 4;
+    VkDeviceSize imageSize =
+        static_cast<long>(stbiTextureImage.width) * stbiTextureImage.height * 4;
 
     const vulkan_wrappers::Buffer vulkanStagingBuffer{
         vulkanDevice.device, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, imageSize};
@@ -325,10 +341,8 @@ static void run(const std::string &vertexShaderCodePath,
     vkBindBufferMemory(vulkanDevice.device, vulkanStagingBuffer.buffer,
                        vulkanStagingBufferMemory.memory, 0);
 
-    copy(vulkanDevice.device, vulkanStagingBufferMemory.memory, pixels,
-         imageSize);
-
-    stbi_image_free(pixels);
+    copy(vulkanDevice.device, vulkanStagingBufferMemory.memory,
+         stbiTextureImage.pixels, imageSize);
 
     transitionImageLayout(vulkanDevice.device, vulkanCommandPool.commandPool,
                           graphicsQueue, vulkanTextureImage.image,
@@ -336,8 +350,9 @@ static void run(const std::string &vertexShaderCodePath,
                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
     copyBufferToImage(vulkanDevice.device, vulkanCommandPool.commandPool,
                       graphicsQueue, vulkanStagingBuffer.buffer,
-                      vulkanTextureImage.image, static_cast<uint32_t>(texWidth),
-                      static_cast<uint32_t>(texHeight));
+                      vulkanTextureImage.image,
+                      static_cast<uint32_t>(stbiTextureImage.width),
+                      static_cast<uint32_t>(stbiTextureImage.height));
     transitionImageLayout(vulkanDevice.device, vulkanCommandPool.commandPool,
                           graphicsQueue, vulkanTextureImage.image,
                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
