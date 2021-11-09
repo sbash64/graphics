@@ -28,9 +28,6 @@ struct UniformBufferObject {
   alignas(16) glm::mat4 proj;
 };
 
-constexpr auto windowWidth{800};
-constexpr auto windowHeight{600};
-
 static auto suitable(VkPhysicalDevice device, VkSurfaceKHR surface) -> bool {
   auto extensionPropertyCount{vulkanCountFromPhysicalDevice(
       device, [](VkPhysicalDevice device_, uint32_t *count) {
@@ -85,7 +82,7 @@ static auto suitable(VkPhysicalDevice device, VkSurfaceKHR surface) -> bool {
 
 static auto suitableDevice(const std::vector<VkPhysicalDevice> &devices,
                            VkSurfaceKHR surface) -> VkPhysicalDevice {
-  for (const auto &device : devices)
+  for (auto *const device : devices)
     if (suitable(device, surface))
       return device;
   throw std::runtime_error("failed to find a suitable GPU!");
@@ -143,16 +140,20 @@ submitAndWait(const vulkan_wrappers::CommandBuffers &vulkanCommandBuffers,
   vkQueueWaitIdle(graphicsQueue);
 }
 
+static void begin(VkCommandBuffer buffer) {
+  VkCommandBufferBeginInfo beginInfo{};
+  beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+  beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+  vkBeginCommandBuffer(buffer, &beginInfo);
+}
+
 static void copyBuffer(VkDevice device, VkCommandPool commandPool,
                        VkQueue graphicsQueue, VkBuffer sourceBuffer,
                        VkBuffer destinationBuffer, VkDeviceSize size) {
   vulkan_wrappers::CommandBuffers vulkanCommandBuffers{device, commandPool, 1};
 
-  VkCommandBufferBeginInfo beginInfo{};
-  beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-  beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-  vkBeginCommandBuffer(vulkanCommandBuffers.commandBuffers.at(0), &beginInfo);
+  begin(vulkanCommandBuffers.commandBuffers.at(0));
 
   std::array<VkBufferCopy, 1> copyRegion{};
   copyRegion.at(0).size = size;
@@ -178,11 +179,7 @@ static void transitionImageLayout(VkDevice device, VkCommandPool commandPool,
                                   VkImageLayout newLayout) {
   vulkan_wrappers::CommandBuffers vulkanCommandBuffers{device, commandPool, 1};
 
-  VkCommandBufferBeginInfo beginInfo{};
-  beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-  beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-  vkBeginCommandBuffer(vulkanCommandBuffers.commandBuffers.at(0), &beginInfo);
+  begin(vulkanCommandBuffers.commandBuffers.at(0));
 
   VkImageMemoryBarrier barrier{};
   barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -232,11 +229,7 @@ static void copyBufferToImage(VkDevice device, VkCommandPool commandPool,
                               VkImage image, uint32_t width, uint32_t height) {
   vulkan_wrappers::CommandBuffers vulkanCommandBuffers{device, commandPool, 1};
 
-  VkCommandBufferBeginInfo beginInfo{};
-  beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-  beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-  vkBeginCommandBuffer(vulkanCommandBuffers.commandBuffers.at(0), &beginInfo);
+  begin(vulkanCommandBuffers.commandBuffers.at(0));
 
   VkBufferImageCopy region{};
   region.bufferOffset = 0;
@@ -264,7 +257,7 @@ static void run(const std::string &vertexShaderCodePath,
   const glfw_wrappers::Init glfwInitialization;
 
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-  const glfw_wrappers::Window glfwWindow{windowWidth, windowHeight};
+  const glfw_wrappers::Window glfwWindow{800, 600};
   auto framebufferResized{false};
   glfwSetWindowUserPointer(glfwWindow.window, &framebufferResized);
   glfwSetFramebufferSizeCallback(glfwWindow.window, framebufferResizeCallback);
