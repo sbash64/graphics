@@ -551,6 +551,7 @@ static void run(const std::string &vertexShaderCodePath,
           static_cast<uint32_t>(swapChainImages.size());
       allocInfo.pSetLayouts = layouts.data();
 
+      // no deallocate needed here per tutorial
       if (vkAllocateDescriptorSets(vulkanDevice.device, &allocInfo,
                                    descriptorSets.data()) != VK_SUCCESS) {
         throw std::runtime_error("failed to allocate descriptor sets!");

@@ -392,8 +392,8 @@ Pipeline::Pipeline(VkDevice device, VkPhysicalDevice physicalDevice,
   viewport.at(0).y = 0.0F;
 
   const auto swapChainExtent{swapExtent(physicalDevice, surface, window)};
-  viewport.at(0).width = swapChainExtent.width;
-  viewport.at(0).height = swapChainExtent.height;
+  viewport.at(0).width = static_cast<float>(swapChainExtent.width);
+  viewport.at(0).height = static_cast<float>(swapChainExtent.height);
 
   viewport.at(0).minDepth = 0.0F;
   viewport.at(0).maxDepth = 1.0F;
@@ -430,8 +430,9 @@ Pipeline::Pipeline(VkDevice device, VkPhysicalDevice physicalDevice,
 
   std::array<VkPipelineColorBlendAttachmentState, 1> colorBlendAttachment{};
   colorBlendAttachment.at(0).colorWriteMask =
-      VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-      VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+      static_cast<unsigned>(VK_COLOR_COMPONENT_R_BIT) |
+      VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
+      VK_COLOR_COMPONENT_A_BIT;
   colorBlendAttachment.at(0).blendEnable = VK_FALSE;
 
   VkPipelineColorBlendStateCreateInfo colorBlending{};
@@ -688,9 +689,8 @@ Image::Image(VkDevice device, uint32_t width, uint32_t height, VkFormat format,
   imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
   imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-  if (vkCreateImage(device, &imageInfo, nullptr, &image) != VK_SUCCESS) {
+  if (vkCreateImage(device, &imageInfo, nullptr, &image) != VK_SUCCESS)
     throw std::runtime_error("failed to create image!");
-  }
 }
 
 Image::~Image() { vkDestroyImage(device, image, nullptr); }
@@ -715,13 +715,12 @@ Sampler::Sampler(VkDevice device, VkPhysicalDevice physicalDevice)
   samplerInfo.compareEnable = VK_FALSE;
   samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
   samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-  samplerInfo.mipLodBias = 0.0f;
-  samplerInfo.minLod = 0.0f;
-  samplerInfo.maxLod = 0.0f;
+  samplerInfo.mipLodBias = 0.0F;
+  samplerInfo.minLod = 0.0F;
+  samplerInfo.maxLod = 0.0F;
 
-  if (vkCreateSampler(device, &samplerInfo, nullptr, &sampler) != VK_SUCCESS) {
+  if (vkCreateSampler(device, &samplerInfo, nullptr, &sampler) != VK_SUCCESS)
     throw std::runtime_error("failed to create texture sampler!");
-  }
 }
 
 Sampler::~Sampler() { vkDestroySampler(device, sampler, nullptr); }
