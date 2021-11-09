@@ -325,8 +325,8 @@ static void run(const std::string &vertexShaderCodePath,
                     vulkanImageMemory.memory, 0);
 
   {
-    VkDeviceSize imageSize{static_cast<unsigned long>(stbiTextureImage.width) *
-                           stbiTextureImage.height * 4};
+    const auto imageSize{static_cast<VkDeviceSize>(
+        stbiTextureImage.width * stbiTextureImage.height * 4)};
 
     const vulkan_wrappers::Buffer vulkanStagingBuffer{
         vulkanDevice.device, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, imageSize};
@@ -366,10 +366,10 @@ static void run(const std::string &vertexShaderCodePath,
                                                       vulkanPhysicalDevice};
 
   const std::vector<Vertex> vertices = {
-      {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-      {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-      {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-      {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}};
+      {{-0.5F, -0.5F}, {1.0F, 0.0F, 0.0F}, {1.0F, 0.0F}},
+      {{0.5F, -0.5F}, {0.0F, 1.0F, 0.0F}, {0.0F, 0.0F}},
+      {{0.5F, 0.5F}, {0.0F, 0.0F, 1.0F}, {0.0F, 1.0F}},
+      {{-0.5F, 0.5F}, {1.0F, 1.0F, 1.0F}, {1.0F, 1.0F}}};
 
   const std::vector<uint16_t> indices = {0, 1, 2, 2, 3, 0};
 
@@ -681,16 +681,18 @@ static void run(const std::string &vertexShaderCodePath,
       }
       {
         UniformBufferObject ubo{};
-        ubo.model = glm::rotate(glm::mat4(1.0f),
-                                glm::radians(rotationAngleCentidegrees / 100.F),
-                                glm::vec3(0.0f, 0.0f, 1.0f));
-        ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f),
-                               glm::vec3(0.0f, 0.0f, 0.0f),
-                               glm::vec3(0.0f, 0.0f, 1.0f));
-        ubo.proj = glm::perspective(
-            glm::radians(45.0f),
-            swapChainExtent.width / static_cast<float>(swapChainExtent.height),
-            0.1f, 10.0f);
+        ubo.model = glm::rotate(
+            glm::mat4(1.0F),
+            glm::radians(static_cast<float>(rotationAngleCentidegrees) / 100),
+            glm::vec3(0.0F, 0.0F, 1.0F));
+        ubo.view = glm::lookAt(glm::vec3(2.0F, 2.0F, 2.0F),
+                               glm::vec3(0.0F, 0.0F, 0.0F),
+                               glm::vec3(0.0F, 0.0F, 1.0F));
+        ubo.proj =
+            glm::perspective(glm::radians(45.0F),
+                             static_cast<float>(swapChainExtent.width) /
+                                 static_cast<float>(swapChainExtent.height),
+                             0.1F, 10.0F);
         ubo.proj[1][1] *= -1;
 
         copy(vulkanDevice.device, vulkanUniformBuffersMemory[imageIndex].memory,
@@ -775,7 +777,7 @@ int main(int argc, char *argv[]) {
   try {
     sbash64::graphics::run(arguments[1], arguments[2], arguments[3]);
   } catch (const std::exception &e) {
-    std::cerr << e.what() << std::endl;
+    std::cerr << e.what() << '\n';
     return EXIT_FAILURE;
   }
   return EXIT_SUCCESS;
