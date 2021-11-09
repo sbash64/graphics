@@ -653,6 +653,7 @@ static void run(const std::string &vertexShaderCodePath,
 
     imagesInFlight.resize(swapChainImages.size(), VK_NULL_HANDLE);
     auto recreatingSwapChain{false};
+    auto rotationAngleDegrees{0};
     while (!recreatingSwapChain) {
       if (glfwWindowShouldClose(glfwWindow.window) != 0) {
         playing = false;
@@ -680,15 +681,9 @@ static void run(const std::string &vertexShaderCodePath,
           throw std::runtime_error("failed to acquire swap chain image!");
       }
       {
-        static auto startTime = std::chrono::high_resolution_clock::now();
-
-        auto currentTime = std::chrono::high_resolution_clock::now();
-        float time = std::chrono::duration<float, std::chrono::seconds::period>(
-                         currentTime - startTime)
-                         .count();
-
         UniformBufferObject ubo{};
-        ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f),
+        ubo.model = glm::rotate(glm::mat4(1.0f),
+                                glm::radians(rotationAngleDegrees * 1.F),
                                 glm::vec3(0.0f, 0.0f, 1.0f));
         ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f),
                                glm::vec3(0.0f, 0.0f, 0.0f),
@@ -701,6 +696,9 @@ static void run(const std::string &vertexShaderCodePath,
 
         copy(vulkanDevice.device, vulkanUniformBuffersMemory[imageIndex].memory,
              &ubo, sizeof(ubo));
+
+        if (++rotationAngleDegrees == 360)
+          rotationAngleDegrees = 0;
       }
 
       if (imagesInFlight[imageIndex] != VK_NULL_HANDLE)
