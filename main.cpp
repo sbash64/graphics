@@ -416,6 +416,71 @@ static auto descriptorSets(
   return descriptorSets;
 }
 
+void recordCommandBuffers(
+    const glfw_wrappers::Window &glfwWindow,
+    const vulkan_wrappers::Surface &vulkanSurface,
+    VkPhysicalDevice vulkanPhysicalDevice,
+    const vulkan_wrappers::Buffer &vulkanVertexBuffer,
+    const vulkan_wrappers::Buffer &vulkanIndexBuffer,
+    const vulkan_wrappers::RenderPass &vulkanRenderPass,
+    const vulkan_wrappers::PipelineLayout &vulkanPipelineLayout,
+    const vulkan_wrappers::Pipeline &vulkanPipeline,
+    const std::vector<vulkan_wrappers::Framebuffer> &vulkanFrameBuffers,
+    const std::vector<VkDescriptorSet> &descriptorSets,
+    const vulkan_wrappers::CommandBuffers &vulkanCommandBuffers,
+    const std::vector<uint16_t> &indices) {
+  for (auto i{0}; i < vulkanCommandBuffers.commandBuffers.size(); i++) {
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    if (vkBeginCommandBuffer(vulkanCommandBuffers.commandBuffers[i],
+                             &beginInfo) != VK_SUCCESS)
+      throw std::runtime_error("failed to begin recording command buffer!");
+
+    VkRenderPassBeginInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassInfo.renderPass = vulkanRenderPass.renderPass;
+    renderPassInfo.framebuffer = vulkanFrameBuffers.at(i).framebuffer;
+    renderPassInfo.renderArea.offset = {0, 0};
+
+    renderPassInfo.renderArea.extent = swapExtent(
+        vulkanPhysicalDevice, vulkanSurface.surface, glfwWindow.window);
+
+    std::array<VkClearValue, 2> clearValues{};
+    clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+    clearValues[1].depthStencil = {1.0f, 0};
+    renderPassInfo.clearValueCount = clearValues.size();
+    renderPassInfo.pClearValues = clearValues.data();
+
+    vkCmdBeginRenderPass(vulkanCommandBuffers.commandBuffers[i],
+                         &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    vkCmdBindPipeline(vulkanCommandBuffers.commandBuffers[i],
+                      VK_PIPELINE_BIND_POINT_GRAPHICS, vulkanPipeline.pipeline);
+
+    std::array<VkBuffer, 1> vertexBuffers = {vulkanVertexBuffer.buffer};
+    std::array<VkDeviceSize, 1> offsets = {0};
+    vkCmdBindVertexBuffers(vulkanCommandBuffers.commandBuffers[i], 0, 1,
+                           vertexBuffers.data(), offsets.data());
+
+    vkCmdBindIndexBuffer(vulkanCommandBuffers.commandBuffers[i],
+                         vulkanIndexBuffer.buffer, 0, VK_INDEX_TYPE_UINT16);
+
+    vkCmdBindDescriptorSets(vulkanCommandBuffers.commandBuffers[i],
+                            VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            vulkanPipelineLayout.pipelineLayout, 0, 1,
+                            &descriptorSets[i], 0, nullptr);
+
+    vkCmdDrawIndexed(vulkanCommandBuffers.commandBuffers[i],
+                     static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+
+    vkCmdEndRenderPass(vulkanCommandBuffers.commandBuffers[i]);
+
+    if (vkEndCommandBuffer(vulkanCommandBuffers.commandBuffers[i]) !=
+        VK_SUCCESS)
+      throw std::runtime_error("failed to record command buffer!");
+  }
+}
+
 static void run(const std::string &vertexShaderCodePath,
                 const std::string &fragmentShaderCodePath,
                 const std::string &textureImagePath) {
@@ -641,57 +706,11 @@ static void run(const std::string &vertexShaderCodePath,
         vulkanDevice.device, vulkanCommandPool.commandPool,
         vulkanFrameBuffers.size()};
 
-    for (auto i{0}; i < vulkanCommandBuffers.commandBuffers.size(); i++) {
-      VkCommandBufferBeginInfo beginInfo{};
-      beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-      if (vkBeginCommandBuffer(vulkanCommandBuffers.commandBuffers[i],
-                               &beginInfo) != VK_SUCCESS)
-        throw std::runtime_error("failed to begin recording command buffer!");
-
-      VkRenderPassBeginInfo renderPassInfo{};
-      renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-      renderPassInfo.renderPass = vulkanRenderPass.renderPass;
-      renderPassInfo.framebuffer = vulkanFrameBuffers.at(i).framebuffer;
-      renderPassInfo.renderArea.offset = {0, 0};
-
-      renderPassInfo.renderArea.extent = swapExtent(
-          vulkanPhysicalDevice, vulkanSurface.surface, glfwWindow.window);
-
-      std::array<VkClearValue, 2> clearValues{};
-      clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-      clearValues[1].depthStencil = {1.0f, 0};
-      renderPassInfo.clearValueCount = clearValues.size();
-      renderPassInfo.pClearValues = clearValues.data();
-
-      vkCmdBeginRenderPass(vulkanCommandBuffers.commandBuffers[i],
-                           &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-      vkCmdBindPipeline(vulkanCommandBuffers.commandBuffers[i],
-                        VK_PIPELINE_BIND_POINT_GRAPHICS,
-                        vulkanPipeline.pipeline);
-
-      std::array<VkBuffer, 1> vertexBuffers = {vulkanVertexBuffer.buffer};
-      std::array<VkDeviceSize, 1> offsets = {0};
-      vkCmdBindVertexBuffers(vulkanCommandBuffers.commandBuffers[i], 0, 1,
-                             vertexBuffers.data(), offsets.data());
-
-      vkCmdBindIndexBuffer(vulkanCommandBuffers.commandBuffers[i],
-                           vulkanIndexBuffer.buffer, 0, VK_INDEX_TYPE_UINT16);
-
-      vkCmdBindDescriptorSets(vulkanCommandBuffers.commandBuffers[i],
-                              VK_PIPELINE_BIND_POINT_GRAPHICS,
-                              vulkanPipelineLayout.pipelineLayout, 0, 1,
-                              &descriptorSets[i], 0, nullptr);
-
-      vkCmdDrawIndexed(vulkanCommandBuffers.commandBuffers[i],
-                       static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
-
-      vkCmdEndRenderPass(vulkanCommandBuffers.commandBuffers[i]);
-
-      if (vkEndCommandBuffer(vulkanCommandBuffers.commandBuffers[i]) !=
-          VK_SUCCESS)
-        throw std::runtime_error("failed to record command buffer!");
-    }
+    recordCommandBuffers(glfwWindow, vulkanSurface, vulkanPhysicalDevice,
+                         vulkanVertexBuffer, vulkanIndexBuffer,
+                         vulkanRenderPass, vulkanPipelineLayout, vulkanPipeline,
+                         vulkanFrameBuffers, descriptorSets,
+                         vulkanCommandBuffers, indices);
 
     imagesInFlight.resize(swapChainImages.size(), VK_NULL_HANDLE);
     auto recreatingSwapChain{false};
