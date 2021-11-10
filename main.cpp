@@ -1,5 +1,6 @@
 #include <sbash64/graphics/glfw-wrappers.hpp>
 #include <sbash64/graphics/vulkan-wrappers.hpp>
+#include <vulkan/vulkan_core.h>
 
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
@@ -332,6 +333,30 @@ static void copy(VkDevice device, VkPhysicalDevice physicalDevice,
                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 }
 
+static auto swapChainImageViews(VkDevice device,
+                                VkPhysicalDevice physicalDevice,
+                                VkSurfaceKHR surface,
+                                const std::vector<VkImage> &swapChainImages)
+    -> std::vector<vulkan_wrappers::ImageView> {
+  auto formatCount{vulkanCountFromPhysicalDevice(
+      physicalDevice, [surface](VkPhysicalDevice device_, uint32_t *count) {
+        vkGetPhysicalDeviceSurfaceFormatsKHR(device_, surface, count, nullptr);
+      })};
+  std::vector<VkSurfaceFormatKHR> formats(formatCount);
+  vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount,
+                                       formats.data());
+  const auto format{swapSurfaceFormat(formats).format};
+
+  std::vector<vulkan_wrappers::ImageView> swapChainImageViews;
+  std::transform(swapChainImages.begin(), swapChainImages.end(),
+                 std::back_inserter(swapChainImageViews),
+                 [device, format](VkImage image) {
+                   return vulkan_wrappers::ImageView{device, image, format,
+                                                     VK_IMAGE_ASPECT_COLOR_BIT};
+                 });
+  return swapChainImageViews;
+}
+
 static void run(const std::string &vertexShaderCodePath,
                 const std::string &fragmentShaderCodePath,
                 const std::string &textureImagePath) {
@@ -404,7 +429,7 @@ static void run(const std::string &vertexShaderCodePath,
 
   const std::vector<uint16_t> indices = {0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4};
 
-  VkDeviceSize vertexBufferSize{sizeof(vertices[0]) * vertices.size()};
+  const VkDeviceSize vertexBufferSize{sizeof(vertices[0]) * vertices.size()};
 
   const vulkan_wrappers::Buffer vulkanVertexBuffer{
       vulkanDevice.device,
@@ -421,9 +446,9 @@ static void run(const std::string &vertexShaderCodePath,
 
   copy(vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
        graphicsQueue, vulkanVertexBuffer.buffer, vertices.data(),
-       sizeof(vertices[0]) * vertices.size());
+       vertexBufferSize);
 
-  VkDeviceSize indexBufferSize{sizeof(indices[0]) * indices.size()};
+  const VkDeviceSize indexBufferSize{sizeof(indices[0]) * indices.size()};
 
   const vulkan_wrappers::Buffer vulkanIndexBuffer{
       vulkanDevice.device,
@@ -440,7 +465,7 @@ static void run(const std::string &vertexShaderCodePath,
 
   copy(vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
        graphicsQueue, vulkanIndexBuffer.buffer, indices.data(),
-       sizeof(indices[0]) * indices.size());
+       indexBufferSize);
 
   const auto maxFramesInFlight{2};
 
@@ -468,26 +493,9 @@ static void run(const std::string &vertexShaderCodePath,
     const auto swapChainImages{graphics::swapChainImages(
         vulkanDevice.device, vulkanSwapchain.swapChain)};
 
-    auto formatCount{vulkanCountFromPhysicalDevice(
-        vulkanPhysicalDevice,
-        [&vulkanSurface](VkPhysicalDevice device_, uint32_t *count) {
-          vkGetPhysicalDeviceSurfaceFormatsKHR(device_, vulkanSurface.surface,
-                                               count, nullptr);
-        })};
-    std::vector<VkSurfaceFormatKHR> formats(formatCount);
-    vkGetPhysicalDeviceSurfaceFormatsKHR(vulkanPhysicalDevice,
-                                         vulkanSurface.surface, &formatCount,
-                                         formats.data());
-    const auto surfaceFormat{swapSurfaceFormat(formats)};
-
-    std::vector<vulkan_wrappers::ImageView> swapChainImageViews;
-    std::transform(swapChainImages.begin(), swapChainImages.end(),
-                   std::back_inserter(swapChainImageViews),
-                   [&vulkanDevice, surfaceFormat](VkImage image) {
-                     return vulkan_wrappers::ImageView{
-                         vulkanDevice.device, image, surfaceFormat.format,
-                         VK_IMAGE_ASPECT_COLOR_BIT};
-                   });
+    const auto swapChainImageViews{
+        graphics::swapChainImageViews(vulkanDevice.device, vulkanPhysicalDevice,
+                                      vulkanSurface.surface, swapChainImages)};
 
     const vulkan_wrappers::RenderPass vulkanRenderPass{
         vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface};
