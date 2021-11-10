@@ -1,6 +1,7 @@
 #include <sbash64/graphics/glfw-wrappers.hpp>
 #include <sbash64/graphics/vulkan-wrappers.hpp>
 
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -360,18 +361,24 @@ static void run(const std::string &vertexShaderCodePath,
   }
 
   const vulkan_wrappers::ImageView vulkanTextureImageView{
-      vulkanDevice.device, vulkanTextureImage.image, VK_FORMAT_R8G8B8A8_SRGB};
+      vulkanDevice.device, vulkanTextureImage.image, VK_FORMAT_R8G8B8A8_SRGB,
+      VK_IMAGE_ASPECT_COLOR_BIT};
 
   const vulkan_wrappers::Sampler vulkanTextureSampler{vulkanDevice.device,
                                                       vulkanPhysicalDevice};
 
   const std::vector<Vertex> vertices = {
-      {{-0.5F, -0.5F}, {1.0F, 0.0F, 0.0F}, {1.0F, 0.0F}},
-      {{0.5F, -0.5F}, {0.0F, 1.0F, 0.0F}, {0.0F, 0.0F}},
-      {{0.5F, 0.5F}, {0.0F, 0.0F, 1.0F}, {0.0F, 1.0F}},
-      {{-0.5F, 0.5F}, {1.0F, 1.0F, 1.0F}, {1.0F, 1.0F}}};
+      {{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+      {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+      {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+      {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
 
-  const std::vector<uint16_t> indices = {0, 1, 2, 2, 3, 0};
+      {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+      {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+      {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+      {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}};
+
+  const std::vector<uint16_t> indices = {0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4};
 
   VkDeviceSize vertexBufferSize{sizeof(vertices[0]) * vertices.size()};
 
@@ -489,7 +496,8 @@ static void run(const std::string &vertexShaderCodePath,
                    std::back_inserter(swapChainImageViews),
                    [&vulkanDevice, surfaceFormat](VkImage image) {
                      return vulkan_wrappers::ImageView{
-                         vulkanDevice.device, image, surfaceFormat.format};
+                         vulkanDevice.device, image, surfaceFormat.format,
+                         VK_IMAGE_ASPECT_COLOR_BIT};
                    });
 
     const vulkan_wrappers::RenderPass vulkanRenderPass{
@@ -504,16 +512,45 @@ static void run(const std::string &vertexShaderCodePath,
         vulkanRenderPass.renderPass, vertexShaderCodePath,
         fragmentShaderCodePath,      glfwWindow.window};
 
+    const auto swapChainExtent{swapExtent(
+        vulkanPhysicalDevice, vulkanSurface.surface, glfwWindow.window)};
+
+    const auto depthFormat{findDepthFormat(vulkanPhysicalDevice)};
+
+    const vulkan_wrappers::Image vulkanDepthImage{
+        vulkanDevice.device,
+        swapChainExtent.width,
+        swapChainExtent.height,
+        depthFormat,
+        VK_IMAGE_TILING_OPTIMAL,
+        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT};
+    VkMemoryRequirements memoryRequirements;
+    vkGetImageMemoryRequirements(vulkanDevice.device, vulkanDepthImage.image,
+                                 &memoryRequirements);
+    const vulkan_wrappers::DeviceMemory vulkanDepthImageMemory{
+        vulkanDevice.device, vulkanPhysicalDevice,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, memoryRequirements};
+    vkBindImageMemory(vulkanDevice.device, vulkanDepthImage.image,
+                      vulkanDepthImageMemory.memory, 0);
+
+    const vulkan_wrappers::ImageView vulkanDepthImageView{
+        vulkanDevice.device, vulkanDepthImage.image, depthFormat,
+        VK_IMAGE_ASPECT_DEPTH_BIT};
+
     std::vector<vulkan_wrappers::Framebuffer> vulkanFrameBuffers;
     std::transform(swapChainImageViews.begin(), swapChainImageViews.end(),
                    std::back_inserter(vulkanFrameBuffers),
                    [&vulkanDevice, vulkanPhysicalDevice, &vulkanSurface,
-                    &vulkanRenderPass,
+                    &vulkanRenderPass, &vulkanDepthImageView,
                     &glfwWindow](const vulkan_wrappers::ImageView &imageView) {
                      return vulkan_wrappers::Framebuffer{
-                         vulkanDevice.device,   vulkanPhysicalDevice,
-                         vulkanSurface.surface, vulkanRenderPass.renderPass,
-                         imageView.view,        glfwWindow.window};
+                         vulkanDevice.device,
+                         vulkanPhysicalDevice,
+                         vulkanSurface.surface,
+                         vulkanRenderPass.renderPass,
+                         {imageView.view, vulkanDepthImageView.view},
+                         glfwWindow.window};
                    });
 
     std::vector<vulkan_wrappers::Buffer> vulkanUniformBuffers;
@@ -612,10 +649,11 @@ static void run(const std::string &vertexShaderCodePath,
       renderPassInfo.renderArea.extent = swapExtent(
           vulkanPhysicalDevice, vulkanSurface.surface, glfwWindow.window);
 
-      const std::array<VkClearValue, 1> clearColor = {
-          {{{{0.0F, 0.0F, 0.0F, 1.0F}}}}};
-      renderPassInfo.clearValueCount = clearColor.size();
-      renderPassInfo.pClearValues = clearColor.data();
+      std::array<VkClearValue, 2> clearValues{};
+      clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+      clearValues[1].depthStencil = {1.0f, 0};
+      renderPassInfo.clearValueCount = clearValues.size();
+      renderPassInfo.pClearValues = clearValues.data();
 
       vkCmdBeginRenderPass(vulkanCommandBuffers.commandBuffers[i],
                            &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
@@ -646,9 +684,6 @@ static void run(const std::string &vertexShaderCodePath,
           VK_SUCCESS)
         throw std::runtime_error("failed to record command buffer!");
     }
-
-    const auto swapChainExtent{swapExtent(
-        vulkanPhysicalDevice, vulkanSurface.surface, glfwWindow.window)};
 
     imagesInFlight.resize(swapChainImages.size(), VK_NULL_HANDLE);
     auto recreatingSwapChain{false};
