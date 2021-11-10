@@ -481,6 +481,28 @@ void recordCommandBuffers(
   }
 }
 
+static void updateUniformBuffer(
+    const vulkan_wrappers::Device &vulkanDevice,
+    const vulkan_wrappers::DeviceMemory &vulkanUniformBuffersMemory,
+    VkExtent2D swapChainExtent, int rotationAngleCentidegrees) {
+  UniformBufferObject ubo{};
+  ubo.model = glm::rotate(
+      glm::mat4(1.0F),
+      glm::radians(static_cast<float>(rotationAngleCentidegrees) / 100),
+      glm::vec3(0.0F, 0.0F, 1.0F));
+  ubo.view =
+      glm::lookAt(glm::vec3(2.0F, 2.0F, 2.0F), glm::vec3(0.0F, 0.0F, 0.0F),
+                  glm::vec3(0.0F, 0.0F, 1.0F));
+  ubo.proj = glm::perspective(glm::radians(45.0F),
+                              static_cast<float>(swapChainExtent.width) /
+                                  static_cast<float>(swapChainExtent.height),
+                              0.1F, 10.0F);
+  ubo.proj[1][1] *= -1;
+
+  copy(vulkanDevice.device, vulkanUniformBuffersMemory.memory, &ubo,
+       sizeof(ubo));
+}
+
 static void run(const std::string &vertexShaderCodePath,
                 const std::string &fragmentShaderCodePath,
                 const std::string &textureImagePath) {
@@ -741,28 +763,12 @@ static void run(const std::string &vertexShaderCodePath,
         if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
           throw std::runtime_error("failed to acquire swap chain image!");
       }
-      {
-        UniformBufferObject ubo{};
-        ubo.model = glm::rotate(
-            glm::mat4(1.0F),
-            glm::radians(static_cast<float>(rotationAngleCentidegrees) / 100),
-            glm::vec3(0.0F, 0.0F, 1.0F));
-        ubo.view = glm::lookAt(glm::vec3(2.0F, 2.0F, 2.0F),
-                               glm::vec3(0.0F, 0.0F, 0.0F),
-                               glm::vec3(0.0F, 0.0F, 1.0F));
-        ubo.proj =
-            glm::perspective(glm::radians(45.0F),
-                             static_cast<float>(swapChainExtent.width) /
-                                 static_cast<float>(swapChainExtent.height),
-                             0.1F, 10.0F);
-        ubo.proj[1][1] *= -1;
 
-        copy(vulkanDevice.device, vulkanUniformBuffersMemory[imageIndex].memory,
-             &ubo, sizeof(ubo));
+      updateUniformBuffer(vulkanDevice, vulkanUniformBuffersMemory[imageIndex],
+                          swapChainExtent, rotationAngleCentidegrees);
 
-        if (++rotationAngleCentidegrees == 36000)
-          rotationAngleCentidegrees = 0;
-      }
+      if (++rotationAngleCentidegrees == 36000)
+        rotationAngleCentidegrees = 0;
 
       if (imagesInFlight[imageIndex] != VK_NULL_HANDLE)
         vkWaitForFences(vulkanDevice.device, 1, &imagesInFlight[imageIndex],
