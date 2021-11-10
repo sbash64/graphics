@@ -4,6 +4,7 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 
 #include <array>
@@ -20,49 +21,22 @@ struct Vertex {
 constexpr std::array<const char *, 1> deviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
-auto supportsGraphics(const VkQueueFamilyProperties &properties) -> bool;
+auto supportsGraphics(const VkQueueFamilyProperties &) -> bool;
 auto vulkanCountFromPhysicalDevice(
-    VkPhysicalDevice,
-    const std::function<void(VkPhysicalDevice, uint32_t *)> &f) -> uint32_t;
-auto queueFamilyPropertiesCount(VkPhysicalDevice device) -> uint32_t;
+    VkPhysicalDevice, const std::function<void(VkPhysicalDevice, uint32_t *)> &)
+    -> uint32_t;
+auto queueFamilyPropertiesCount(VkPhysicalDevice) -> uint32_t;
 auto queueFamilyProperties(VkPhysicalDevice, uint32_t count)
     -> std::vector<VkQueueFamilyProperties>;
 auto graphicsSupportingQueueFamilyIndex(
-    const std::vector<VkQueueFamilyProperties> &queueFamilyProperties)
-    -> uint32_t;
-auto graphicsSupportingQueueFamilyIndex(VkPhysicalDevice device) -> uint32_t;
+    const std::vector<VkQueueFamilyProperties> &) -> uint32_t;
+auto graphicsSupportingQueueFamilyIndex(VkPhysicalDevice) -> uint32_t;
 auto presentSupportingQueueFamilyIndex(VkPhysicalDevice, VkSurfaceKHR)
     -> uint32_t;
 auto swapExtent(VkPhysicalDevice, VkSurfaceKHR, GLFWwindow *) -> VkExtent2D;
-auto swapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &formats)
+auto swapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &)
     -> VkSurfaceFormatKHR;
-
-static auto findSupportedFormat(VkPhysicalDevice physicalDevice,
-                                const std::vector<VkFormat> &candidates,
-                                VkImageTiling tiling,
-                                VkFormatFeatureFlags features) -> VkFormat {
-  for (VkFormat format : candidates) {
-    VkFormatProperties props;
-    vkGetPhysicalDeviceFormatProperties(physicalDevice, format, &props);
-
-    if (tiling == VK_IMAGE_TILING_LINEAR &&
-        (props.linearTilingFeatures & features) == features)
-      return format;
-    if (tiling == VK_IMAGE_TILING_OPTIMAL &&
-        (props.optimalTilingFeatures & features) == features)
-      return format;
-  }
-
-  throw std::runtime_error("failed to find supported format!");
-}
-
-static auto findDepthFormat(VkPhysicalDevice physicalDevice) -> VkFormat {
-  return findSupportedFormat(
-      physicalDevice,
-      {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT,
-       VK_FORMAT_D24_UNORM_S8_UINT},
-      VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
-}
+auto findDepthFormat(VkPhysicalDevice) -> VkFormat;
 
 namespace vulkan_wrappers {
 struct Instance {
