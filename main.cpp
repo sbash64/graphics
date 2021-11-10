@@ -503,6 +503,69 @@ static void updateUniformBuffer(
        sizeof(ubo));
 }
 
+void present(bool &framebufferResized, bool &recreatingSwapChain,
+             const glfw_wrappers::Window &glfwWindow,
+             const vulkan_wrappers::Device &vulkanDevice, VkQueue graphicsQueue,
+             VkQueue presentQueue,
+             const std::vector<vulkan_wrappers::Semaphore>
+                 &vulkanImageAvailableSemaphores,
+             const std::vector<vulkan_wrappers::Semaphore>
+                 &vulkanRenderFinishedSemaphores,
+             const std::vector<vulkan_wrappers::Fence> &vulkanInFlightFences,
+             const vulkan_wrappers::Swapchain &vulkanSwapchain,
+             const vulkan_wrappers::CommandBuffers &vulkanCommandBuffers,
+             uint32_t imageIndex, int currentFrame) {
+  VkSubmitInfo submitInfo{};
+  submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+
+  const std::array<VkSemaphore, 1> waitSemaphores = {
+      vulkanImageAvailableSemaphores[currentFrame].semaphore};
+  const std::array<VkPipelineStageFlags, 1> waitStages = {
+      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+  submitInfo.waitSemaphoreCount = waitSemaphores.size();
+  submitInfo.pWaitSemaphores = waitSemaphores.data();
+  submitInfo.pWaitDstStageMask = waitStages.data();
+
+  submitInfo.commandBufferCount = 1;
+  submitInfo.pCommandBuffers = &vulkanCommandBuffers.commandBuffers[imageIndex];
+
+  const std::array<VkSemaphore, 1> signalSemaphores = {
+      vulkanRenderFinishedSemaphores[currentFrame].semaphore};
+  submitInfo.signalSemaphoreCount = signalSemaphores.size();
+  submitInfo.pSignalSemaphores = signalSemaphores.data();
+
+  vkResetFences(vulkanDevice.device, 1,
+                &vulkanInFlightFences[currentFrame].fence);
+
+  if (vkQueueSubmit(graphicsQueue, 1, &submitInfo,
+                    vulkanInFlightFences[currentFrame].fence) != VK_SUCCESS)
+    throw std::runtime_error("failed to submit draw command buffer!");
+
+  VkPresentInfoKHR presentInfo{};
+  presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+
+  presentInfo.waitSemaphoreCount = waitSemaphores.size();
+  presentInfo.pWaitSemaphores = signalSemaphores.data();
+
+  const std::array<VkSwapchainKHR, 1> swapChains = {vulkanSwapchain.swapChain};
+  presentInfo.swapchainCount = swapChains.size();
+  presentInfo.pSwapchains = swapChains.data();
+
+  presentInfo.pImageIndices = &imageIndex;
+
+  {
+    const auto result{vkQueuePresentKHR(presentQueue, &presentInfo)};
+
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR ||
+        framebufferResized) {
+      framebufferResized = false;
+      prepareForSwapChainRecreation(vulkanDevice.device, glfwWindow.window);
+      recreatingSwapChain = true;
+    } else if (result != VK_SUCCESS)
+      throw std::runtime_error("failed to present swap chain image!");
+  }
+}
+
 static void run(const std::string &vertexShaderCodePath,
                 const std::string &fragmentShaderCodePath,
                 const std::string &textureImagePath) {
@@ -776,57 +839,10 @@ static void run(const std::string &vertexShaderCodePath,
 
       imagesInFlight[imageIndex] = vulkanInFlightFences[currentFrame].fence;
 
-      VkSubmitInfo submitInfo{};
-      submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-
-      const std::array<VkSemaphore, 1> waitSemaphores = {
-          vulkanImageAvailableSemaphores[currentFrame].semaphore};
-      const std::array<VkPipelineStageFlags, 1> waitStages = {
-          VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-      submitInfo.waitSemaphoreCount = waitSemaphores.size();
-      submitInfo.pWaitSemaphores = waitSemaphores.data();
-      submitInfo.pWaitDstStageMask = waitStages.data();
-
-      submitInfo.commandBufferCount = 1;
-      submitInfo.pCommandBuffers =
-          &vulkanCommandBuffers.commandBuffers[imageIndex];
-
-      const std::array<VkSemaphore, 1> signalSemaphores = {
-          vulkanRenderFinishedSemaphores[currentFrame].semaphore};
-      submitInfo.signalSemaphoreCount = signalSemaphores.size();
-      submitInfo.pSignalSemaphores = signalSemaphores.data();
-
-      vkResetFences(vulkanDevice.device, 1,
-                    &vulkanInFlightFences[currentFrame].fence);
-
-      if (vkQueueSubmit(graphicsQueue, 1, &submitInfo,
-                        vulkanInFlightFences[currentFrame].fence) != VK_SUCCESS)
-        throw std::runtime_error("failed to submit draw command buffer!");
-
-      VkPresentInfoKHR presentInfo{};
-      presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-
-      presentInfo.waitSemaphoreCount = waitSemaphores.size();
-      presentInfo.pWaitSemaphores = signalSemaphores.data();
-
-      const std::array<VkSwapchainKHR, 1> swapChains = {
-          vulkanSwapchain.swapChain};
-      presentInfo.swapchainCount = swapChains.size();
-      presentInfo.pSwapchains = swapChains.data();
-
-      presentInfo.pImageIndices = &imageIndex;
-
-      {
-        const auto result{vkQueuePresentKHR(presentQueue, &presentInfo)};
-
-        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR ||
-            framebufferResized) {
-          framebufferResized = false;
-          prepareForSwapChainRecreation(vulkanDevice.device, glfwWindow.window);
-          recreatingSwapChain = true;
-        } else if (result != VK_SUCCESS)
-          throw std::runtime_error("failed to present swap chain image!");
-      }
+      present(framebufferResized, recreatingSwapChain, glfwWindow, vulkanDevice,
+              graphicsQueue, presentQueue, vulkanImageAvailableSemaphores,
+              vulkanRenderFinishedSemaphores, vulkanInFlightFences,
+              vulkanSwapchain, vulkanCommandBuffers, imageIndex, currentFrame);
 
       if (++currentFrame == maxFramesInFlight)
         currentFrame = 0;
