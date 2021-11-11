@@ -22,9 +22,9 @@ namespace std {
 template <> struct hash<sbash64::graphics::Vertex> {
   auto operator()(sbash64::graphics::Vertex const &vertex) const -> size_t {
     return ((hash<glm::vec3>()(vertex.pos) ^
-             (hash<glm::vec3>()(vertex.color) << 1)) >>
-            1) ^
-           (hash<glm::vec2>()(vertex.texCoord) << 1);
+             (hash<glm::vec3>()(vertex.color) << 1U)) >>
+            1U) ^
+           (hash<glm::vec2>()(vertex.texCoord) << 1U);
   }
 };
 } // namespace std
