@@ -25,6 +25,7 @@
 #include <span>
 #include <stdexcept>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace sbash64::graphics {
@@ -645,6 +646,7 @@ static void run(const std::string &vertexShaderCodePath,
 
   std::vector<Vertex> vertices;
   std::vector<uint32_t> indices;
+  std::unordered_map<Vertex, uint32_t> uniqueVertices{};
   for (const auto &shape : shapes) {
     for (const auto &index : shape.mesh.indices) {
       Vertex vertex{};
@@ -658,7 +660,13 @@ static void run(const std::string &vertexShaderCodePath,
       vertex.color = {1.0f, 1.0f, 1.0f};
 
       vertices.push_back(vertex);
-      indices.push_back(indices.size());
+
+      if (uniqueVertices.count(vertex) == 0) {
+        uniqueVertices[vertex] = static_cast<uint32_t>(vertices.size());
+        vertices.push_back(vertex);
+      }
+
+      indices.push_back(uniqueVertices[vertex]);
     }
   }
 
