@@ -1,5 +1,6 @@
 #include <sbash64/graphics/glfw-wrappers.hpp>
 #include <sbash64/graphics/vulkan-wrappers.hpp>
+
 #include <vulkan/vulkan_core.h>
 
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
@@ -8,6 +9,9 @@
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
+
+#define TINYOBJLOADER_IMPLEMENTATION
+#include <tiny_obj_loader.h>
 
 #include <algorithm>
 #include <array>
@@ -428,7 +432,7 @@ void recordCommandBuffers(
     const std::vector<vulkan_wrappers::Framebuffer> &vulkanFrameBuffers,
     const std::vector<VkDescriptorSet> &descriptorSets,
     const vulkan_wrappers::CommandBuffers &vulkanCommandBuffers,
-    const std::vector<uint16_t> &indices) {
+    const std::vector<uint32_t> &indices) {
   for (auto i{0}; i < vulkanCommandBuffers.commandBuffers.size(); i++) {
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -463,7 +467,7 @@ void recordCommandBuffers(
                            vertexBuffers.data(), offsets.data());
 
     vkCmdBindIndexBuffer(vulkanCommandBuffers.commandBuffers[i],
-                         vulkanIndexBuffer.buffer, 0, VK_INDEX_TYPE_UINT16);
+                         vulkanIndexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
 
     vkCmdBindDescriptorSets(vulkanCommandBuffers.commandBuffers[i],
                             VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -568,6 +572,7 @@ void present(bool &framebufferResized, bool &recreatingSwapChain,
 
 static void run(const std::string &vertexShaderCodePath,
                 const std::string &fragmentShaderCodePath,
+                const std::string &objectPath,
                 const std::string &textureImagePath) {
   const glfw_wrappers::Init glfwInitialization;
 
@@ -625,18 +630,37 @@ static void run(const std::string &vertexShaderCodePath,
   const vulkan_wrappers::Sampler vulkanTextureSampler{vulkanDevice.device,
                                                       vulkanPhysicalDevice};
 
-  const std::vector<Vertex> vertices = {
-      {{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-      {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-      {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-      {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
+  std::vector<tinyobj::shape_t> shapes;
+  tinyobj::attrib_t attrib;
+  {
+    std::vector<tinyobj::material_t> materials;
+    std::string warn;
+    std::string err;
 
-      {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-      {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-      {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-      {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}};
+    if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err,
+                          objectPath.c_str())) {
+      throw std::runtime_error(warn + err);
+    }
+  }
 
-  const std::vector<uint16_t> indices = {0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4};
+  std::vector<Vertex> vertices;
+  std::vector<uint32_t> indices;
+  for (const auto &shape : shapes) {
+    for (const auto &index : shape.mesh.indices) {
+      Vertex vertex{};
+      vertex.pos = {attrib.vertices[3 * index.vertex_index + 0],
+                    attrib.vertices[3 * index.vertex_index + 1],
+                    attrib.vertices[3 * index.vertex_index + 2]};
+
+      vertex.texCoord = {attrib.texcoords[2 * index.texcoord_index + 0],
+                         attrib.texcoords[2 * index.texcoord_index + 1]};
+
+      vertex.color = {1.0f, 1.0f, 1.0f};
+
+      vertices.push_back(vertex);
+      indices.push_back(indices.size());
+    }
+  }
 
   const VkDeviceSize vertexBufferSize{sizeof(vertices[0]) * vertices.size()};
 
@@ -856,10 +880,11 @@ static void run(const std::string &vertexShaderCodePath,
 int main(int argc, char *argv[]) {
   const std::span<char *> arguments{
       argv, static_cast<std::span<char *>::size_type>(argc)};
-  if (arguments.size() < 4)
+  if (arguments.size() < 5)
     return EXIT_FAILURE;
   try {
-    sbash64::graphics::run(arguments[1], arguments[2], arguments[3]);
+    sbash64::graphics::run(arguments[1], arguments[2], arguments[3],
+                           arguments[4]);
   } catch (const std::exception &e) {
     std::cerr << e.what() << '\n';
     return EXIT_FAILURE;
