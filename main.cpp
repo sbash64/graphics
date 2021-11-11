@@ -135,7 +135,6 @@ submitAndWait(const vulkan_wrappers::CommandBuffers &vulkanCommandBuffers,
   submitInfo.at(0).commandBufferCount =
       static_cast<uint32_t>(vulkanCommandBuffers.commandBuffers.size());
   submitInfo.at(0).pCommandBuffers = vulkanCommandBuffers.commandBuffers.data();
-
   vkQueueSubmit(graphicsQueue, submitInfo.size(), submitInfo.data(),
                 VK_NULL_HANDLE);
   vkQueueWaitIdle(graphicsQueue);
@@ -145,7 +144,6 @@ static void begin(VkCommandBuffer buffer) {
   VkCommandBufferBeginInfo beginInfo{};
   beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
   beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
   vkBeginCommandBuffer(buffer, &beginInfo);
 }
 
@@ -153,16 +151,12 @@ static void copyBuffer(VkDevice device, VkCommandPool commandPool,
                        VkQueue graphicsQueue, VkBuffer sourceBuffer,
                        VkBuffer destinationBuffer, VkDeviceSize size) {
   vulkan_wrappers::CommandBuffers vulkanCommandBuffers{device, commandPool, 1};
-
   begin(vulkanCommandBuffers.commandBuffers.at(0));
-
   std::array<VkBufferCopy, 1> copyRegion{};
   copyRegion.at(0).size = size;
   vkCmdCopyBuffer(vulkanCommandBuffers.commandBuffers.at(0), sourceBuffer,
                   destinationBuffer, copyRegion.size(), copyRegion.data());
-
   vkEndCommandBuffer(vulkanCommandBuffers.commandBuffers.at(0));
-
   submitAndWait(vulkanCommandBuffers, graphicsQueue);
 }
 
@@ -179,7 +173,6 @@ static void transitionImageLayout(VkDevice device, VkCommandPool commandPool,
                                   VkImageLayout oldLayout,
                                   VkImageLayout newLayout) {
   vulkan_wrappers::CommandBuffers vulkanCommandBuffers{device, commandPool, 1};
-
   begin(vulkanCommandBuffers.commandBuffers.at(0));
 
   VkImageMemoryBarrier barrier{};
@@ -212,16 +205,13 @@ static void transitionImageLayout(VkDevice device, VkCommandPool commandPool,
 
     sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
     destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-  } else {
+  } else
     throw std::invalid_argument("unsupported layout transition!");
-  }
 
   vkCmdPipelineBarrier(vulkanCommandBuffers.commandBuffers.at(0), sourceStage,
                        destinationStage, 0, 0, nullptr, 0, nullptr, 1,
                        &barrier);
-
   vkEndCommandBuffer(vulkanCommandBuffers.commandBuffers.at(0));
-
   submitAndWait(vulkanCommandBuffers, graphicsQueue);
 }
 
@@ -229,7 +219,6 @@ static void copyBufferToImage(VkDevice device, VkCommandPool commandPool,
                               VkQueue graphicsQueue, VkBuffer buffer,
                               VkImage image, uint32_t width, uint32_t height) {
   vulkan_wrappers::CommandBuffers vulkanCommandBuffers{device, commandPool, 1};
-
   begin(vulkanCommandBuffers.commandBuffers.at(0));
 
   VkBufferImageCopy region{};
@@ -246,9 +235,7 @@ static void copyBufferToImage(VkDevice device, VkCommandPool commandPool,
   vkCmdCopyBufferToImage(vulkanCommandBuffers.commandBuffers.at(0), buffer,
                          image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
                          &region);
-
   vkEndCommandBuffer(vulkanCommandBuffers.commandBuffers.at(0));
-
   submitAndWait(vulkanCommandBuffers, graphicsQueue);
 }
 
@@ -283,9 +270,7 @@ static void copy(VkDevice device, VkPhysicalDevice physicalDevice,
       bufferMemory(device, physicalDevice, vulkanStagingBuffer.buffer,
                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
-
   copy(device, vulkanStagingBufferMemory.memory, source, size);
-
   copyBuffer(device, commandPool, graphicsQueue, vulkanStagingBuffer.buffer,
              destinationBuffer, size);
 }
@@ -296,16 +281,13 @@ static void copy(VkDevice device, VkPhysicalDevice physicalDevice,
                  const stbi_wrappers::Image &sourceImage) {
   const auto imageSize{
       static_cast<VkDeviceSize>(sourceImage.width * sourceImage.height * 4)};
-
   const vulkan_wrappers::Buffer vulkanStagingBuffer{
       device, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, imageSize};
   const auto vulkanStagingBufferMemory{
       bufferMemory(device, physicalDevice, vulkanStagingBuffer.buffer,
                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
-
   copy(device, vulkanStagingBufferMemory.memory, sourceImage.pixels, imageSize);
-
   transitionImageLayout(device, commandPool, graphicsQueue, destinationImage,
                         VK_IMAGE_LAYOUT_UNDEFINED,
                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
@@ -331,7 +313,6 @@ static auto swapChainImageViews(VkDevice device,
   vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount,
                                        formats.data());
   const auto format{swapSurfaceFormat(formats).format};
-
   std::vector<vulkan_wrappers::ImageView> swapChainImageViews;
   std::transform(swapChainImages.begin(), swapChainImages.end(),
                  std::back_inserter(swapChainImageViews),
@@ -352,9 +333,9 @@ static auto descriptorSets(
     const std::vector<vulkan_wrappers::Buffer> &vulkanUniformBuffers)
     -> std::vector<VkDescriptorSet> {
   std::vector<VkDescriptorSet> descriptorSets(swapChainImages.size());
-
   std::vector<VkDescriptorSetLayout> layouts(
       swapChainImages.size(), vulkanDescriptorSetLayout.descriptorSetLayout);
+
   VkDescriptorSetAllocateInfo allocInfo{};
   allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
   allocInfo.descriptorPool = vulkanDescriptorPool.descriptorPool;
@@ -426,7 +407,6 @@ static void recordCommandBuffers(
     renderPassInfo.renderPass = vulkanRenderPass.renderPass;
     renderPassInfo.framebuffer = vulkanFrameBuffers.at(i).framebuffer;
     renderPassInfo.renderArea.offset = {0, 0};
-
     renderPassInfo.renderArea.extent = swapExtent(
         vulkanPhysicalDevice, vulkanSurface.surface, glfwWindow.window);
 
@@ -438,7 +418,6 @@ static void recordCommandBuffers(
 
     vkCmdBeginRenderPass(vulkanCommandBuffers.commandBuffers[i],
                          &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-
     vkCmdBindPipeline(vulkanCommandBuffers.commandBuffers[i],
                       VK_PIPELINE_BIND_POINT_GRAPHICS, vulkanPipeline.pipeline);
 
@@ -446,20 +425,15 @@ static void recordCommandBuffers(
     std::array<VkDeviceSize, 1> offsets = {0};
     vkCmdBindVertexBuffers(vulkanCommandBuffers.commandBuffers[i], 0, 1,
                            vertexBuffers.data(), offsets.data());
-
     vkCmdBindIndexBuffer(vulkanCommandBuffers.commandBuffers[i],
                          vulkanIndexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
-
     vkCmdBindDescriptorSets(vulkanCommandBuffers.commandBuffers[i],
                             VK_PIPELINE_BIND_POINT_GRAPHICS,
                             vulkanPipelineLayout.pipelineLayout, 0, 1,
                             &descriptorSets[i], 0, nullptr);
-
     vkCmdDrawIndexed(vulkanCommandBuffers.commandBuffers[i],
                      static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
-
     vkCmdEndRenderPass(vulkanCommandBuffers.commandBuffers[i]);
-
     if (vkEndCommandBuffer(vulkanCommandBuffers.commandBuffers[i]) !=
         VK_SUCCESS)
       throw std::runtime_error("failed to record command buffer!");
@@ -483,7 +457,6 @@ static void updateUniformBuffer(
                                   static_cast<float>(swapChainExtent.height),
                               0.1F, 20.0F);
   ubo.proj[1][1] *= -1;
-
   copy(vulkanDevice.device, vulkanUniformBuffersMemory.memory, &ubo,
        sizeof(ubo));
 }
@@ -522,7 +495,6 @@ present(bool &framebufferResized, bool &recreatingSwapChain,
 
   vkResetFences(vulkanDevice.device, 1,
                 &vulkanInFlightFences[currentFrame].fence);
-
   if (vkQueueSubmit(graphicsQueue, 1, &submitInfo,
                     vulkanInFlightFences[currentFrame].fence) != VK_SUCCESS)
     throw std::runtime_error("failed to submit draw command buffer!");
@@ -539,17 +511,14 @@ present(bool &framebufferResized, bool &recreatingSwapChain,
 
   presentInfo.pImageIndices = &imageIndex;
 
-  {
-    const auto result{vkQueuePresentKHR(presentQueue, &presentInfo)};
-
-    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR ||
-        framebufferResized) {
-      framebufferResized = false;
-      prepareForSwapChainRecreation(vulkanDevice.device, glfwWindow.window);
-      recreatingSwapChain = true;
-    } else if (result != VK_SUCCESS)
-      throw std::runtime_error("failed to present swap chain image!");
-  }
+  const auto result{vkQueuePresentKHR(presentQueue, &presentInfo)};
+  if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR ||
+      framebufferResized) {
+    framebufferResized = false;
+    prepareForSwapChainRecreation(vulkanDevice.device, glfwWindow.window);
+    recreatingSwapChain = true;
+  } else if (result != VK_SUCCESS)
+    throw std::runtime_error("failed to present swap chain image!");
 }
 
 static void run(const std::string &vertexShaderCodePath,
@@ -644,7 +613,6 @@ static void run(const std::string &vertexShaderCodePath,
     vulkanRenderFinishedSemaphores.emplace_back(vulkanDevice.device);
     vulkanInFlightFences.emplace_back(vulkanDevice.device);
   }
-
   std::vector<VkFence> imagesInFlight;
 
   const vulkan_wrappers::DescriptorSetLayout vulkanDescriptorSetLayout{
