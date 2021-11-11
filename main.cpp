@@ -252,19 +252,25 @@ static void copyBufferToImage(VkDevice device, VkCommandPool commandPool,
   submitAndWait(vulkanCommandBuffers, graphicsQueue);
 }
 
+static auto bufferMemory(VkDevice device, VkPhysicalDevice physicalDevice,
+                         VkBuffer buffer, VkMemoryPropertyFlags flags)
+    -> vulkan_wrappers::DeviceMemory {
+  VkMemoryRequirements memoryRequirements;
+  vkGetBufferMemoryRequirements(device, buffer, &memoryRequirements);
+  return vulkan_wrappers::DeviceMemory{device, physicalDevice,
+                                       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                                       memoryRequirements};
+}
+
 static void copy(VkDevice device, VkPhysicalDevice physicalDevice,
                  VkCommandPool commandPool, VkQueue graphicsQueue,
                  VkBuffer destinationBuffer, const void *source, size_t size) {
   const vulkan_wrappers::Buffer vulkanStagingBuffer{
       device, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, size};
-  VkMemoryRequirements memoryRequirements;
-  vkGetBufferMemoryRequirements(device, vulkanStagingBuffer.buffer,
-                                &memoryRequirements);
-  const vulkan_wrappers::DeviceMemory vulkanStagingBufferMemory{
-      device, physicalDevice,
-      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-          VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-      memoryRequirements};
+  const auto vulkanStagingBufferMemory{
+      bufferMemory(device, physicalDevice, vulkanStagingBuffer.buffer,
+                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                       VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
   vkBindBufferMemory(device, vulkanStagingBuffer.buffer,
                      vulkanStagingBufferMemory.memory, 0);
 
@@ -283,14 +289,10 @@ static void copy(VkDevice device, VkPhysicalDevice physicalDevice,
 
   const vulkan_wrappers::Buffer vulkanStagingBuffer{
       device, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, imageSize};
-  VkMemoryRequirements memoryRequirements;
-  vkGetBufferMemoryRequirements(device, vulkanStagingBuffer.buffer,
-                                &memoryRequirements);
-  const vulkan_wrappers::DeviceMemory vulkanStagingBufferMemory{
-      device, physicalDevice,
-      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-          VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-      memoryRequirements};
+  const auto vulkanStagingBufferMemory{
+      bufferMemory(device, physicalDevice, vulkanStagingBuffer.buffer,
+                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                       VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
   vkBindBufferMemory(device, vulkanStagingBuffer.buffer,
                      vulkanStagingBufferMemory.memory, 0);
 
@@ -609,12 +611,9 @@ static void run(const std::string &vertexShaderCodePath,
       vulkanDevice.device,
       VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
       vertexBufferSize};
-  // VkMemoryRequirements memoryRequirements;
-  vkGetBufferMemoryRequirements(vulkanDevice.device, vulkanVertexBuffer.buffer,
-                                &memoryRequirements);
-  const vulkan_wrappers::DeviceMemory vulkanVertexBufferMemory{
-      vulkanDevice.device, vulkanPhysicalDevice,
-      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, memoryRequirements};
+  const auto vulkanVertexBufferMemory{bufferMemory(
+      vulkanDevice.device, vulkanPhysicalDevice, vulkanVertexBuffer.buffer,
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
   vkBindBufferMemory(vulkanDevice.device, vulkanVertexBuffer.buffer,
                      vulkanVertexBufferMemory.memory, 0);
 
@@ -629,12 +628,9 @@ static void run(const std::string &vertexShaderCodePath,
       vulkanDevice.device,
       VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
       indexBufferSize};
-  // VkMemoryRequirements memoryRequirements;
-  vkGetBufferMemoryRequirements(vulkanDevice.device, vulkanIndexBuffer.buffer,
-                                &memoryRequirements);
-  const vulkan_wrappers::DeviceMemory vulkanIndexBufferMemory{
-      vulkanDevice.device, vulkanPhysicalDevice,
-      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, memoryRequirements};
+  const auto vulkanIndexBufferMemory{bufferMemory(
+      vulkanDevice.device, vulkanPhysicalDevice, vulkanIndexBuffer.buffer,
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
   vkBindBufferMemory(vulkanDevice.device, vulkanIndexBuffer.buffer,
                      vulkanIndexBufferMemory.memory, 0);
 
@@ -728,15 +724,11 @@ static void run(const std::string &vertexShaderCodePath,
       VkDeviceSize bufferSize{sizeof(UniformBufferObject)};
       vulkanUniformBuffers.emplace_back(
           vulkanDevice.device, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, bufferSize);
-      VkMemoryRequirements memoryRequirements;
-      vkGetBufferMemoryRequirements(vulkanDevice.device,
-                                    vulkanUniformBuffers.back().buffer,
-                                    &memoryRequirements);
-      vulkanUniformBuffersMemory.emplace_back(
-          vulkanDevice.device, vulkanPhysicalDevice,
-          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-              VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-          memoryRequirements);
+      vulkanUniformBuffersMemory.push_back(
+          bufferMemory(vulkanDevice.device, vulkanPhysicalDevice,
+                       vulkanUniformBuffers.back().buffer,
+                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                           VK_MEMORY_PROPERTY_HOST_COHERENT_BIT));
       vkBindBufferMemory(vulkanDevice.device,
                          vulkanUniformBuffers.back().buffer,
                          vulkanUniformBuffersMemory.back().memory, 0);
