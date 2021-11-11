@@ -417,7 +417,7 @@ static auto descriptorSets(
   return descriptorSets;
 }
 
-void recordCommandBuffers(
+static void recordCommandBuffers(
     const glfw_wrappers::Window &glfwWindow,
     const vulkan_wrappers::Surface &vulkanSurface,
     VkPhysicalDevice vulkanPhysicalDevice,
@@ -493,7 +493,7 @@ static void updateUniformBuffer(
       glm::vec3(0.0F, 0.0F, 1.0F));
   ubo.view =
       glm::lookAt(glm::vec3(8.0F, 8.0F, 8.0F), glm::vec3(0.0F, 0.0F, 0.0F),
-                  glm::vec3(0.0F, 0.0F, 1.0F));
+                  glm::vec3(0.0F, 1.0F, 1.0F));
   ubo.proj = glm::perspective(glm::radians(45.0F),
                               static_cast<float>(swapChainExtent.width) /
                                   static_cast<float>(swapChainExtent.height),
