@@ -490,14 +490,14 @@ static void updateUniformBuffer(
   ubo.model = glm::rotate(
       glm::mat4(1.0F),
       glm::radians(static_cast<float>(rotationAngleCentidegrees) / 100),
-      glm::vec3(0.0F, 0.0F, 1.0F));
+      glm::vec3(0.0F, 1.0F, 0.0F));
   ubo.view =
       glm::lookAt(glm::vec3(8.0F, 8.0F, 8.0F), glm::vec3(0.0F, 0.0F, 0.0F),
                   glm::vec3(0.0F, 1.0F, 1.0F));
   ubo.proj = glm::perspective(glm::radians(45.0F),
                               static_cast<float>(swapChainExtent.width) /
                                   static_cast<float>(swapChainExtent.height),
-                              0.1F, 10.0F);
+                              0.1F, 20.0F);
   ubo.proj[1][1] *= -1;
 
   copy(vulkanDevice.device, vulkanUniformBuffersMemory.memory, &ubo,
