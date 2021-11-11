@@ -25,7 +25,7 @@ FetchContent_MakeAvailable(tinyobjloader)
 include(FindVulkan)
 
 add_executable(sbash64-learn-vulkan-main main.cpp vulkan-wrappers.cpp
-                                         glfw-wrappers.cpp)
+                                         glfw-wrappers.cpp load-object.cpp)
 target_link_libraries(sbash64-learn-vulkan-main glfw Vulkan::Vulkan glm
                       tinyobjloader)
 target_include_directories(sbash64-learn-vulkan-main PRIVATE include

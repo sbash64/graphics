@@ -1,4 +1,5 @@
 #include <sbash64/graphics/glfw-wrappers.hpp>
+#include <sbash64/graphics/load-object.hpp>
 #include <sbash64/graphics/vulkan-wrappers.hpp>
 
 #include <vulkan/vulkan_core.h>
@@ -9,9 +10,6 @@
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
-
-#define TINYOBJLOADER_IMPLEMENTATION
-#include <tiny_obj_loader.h>
 
 #include <algorithm>
 #include <array>
@@ -25,7 +23,6 @@
 #include <span>
 #include <stdexcept>
 #include <string_view>
-#include <unordered_map>
 #include <vector>
 
 namespace sbash64::graphics {
@@ -631,44 +628,10 @@ static void run(const std::string &vertexShaderCodePath,
   const vulkan_wrappers::Sampler vulkanTextureSampler{vulkanDevice.device,
                                                       vulkanPhysicalDevice};
 
-  std::vector<tinyobj::shape_t> shapes;
-  tinyobj::attrib_t attrib;
-  {
-    std::vector<tinyobj::material_t> materials;
-    std::string warn;
-    std::string err;
+  const auto indexedVertices{readIndexedVertices(objectPath)};
 
-    if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err,
-                          objectPath.c_str())) {
-      throw std::runtime_error(warn + err);
-    }
-  }
-
-  std::vector<Vertex> vertices;
-  std::vector<uint32_t> indices;
-  std::unordered_map<Vertex, uint32_t> uniqueVertices{};
-  for (const auto &shape : shapes) {
-    for (const auto &index : shape.mesh.indices) {
-      Vertex vertex{};
-      vertex.pos = {attrib.vertices[3 * index.vertex_index + 0],
-                    attrib.vertices[3 * index.vertex_index + 1],
-                    attrib.vertices[3 * index.vertex_index + 2]};
-
-      vertex.texCoord = {attrib.texcoords[2 * index.texcoord_index + 0],
-                         1.0f - attrib.texcoords[2 * index.texcoord_index + 1]};
-
-      vertex.color = {1.0f, 1.0f, 1.0f};
-
-      if (uniqueVertices.count(vertex) == 0) {
-        uniqueVertices[vertex] = static_cast<uint32_t>(vertices.size());
-        vertices.push_back(vertex);
-      }
-
-      indices.push_back(uniqueVertices[vertex]);
-    }
-  }
-
-  const VkDeviceSize vertexBufferSize{sizeof(vertices[0]) * vertices.size()};
+  const VkDeviceSize vertexBufferSize{sizeof(indexedVertices.vertices[0]) *
+                                      indexedVertices.vertices.size()};
 
   const vulkan_wrappers::Buffer vulkanVertexBuffer{
       vulkanDevice.device,
@@ -684,10 +647,11 @@ static void run(const std::string &vertexShaderCodePath,
                      vulkanVertexBufferMemory.memory, 0);
 
   copy(vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
-       graphicsQueue, vulkanVertexBuffer.buffer, vertices.data(),
-       vertexBufferSize);
+       graphicsQueue, vulkanVertexBuffer.buffer,
+       indexedVertices.vertices.data(), vertexBufferSize);
 
-  const VkDeviceSize indexBufferSize{sizeof(indices[0]) * indices.size()};
+  const VkDeviceSize indexBufferSize{sizeof(indexedVertices.indices[0]) *
+                                     indexedVertices.indices.size()};
 
   const vulkan_wrappers::Buffer vulkanIndexBuffer{
       vulkanDevice.device,
@@ -703,7 +667,7 @@ static void run(const std::string &vertexShaderCodePath,
                      vulkanIndexBufferMemory.memory, 0);
 
   copy(vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
-       graphicsQueue, vulkanIndexBuffer.buffer, indices.data(),
+       graphicsQueue, vulkanIndexBuffer.buffer, indexedVertices.indices.data(),
        indexBufferSize);
 
   const auto maxFramesInFlight{2};
@@ -825,7 +789,7 @@ static void run(const std::string &vertexShaderCodePath,
                          vulkanVertexBuffer, vulkanIndexBuffer,
                          vulkanRenderPass, vulkanPipelineLayout, vulkanPipeline,
                          vulkanFrameBuffers, descriptorSets,
-                         vulkanCommandBuffers, indices);
+                         vulkanCommandBuffers, indexedVertices.indices);
 
     imagesInFlight.resize(swapChainImages.size(), VK_NULL_HANDLE);
     auto recreatingSwapChain{false};
