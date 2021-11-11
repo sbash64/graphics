@@ -268,8 +268,10 @@ static auto imageMemory(VkDevice device, VkPhysicalDevice physicalDevice,
     -> vulkan_wrappers::DeviceMemory {
   VkMemoryRequirements memoryRequirements;
   vkGetImageMemoryRequirements(device, image, &memoryRequirements);
-  return vulkan_wrappers::DeviceMemory{device, physicalDevice, flags,
+  vulkan_wrappers::DeviceMemory memory{device, physicalDevice, flags,
                                        memoryRequirements};
+  vkBindImageMemory(device, image, memory.memory, 0);
+  return memory;
 }
 
 static void copy(VkDevice device, VkPhysicalDevice physicalDevice,
@@ -594,8 +596,6 @@ static void run(const std::string &vertexShaderCodePath,
   const auto vulkanTextureImageMemory{imageMemory(
       vulkanDevice.device, vulkanPhysicalDevice, vulkanTextureImage.image,
       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
-  vkBindImageMemory(vulkanDevice.device, vulkanTextureImage.image,
-                    vulkanTextureImageMemory.memory, 0);
   copy(vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
        graphicsQueue, vulkanTextureImage.image, stbiTextureImage);
 
@@ -684,9 +684,6 @@ static void run(const std::string &vertexShaderCodePath,
     const auto vulkanDepthImageMemory{imageMemory(
         vulkanDevice.device, vulkanPhysicalDevice, vulkanDepthImage.image,
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
-    vkBindImageMemory(vulkanDevice.device, vulkanDepthImage.image,
-                      vulkanDepthImageMemory.memory, 0);
-
     const vulkan_wrappers::ImageView vulkanDepthImageView{
         vulkanDevice.device, vulkanDepthImage.image, depthFormat,
         VK_IMAGE_ASPECT_DEPTH_BIT};
