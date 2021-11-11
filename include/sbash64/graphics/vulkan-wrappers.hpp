@@ -82,7 +82,7 @@ struct Swapchain {
 
 struct Image {
   Image(VkDevice, uint32_t width, uint32_t height, VkFormat, VkImageTiling,
-        VkImageUsageFlags, VkMemoryPropertyFlags);
+        VkImageUsageFlags);
   ~Image();
 
   Image(const Image &) = delete;

@@ -710,8 +710,7 @@ DescriptorPool::~DescriptorPool() {
 }
 
 Image::Image(VkDevice device, uint32_t width, uint32_t height, VkFormat format,
-             VkImageTiling tiling, VkImageUsageFlags usage,
-             VkMemoryPropertyFlags properties)
+             VkImageTiling tiling, VkImageUsageFlags usage)
     : device{device} {
   VkImageCreateInfo imageInfo{};
   imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;

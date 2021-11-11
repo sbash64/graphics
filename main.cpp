@@ -4,7 +4,6 @@
 
 #include <vulkan/vulkan_core.h>
 
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -111,8 +110,8 @@ static auto swapChainImages(VkDevice device, VkSwapchainKHR swapChain)
   return swapChainImages;
 }
 
-static void framebufferResizeCallback(GLFWwindow *window, int width,
-                                      int height) {
+static void framebufferResizeCallback(GLFWwindow *window, int /*width*/,
+                                      int /*height*/) {
   auto *framebufferResized =
       static_cast<bool *>(glfwGetWindowUserPointer(window));
   *framebufferResized = true;
@@ -607,8 +606,7 @@ static void run(const std::string &vertexShaderCodePath,
       static_cast<uint32_t>(stbiTextureImage.height),
       VK_FORMAT_R8G8B8A8_SRGB,
       VK_IMAGE_TILING_OPTIMAL,
-      VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT};
+      VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT};
   VkMemoryRequirements memoryRequirements;
   vkGetImageMemoryRequirements(vulkanDevice.device, vulkanTextureImage.image,
                                &memoryRequirements);
@@ -718,13 +716,9 @@ static void run(const std::string &vertexShaderCodePath,
     const auto depthFormat{findDepthFormat(vulkanPhysicalDevice)};
 
     const vulkan_wrappers::Image vulkanDepthImage{
-        vulkanDevice.device,
-        swapChainExtent.width,
-        swapChainExtent.height,
-        depthFormat,
-        VK_IMAGE_TILING_OPTIMAL,
-        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT};
+        vulkanDevice.device,     swapChainExtent.width,
+        swapChainExtent.height,  depthFormat,
+        VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT};
     VkMemoryRequirements memoryRequirements;
     vkGetImageMemoryRequirements(vulkanDevice.device, vulkanDepthImage.image,
                                  &memoryRequirements);
