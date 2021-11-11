@@ -496,7 +496,7 @@ static void updateUniformBuffer(
       glm::radians(static_cast<float>(rotationAngleCentidegrees) / 100),
       glm::vec3(0.0F, 0.0F, 1.0F));
   ubo.view =
-      glm::lookAt(glm::vec3(2.0F, 2.0F, 2.0F), glm::vec3(0.0F, 0.0F, 0.0F),
+      glm::lookAt(glm::vec3(8.0F, 8.0F, 8.0F), glm::vec3(0.0F, 0.0F, 0.0F),
                   glm::vec3(0.0F, 0.0F, 1.0F));
   ubo.proj = glm::perspective(glm::radians(45.0F),
                               static_cast<float>(swapChainExtent.width) /
@@ -658,8 +658,6 @@ static void run(const std::string &vertexShaderCodePath,
                          1.0f - attrib.texcoords[2 * index.texcoord_index + 1]};
 
       vertex.color = {1.0f, 1.0f, 1.0f};
-
-      vertices.push_back(vertex);
 
       if (uniqueVertices.count(vertex) == 0) {
         uniqueVertices[vertex] = static_cast<uint32_t>(vertices.size());
