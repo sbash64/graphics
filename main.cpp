@@ -1,14 +1,12 @@
 #include <sbash64/graphics/glfw-wrappers.hpp>
 #include <sbash64/graphics/load-object.hpp>
+#include <sbash64/graphics/stbi-wrappers.hpp>
 #include <sbash64/graphics/vulkan-wrappers.hpp>
 
 #include <vulkan/vulkan_core.h>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
-
-#define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
 
 #include <algorithm>
 #include <array>
@@ -253,30 +251,6 @@ static void copyBufferToImage(VkDevice device, VkCommandPool commandPool,
 
   submitAndWait(vulkanCommandBuffers, graphicsQueue);
 }
-
-namespace stbi_wrappers {
-struct Image {
-  explicit Image(const std::string &imagePath) {
-    pixels = stbi_load(imagePath.c_str(), &width, &height, &channels,
-                       STBI_rgb_alpha);
-    if (pixels == nullptr) {
-      throw std::runtime_error("failed to load texture image!");
-    }
-  }
-
-  ~Image() { stbi_image_free(pixels); }
-
-  Image(Image &&) = delete;
-  auto operator=(Image &&) -> Image & = delete;
-  Image(const Image &) = delete;
-  auto operator=(const Image &) -> Image & = delete;
-
-  stbi_uc *pixels;
-  int width{};
-  int height{};
-  int channels{};
-};
-} // namespace stbi_wrappers
 
 static void copy(VkDevice device, VkPhysicalDevice physicalDevice,
                  VkCommandPool commandPool, VkQueue graphicsQueue,
