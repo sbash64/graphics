@@ -550,8 +550,6 @@ static void run(const std::string &vertexShaderCodePath,
     vkGetPhysicalDeviceProperties(vulkanPhysicalDevice, &deviceProperties);
     std::cout << "selected physical device \"" << deviceProperties.deviceName
               << "\"\n";
-    // vkGetPhysicalDeviceMemoryProperties(vulkanPhysicalDevice,
-    // &devicememprops);
   }
 
   VkQueue graphicsQueue{nullptr};

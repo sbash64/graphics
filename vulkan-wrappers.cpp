@@ -101,8 +101,14 @@ Device::Device(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface) {
                    return queueCreateInfo;
                  });
 
+  VkPhysicalDeviceFeatures supportedFeatures;
+  vkGetPhysicalDeviceFeatures(physicalDevice, &supportedFeatures);
+
   VkPhysicalDeviceFeatures deviceFeatures{};
-  deviceFeatures.samplerAnisotropy = VK_TRUE;
+  if (supportedFeatures.samplerAnisotropy == VK_TRUE)
+    deviceFeatures.samplerAnisotropy = VK_TRUE;
+  if (supportedFeatures.textureCompressionASTC_LDR == VK_TRUE)
+    deviceFeatures.textureCompressionASTC_LDR = VK_TRUE;
 
   VkDeviceCreateInfo createInfo{};
   createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
