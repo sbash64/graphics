@@ -151,11 +151,11 @@ Swapchain::Swapchain(VkDevice device, VkPhysicalDevice physicalDevice,
   vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface,
                                             &capabilities);
 
-  auto imageCount{capabilities.minImageCount + 1};
-  if (capabilities.maxImageCount > 0 &&
-      imageCount > capabilities.maxImageCount) {
+  auto imageCount{3U};
+  if (capabilities.maxImageCount > 0 && imageCount > capabilities.maxImageCount)
     imageCount = capabilities.maxImageCount;
-  }
+  if (imageCount < capabilities.minImageCount)
+    imageCount = capabilities.minImageCount;
 
   auto formatCount{vulkanCountFromPhysicalDevice(
       physicalDevice, [&surface](VkPhysicalDevice device_, uint32_t *count) {
