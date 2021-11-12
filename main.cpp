@@ -68,6 +68,11 @@ static auto suitable(VkPhysicalDevice device, VkSurfaceKHR surface) -> bool {
   if (supportedFeatures.samplerAnisotropy == 0U)
     return false;
 
+  VkPhysicalDeviceProperties deviceProperties;
+  vkGetPhysicalDeviceProperties(device, &deviceProperties);
+  if (deviceProperties.deviceType != VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
+    return false;
+
   uint32_t index{0U};
   for (const auto properties :
        queueFamilyProperties(device, queueFamilyPropertiesCount(device))) {
@@ -540,6 +545,14 @@ static void run(const std::string &vertexShaderCodePath,
       vulkanDevices(vulkanInstance.instance), vulkanSurface.surface)};
   const vulkan_wrappers::Device vulkanDevice{vulkanPhysicalDevice,
                                              vulkanSurface.surface};
+  {
+    VkPhysicalDeviceProperties deviceProperties;
+    vkGetPhysicalDeviceProperties(vulkanPhysicalDevice, &deviceProperties);
+    std::cout << "selected physical device \"" << deviceProperties.deviceName
+              << "\"\n";
+    // vkGetPhysicalDeviceMemoryProperties(vulkanPhysicalDevice,
+    // &devicememprops);
+  }
 
   VkQueue graphicsQueue{nullptr};
   vkGetDeviceQueue(vulkanDevice.device,
