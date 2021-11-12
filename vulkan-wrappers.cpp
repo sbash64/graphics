@@ -61,9 +61,9 @@ Instance::Instance() {
   VkApplicationInfo applicationInfo{};
   applicationInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
   applicationInfo.pApplicationName = "Nope";
-  applicationInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
+  applicationInfo.applicationVersion = 0;
   applicationInfo.pEngineName = "N/A";
-  applicationInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
+  applicationInfo.engineVersion = 0;
   applicationInfo.apiVersion = VK_API_VERSION_1_0;
 
   VkInstanceCreateInfo createInfo{};
