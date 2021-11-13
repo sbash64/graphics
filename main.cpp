@@ -657,9 +657,13 @@ static void run(const std::string &vertexShaderCodePath,
         vulkanPhysicalDevice, vulkanSurface.surface, glfwWindow.window)};
     const auto depthFormat{findDepthFormat(vulkanPhysicalDevice)};
     const vulkan_wrappers::Image vulkanDepthImage{
-        vulkanDevice.device,     swapChainExtent.width,
-        swapChainExtent.height,  depthFormat,
-        VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT};
+        vulkanDevice.device,
+        swapChainExtent.width,
+        swapChainExtent.height,
+        depthFormat,
+        VK_IMAGE_TILING_OPTIMAL,
+        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
+            VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT};
     const auto vulkanDepthImageMemory{imageMemory(
         vulkanDevice.device, vulkanPhysicalDevice, vulkanDepthImage.image,
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
