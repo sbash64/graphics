@@ -9,6 +9,11 @@
 namespace sbash64::graphics {
 auto swapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &formats)
     -> VkSurfaceFormatKHR {
+  // auto surface_priority_list = std::vector<VkSurfaceFormatKHR>{
+  //     {VK_FORMAT_R8G8B8A8_SRGB, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
+  //     {VK_FORMAT_B8G8R8A8_SRGB, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
+  //     {VK_FORMAT_R8G8B8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
+  //     {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR}};
   for (const auto &format : formats)
     if (format.format == VK_FORMAT_B8G8R8A8_SRGB &&
         format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
@@ -18,6 +23,10 @@ auto swapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &formats)
 
 static auto swapPresentMode(const std::vector<VkPresentModeKHR> &presentModes)
     -> VkPresentModeKHR {
+  // std::vector<VkPresentModeKHR> presentModePriority {
+  //   VK_PRESENT_MODE_MAILBOX_KHR, VK_PRESENT_MODE_FIFO_KHR,
+  //       VK_PRESENT_MODE_IMMEDIATE_KHR,
+  // };
   for (const auto &mode : presentModes)
     if (mode == VK_PRESENT_MODE_MAILBOX_KHR)
       return mode;
@@ -171,6 +180,9 @@ Swapchain::Swapchain(VkDevice device, VkPhysicalDevice physicalDevice,
   createInfo.minImageCount = imageCount;
   createInfo.imageExtent = swapExtent(physicalDevice, surface, window);
   createInfo.imageArrayLayers = 1;
+
+  // const std::set<VkImageUsageFlagBits> &image_usage_flags = {
+  //     VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT, VK_IMAGE_USAGE_TRANSFER_SRC_BIT};
   createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
   const std::array<uint32_t, 2> queueFamilyIndices = {
@@ -195,7 +207,18 @@ Swapchain::Swapchain(VkDevice device, VkPhysicalDevice physicalDevice,
       physicalDevice, surface, &presentModeCount, presentModes.data());
   createInfo.presentMode = swapPresentMode(presentModes);
 
+  // const VkSurfaceTransformFlagBitsKHR transform =
+  //     VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
   createInfo.preTransform = capabilities.currentTransform;
+
+  // VkCompositeAlphaFlagBitsKHR request_composite_alpha{
+  //     VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR};
+  // static const std::vector<VkCompositeAlphaFlagBitsKHR> composite_alpha_flags
+  // =
+  //     {VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+  //      VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR,
+  //      VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR,
+  //      VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR};
   createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
   createInfo.clipped = VK_TRUE;
 
