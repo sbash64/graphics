@@ -868,30 +868,16 @@ auto swapExtent(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface,
   return extent;
 }
 
-static auto findSupportedFormat(VkPhysicalDevice physicalDevice,
-                                const std::vector<VkFormat> &candidates,
-                                VkImageTiling tiling,
-                                VkFormatFeatureFlags features) -> VkFormat {
-  for (VkFormat format : candidates) {
-    VkFormatProperties props;
-    vkGetPhysicalDeviceFormatProperties(physicalDevice, format, &props);
-
-    if (tiling == VK_IMAGE_TILING_LINEAR &&
-        (props.linearTilingFeatures & features) == features)
-      return format;
-    if (tiling == VK_IMAGE_TILING_OPTIMAL &&
-        (props.optimalTilingFeatures & features) == features)
+auto findDepthFormat(VkPhysicalDevice physicalDevice) -> VkFormat {
+  for (const auto format : {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D24_UNORM_S8_UINT,
+                            VK_FORMAT_D16_UNORM}) {
+    VkFormatProperties properties;
+    vkGetPhysicalDeviceFormatProperties(physicalDevice, format, &properties);
+    if ((properties.optimalTilingFeatures &
+         VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) ==
+        VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)
       return format;
   }
-
-  throw std::runtime_error("failed to find supported format!");
-}
-
-auto findDepthFormat(VkPhysicalDevice physicalDevice) -> VkFormat {
-  return findSupportedFormat(
-      physicalDevice,
-      {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT,
-       VK_FORMAT_D24_UNORM_S8_UINT},
-      VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT);
+  throw std::runtime_error("failed to find depth format");
 }
 } // namespace sbash64::graphics
