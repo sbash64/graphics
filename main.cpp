@@ -767,6 +767,7 @@ static void run(const std::string &vertexShaderCodePath,
       if (++currentFrame == maxFramesInFlight)
         currentFrame = 0;
     }
+    vkDeviceWaitIdle(vulkanDevice.device);
   }
 
   vkDeviceWaitIdle(vulkanDevice.device);
