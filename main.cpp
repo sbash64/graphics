@@ -538,13 +538,15 @@ static void run(const std::string &vertexShaderCodePath,
   const vulkan_wrappers::CommandPool vulkanCommandPool{vulkanDevice.device,
                                                        vulkanPhysicalDevice};
 
-  const auto vulkanTextureImage{textureImage(
-      vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
-      graphicsQueue, textureImagePaths.at(7))};
-
-  const auto vulkanOtherTextureImage{textureImage(
-      vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
-      graphicsQueue, textureImagePaths.at(0))};
+  std::vector<VulkanImage> textureImages;
+  std::transform(textureImagePaths.begin(), textureImagePaths.end(),
+                 std::back_inserter(textureImages),
+                 [&vulkanDevice, vulkanPhysicalDevice, &vulkanCommandPool,
+                  graphicsQueue](const std::string &path) {
+                   return textureImage(
+                       vulkanDevice.device, vulkanPhysicalDevice,
+                       vulkanCommandPool.commandPool, graphicsQueue, path);
+                 });
 
   const vulkan_wrappers::Sampler vulkanTextureSampler{vulkanDevice.device,
                                                       vulkanPhysicalDevice};
@@ -694,7 +696,7 @@ static void run(const std::string &vertexShaderCodePath,
     const vulkan_wrappers::DescriptorPool vulkanDescriptorPool{
         vulkanDevice.device, swapChainImages};
     const auto descriptorSets{graphics::descriptorSets(
-        vulkanDevice, vulkanTextureImage.imageView, vulkanTextureSampler,
+        vulkanDevice, textureImages.at(7).imageView, vulkanTextureSampler,
         vulkanDescriptorSetLayout, swapChainImages, vulkanDescriptorPool,
         vulkanUniformBuffers)};
 
@@ -705,7 +707,7 @@ static void run(const std::string &vertexShaderCodePath,
     const vulkan_wrappers::DescriptorPool vulkanOtherDescriptorPool{
         vulkanDevice.device, swapChainImages};
     const auto otherDescriptorSets{graphics::descriptorSets(
-        vulkanDevice, vulkanOtherTextureImage.imageView, vulkanTextureSampler,
+        vulkanDevice, textureImages.at(0).imageView, vulkanTextureSampler,
         vulkanDescriptorSetLayout, swapChainImages, vulkanOtherDescriptorPool,
         vulkanUniformBuffers)};
 
