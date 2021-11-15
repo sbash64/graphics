@@ -27,12 +27,12 @@ template <> struct hash<sbash64::graphics::Vertex> {
 } // namespace std
 
 namespace sbash64::graphics {
-struct IndexedVertices {
+struct Mesh {
   std::vector<Vertex> vertices;
   std::vector<uint32_t> indices;
 };
 
-auto readIndexedVertices(const std::string &path) -> IndexedVertices;
+auto readMeshes(const std::string &path) -> std::vector<Mesh>;
 } // namespace sbash64::graphics
 
 #endif

@@ -605,10 +605,11 @@ static void run(const std::string &vertexShaderCodePath,
   const vulkan_wrappers::Sampler vulkanTextureSampler{vulkanDevice.device,
                                                       vulkanPhysicalDevice};
 
-  const auto indexedVertices{readIndexedVertices(objectPath)};
+  const auto indexedVertices{readMeshes(objectPath)};
 
-  const VkDeviceSize vertexBufferSize{sizeof(indexedVertices.vertices[0]) *
-                                      indexedVertices.vertices.size()};
+  const VkDeviceSize vertexBufferSize{
+      sizeof(indexedVertices.front().vertices[0]) *
+      indexedVertices.front().vertices.size()};
   const vulkan_wrappers::Buffer vulkanVertexBuffer{
       vulkanDevice.device,
       VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
@@ -618,10 +619,11 @@ static void run(const std::string &vertexShaderCodePath,
       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
   copy(vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
        graphicsQueue, vulkanVertexBuffer.buffer,
-       indexedVertices.vertices.data(), vertexBufferSize);
+       indexedVertices.front().vertices.data(), vertexBufferSize);
 
-  const VkDeviceSize indexBufferSize{sizeof(indexedVertices.indices[0]) *
-                                     indexedVertices.indices.size()};
+  const VkDeviceSize indexBufferSize{
+      sizeof(indexedVertices.front().indices[0]) *
+      indexedVertices.front().indices.size()};
   const vulkan_wrappers::Buffer vulkanIndexBuffer{
       vulkanDevice.device,
       VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
@@ -630,8 +632,8 @@ static void run(const std::string &vertexShaderCodePath,
       vulkanDevice.device, vulkanPhysicalDevice, vulkanIndexBuffer.buffer,
       VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
   copy(vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
-       graphicsQueue, vulkanIndexBuffer.buffer, indexedVertices.indices.data(),
-       indexBufferSize);
+       graphicsQueue, vulkanIndexBuffer.buffer,
+       indexedVertices.front().indices.data(), indexBufferSize);
 
   const auto maxFramesInFlight{2};
 
@@ -734,7 +736,7 @@ static void run(const std::string &vertexShaderCodePath,
                          vulkanVertexBuffer, vulkanIndexBuffer,
                          vulkanRenderPass, vulkanPipelineLayout, vulkanPipeline,
                          vulkanFrameBuffers, descriptorSets,
-                         vulkanCommandBuffers, indexedVertices.indices);
+                         vulkanCommandBuffers, indexedVertices.front().indices);
 
     imagesInFlight.resize(swapChainImages.size(), VK_NULL_HANDLE);
     auto recreatingSwapChain{false};
