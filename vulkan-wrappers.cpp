@@ -731,7 +731,13 @@ DescriptorPool::DescriptorPool(VkDevice device,
 }
 
 DescriptorPool::~DescriptorPool() {
-  vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+  if (descriptorPool != nullptr)
+    vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+}
+
+DescriptorPool::DescriptorPool(DescriptorPool &&other) noexcept
+    : device{other.device}, descriptorPool{other.descriptorPool} {
+  other.descriptorPool = nullptr;
 }
 
 Image::Image(VkDevice device, uint32_t width, uint32_t height, VkFormat format,

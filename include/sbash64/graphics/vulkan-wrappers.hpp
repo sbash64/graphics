@@ -285,8 +285,8 @@ struct DescriptorSetLayout {
 struct DescriptorPool {
   DescriptorPool(VkDevice, const std::vector<VkImage> &swapChainImages);
   ~DescriptorPool();
+  DescriptorPool(DescriptorPool &&) noexcept;
 
-  DescriptorPool(DescriptorPool &&) = delete;
   auto operator=(DescriptorPool &&) -> DescriptorPool & = delete;
   DescriptorPool(const DescriptorPool &) = delete;
   auto operator=(const DescriptorPool &) -> DescriptorPool & = delete;

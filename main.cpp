@@ -329,15 +329,21 @@ static auto swapChainImageViews(VkDevice device,
   return swapChainImageViews;
 }
 
-static auto descriptorSets(
+struct VulkanDescriptor {
+  vulkan_wrappers::DescriptorPool pool;
+  std::vector<VkDescriptorSet> sets;
+};
+
+static auto descriptor(
     const vulkan_wrappers::Device &vulkanDevice,
     const vulkan_wrappers::ImageView &vulkanTextureImageView,
     const vulkan_wrappers::Sampler &vulkanTextureSampler,
     const vulkan_wrappers::DescriptorSetLayout &vulkanDescriptorSetLayout,
     const std::vector<VkImage> &swapChainImages,
-    const vulkan_wrappers::DescriptorPool &vulkanDescriptorPool,
     const std::vector<vulkan_wrappers::Buffer> &vulkanUniformBuffers)
-    -> std::vector<VkDescriptorSet> {
+    -> VulkanDescriptor {
+  vulkan_wrappers::DescriptorPool vulkanDescriptorPool{vulkanDevice.device,
+                                                       swapChainImages};
   std::vector<VkDescriptorSet> descriptorSets(swapChainImages.size());
   std::vector<VkDescriptorSetLayout> layouts(
       swapChainImages.size(), vulkanDescriptorSetLayout.descriptorSetLayout);
@@ -385,7 +391,8 @@ static auto descriptorSets(
     vkUpdateDescriptorSets(vulkanDevice.device, descriptorWrite.size(),
                            descriptorWrite.data(), 0, nullptr);
   }
-  return descriptorSets;
+  return VulkanDescriptor{std::move(vulkanDescriptorPool),
+                          std::move(descriptorSets)};
 }
 
 static void updateUniformBuffer(
@@ -471,7 +478,7 @@ present(bool &framebufferResized, bool &recreatingSwapChain,
 
 struct VulkanImage {
   vulkan_wrappers::Image image;
-  vulkan_wrappers::ImageView imageView;
+  vulkan_wrappers::ImageView view;
   vulkan_wrappers::DeviceMemory memory;
 };
 
@@ -693,23 +700,17 @@ static void run(const std::string &vertexShaderCodePath,
                            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT));
     }
 
-    const vulkan_wrappers::DescriptorPool vulkanDescriptorPool{
-        vulkanDevice.device, swapChainImages};
-    const auto descriptorSets{graphics::descriptorSets(
-        vulkanDevice, textureImages.at(7).imageView, vulkanTextureSampler,
-        vulkanDescriptorSetLayout, swapChainImages, vulkanDescriptorPool,
-        vulkanUniformBuffers)};
+    const auto descriptorSets{graphics::descriptor(
+        vulkanDevice, textureImages.at(7).view, vulkanTextureSampler,
+        vulkanDescriptorSetLayout, swapChainImages, vulkanUniformBuffers)};
 
     const vulkan_wrappers::CommandBuffers vulkanCommandBuffers{
         vulkanDevice.device, vulkanCommandPool.commandPool,
         vulkanFrameBuffers.size()};
 
-    const vulkan_wrappers::DescriptorPool vulkanOtherDescriptorPool{
-        vulkanDevice.device, swapChainImages};
-    const auto otherDescriptorSets{graphics::descriptorSets(
-        vulkanDevice, textureImages.at(0).imageView, vulkanTextureSampler,
-        vulkanDescriptorSetLayout, swapChainImages, vulkanOtherDescriptorPool,
-        vulkanUniformBuffers)};
+    const auto otherDescriptorSets{graphics::descriptor(
+        vulkanDevice, textureImages.at(0).view, vulkanTextureSampler,
+        vulkanDescriptorSetLayout, swapChainImages, vulkanUniformBuffers)};
 
     for (auto i{0}; i < vulkanCommandBuffers.commandBuffers.size(); i++) {
       VkCommandBufferBeginInfo beginInfo{};
@@ -747,7 +748,7 @@ static void run(const std::string &vertexShaderCodePath,
       vkCmdBindDescriptorSets(vulkanCommandBuffers.commandBuffers[i],
                               VK_PIPELINE_BIND_POINT_GRAPHICS,
                               vulkanPipelineLayout.pipelineLayout, 0, 1,
-                              &descriptorSets[i], 0, nullptr);
+                              &descriptorSets.sets[i], 0, nullptr);
       vkCmdDrawIndexed(
           vulkanCommandBuffers.commandBuffers[i],
           static_cast<uint32_t>(modelObjects.front().indices.size()), 1, 0, 0,
@@ -765,7 +766,7 @@ static void run(const std::string &vertexShaderCodePath,
         vkCmdBindDescriptorSets(vulkanCommandBuffers.commandBuffers[i],
                                 VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 vulkanPipelineLayout.pipelineLayout, 0, 1,
-                                &otherDescriptorSets[i], 0, nullptr);
+                                &otherDescriptorSets.sets[i], 0, nullptr);
         vkCmdDrawIndexed(
             vulkanCommandBuffers.commandBuffers[i],
             static_cast<uint32_t>(modelObjects.back().indices.size()), 1, 0, 0,
