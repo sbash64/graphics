@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <cstdlib>
 #include <exception>
+#include <filesystem>
 #include <functional>
 #include <iostream>
 #include <iterator>
@@ -387,64 +388,6 @@ static auto descriptorSets(
   return descriptorSets;
 }
 
-static void recordCommandBuffers(
-    const glfw_wrappers::Window &glfwWindow,
-    const vulkan_wrappers::Surface &vulkanSurface,
-    VkPhysicalDevice vulkanPhysicalDevice,
-    const vulkan_wrappers::Buffer &vulkanVertexBuffer,
-    const vulkan_wrappers::Buffer &vulkanIndexBuffer,
-    const vulkan_wrappers::RenderPass &vulkanRenderPass,
-    const vulkan_wrappers::PipelineLayout &vulkanPipelineLayout,
-    const vulkan_wrappers::Pipeline &vulkanPipeline,
-    const std::vector<vulkan_wrappers::Framebuffer> &vulkanFrameBuffers,
-    const std::vector<VkDescriptorSet> &descriptorSets,
-    const vulkan_wrappers::CommandBuffers &vulkanCommandBuffers,
-    const std::vector<uint32_t> &indices) {
-  for (auto i{0}; i < vulkanCommandBuffers.commandBuffers.size(); i++) {
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    if (vkBeginCommandBuffer(vulkanCommandBuffers.commandBuffers[i],
-                             &beginInfo) != VK_SUCCESS)
-      throw std::runtime_error("failed to begin recording command buffer!");
-
-    VkRenderPassBeginInfo renderPassInfo{};
-    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    renderPassInfo.renderPass = vulkanRenderPass.renderPass;
-    renderPassInfo.framebuffer = vulkanFrameBuffers.at(i).framebuffer;
-    renderPassInfo.renderArea.offset = {0, 0};
-    renderPassInfo.renderArea.extent = swapExtent(
-        vulkanPhysicalDevice, vulkanSurface.surface, glfwWindow.window);
-
-    std::array<VkClearValue, 2> clearValues{};
-    clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-    clearValues[1].depthStencil = {1.0f, 0};
-    renderPassInfo.clearValueCount = clearValues.size();
-    renderPassInfo.pClearValues = clearValues.data();
-
-    vkCmdBeginRenderPass(vulkanCommandBuffers.commandBuffers[i],
-                         &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-    vkCmdBindPipeline(vulkanCommandBuffers.commandBuffers[i],
-                      VK_PIPELINE_BIND_POINT_GRAPHICS, vulkanPipeline.pipeline);
-
-    std::array<VkBuffer, 1> vertexBuffers = {vulkanVertexBuffer.buffer};
-    std::array<VkDeviceSize, 1> offsets = {0};
-    vkCmdBindVertexBuffers(vulkanCommandBuffers.commandBuffers[i], 0, 1,
-                           vertexBuffers.data(), offsets.data());
-    vkCmdBindIndexBuffer(vulkanCommandBuffers.commandBuffers[i],
-                         vulkanIndexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
-    vkCmdBindDescriptorSets(vulkanCommandBuffers.commandBuffers[i],
-                            VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            vulkanPipelineLayout.pipelineLayout, 0, 1,
-                            &descriptorSets[i], 0, nullptr);
-    vkCmdDrawIndexed(vulkanCommandBuffers.commandBuffers[i],
-                     static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
-    vkCmdEndRenderPass(vulkanCommandBuffers.commandBuffers[i]);
-    if (vkEndCommandBuffer(vulkanCommandBuffers.commandBuffers[i]) !=
-        VK_SUCCESS)
-      throw std::runtime_error("failed to record command buffer!");
-  }
-}
-
 static void updateUniformBuffer(
     const vulkan_wrappers::Device &vulkanDevice,
     const vulkan_wrappers::DeviceMemory &vulkanUniformBuffersMemory,
@@ -529,8 +472,7 @@ present(bool &framebufferResized, bool &recreatingSwapChain,
 static void run(const std::string &vertexShaderCodePath,
                 const std::string &fragmentShaderCodePath,
                 const std::string &objectPath,
-                const std::string &textureImagePath,
-                const std::string &otherTextureImagePath) {
+                const std::vector<std::string> &textureImagePaths) {
   const glfw_wrappers::Init glfwInitialization;
 
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -566,7 +508,7 @@ static void run(const std::string &vertexShaderCodePath,
   const vulkan_wrappers::CommandPool vulkanCommandPool{vulkanDevice.device,
                                                        vulkanPhysicalDevice};
 
-  const stbi_wrappers::Image stbiTextureImage{textureImagePath};
+  const stbi_wrappers::Image stbiTextureImage{textureImagePaths.at(7)};
   const vulkan_wrappers::Image vulkanTextureImage{
       vulkanDevice.device,
       static_cast<uint32_t>(stbiTextureImage.width),
@@ -584,7 +526,7 @@ static void run(const std::string &vertexShaderCodePath,
       vulkanDevice.device, vulkanTextureImage.image, VK_FORMAT_R8G8B8A8_SRGB,
       VK_IMAGE_ASPECT_COLOR_BIT};
 
-  const stbi_wrappers::Image stbiOtherTextureImage{otherTextureImagePath};
+  const stbi_wrappers::Image stbiOtherTextureImage{textureImagePaths.at(0)};
   const vulkan_wrappers::Image vulkanOtherTextureImage{
       vulkanDevice.device,
       static_cast<uint32_t>(stbiOtherTextureImage.width),
@@ -892,11 +834,14 @@ static void run(const std::string &vertexShaderCodePath,
 int main(int argc, char *argv[]) {
   const std::span<char *> arguments{
       argv, static_cast<std::span<char *>::size_type>(argc)};
-  if (arguments.size() < 6)
+  if (arguments.size() < 5)
     return EXIT_FAILURE;
   try {
+    std::vector<std::string> texturePaths;
+    for (const auto &entry : std::filesystem::directory_iterator{arguments[4]})
+      texturePaths.push_back(entry.path());
     sbash64::graphics::run(arguments[1], arguments[2], arguments[3],
-                           arguments[4], arguments[5]);
+                           texturePaths);
   } catch (const std::exception &e) {
     std::cerr << e.what() << '\n';
     return EXIT_FAILURE;
