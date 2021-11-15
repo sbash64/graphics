@@ -26,8 +26,6 @@ auto readIndexedVertices(const std::string &path) -> IndexedVertices {
       vertex.texCoord = {attrib.texcoords[2 * index.texcoord_index + 0],
                          1.0F - attrib.texcoords[2 * index.texcoord_index + 1]};
 
-      vertex.color = {1.0F, 1.0F, 1.0F};
-
       if (uniqueVertices.count(vertex) == 0) {
         uniqueVertices[vertex] =
             static_cast<uint32_t>(indexedVertices.vertices.size());

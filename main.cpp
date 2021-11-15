@@ -529,7 +529,8 @@ present(bool &framebufferResized, bool &recreatingSwapChain,
 static void run(const std::string &vertexShaderCodePath,
                 const std::string &fragmentShaderCodePath,
                 const std::string &objectPath,
-                const std::string &textureImagePath) {
+                const std::string &textureImagePath,
+                const std::string &otherTextureImagePath) {
   const glfw_wrappers::Init glfwInitialization;
 
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -582,6 +583,24 @@ static void run(const std::string &vertexShaderCodePath,
   const vulkan_wrappers::ImageView vulkanTextureImageView{
       vulkanDevice.device, vulkanTextureImage.image, VK_FORMAT_R8G8B8A8_SRGB,
       VK_IMAGE_ASPECT_COLOR_BIT};
+
+  const stbi_wrappers::Image stbiOtherTextureImage{otherTextureImagePath};
+  const vulkan_wrappers::Image vulkanOtherTextureImage{
+      vulkanDevice.device,
+      static_cast<uint32_t>(stbiOtherTextureImage.width),
+      static_cast<uint32_t>(stbiOtherTextureImage.height),
+      VK_FORMAT_R8G8B8A8_SRGB,
+      VK_IMAGE_TILING_OPTIMAL,
+      VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT};
+  const auto vulkanOtherTextureImageMemory{imageMemory(
+      vulkanDevice.device, vulkanPhysicalDevice, vulkanOtherTextureImage.image,
+      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
+  copy(vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
+       graphicsQueue, vulkanOtherTextureImage.image, stbiOtherTextureImage);
+
+  const vulkan_wrappers::ImageView vulkanOtherTextureImageView{
+      vulkanDevice.device, vulkanOtherTextureImage.image,
+      VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT};
 
   const vulkan_wrappers::Sampler vulkanTextureSampler{vulkanDevice.device,
                                                       vulkanPhysicalDevice};
@@ -777,11 +796,11 @@ static void run(const std::string &vertexShaderCodePath,
 int main(int argc, char *argv[]) {
   const std::span<char *> arguments{
       argv, static_cast<std::span<char *>::size_type>(argc)};
-  if (arguments.size() < 5)
+  if (arguments.size() < 6)
     return EXIT_FAILURE;
   try {
     sbash64::graphics::run(arguments[1], arguments[2], arguments[3],
-                           arguments[4]);
+                           arguments[4], arguments[5]);
   } catch (const std::exception &e) {
     std::cerr << e.what() << '\n';
     return EXIT_FAILURE;

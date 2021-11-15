@@ -11,7 +11,6 @@
 namespace sbash64::graphics {
 struct Vertex {
   glm::vec3 pos;
-  glm::vec3 color;
   glm::vec2 texCoord;
 
   auto operator==(const Vertex &) const -> bool = default;
@@ -21,9 +20,7 @@ struct Vertex {
 namespace std {
 template <> struct hash<sbash64::graphics::Vertex> {
   auto operator()(sbash64::graphics::Vertex const &vertex) const -> size_t {
-    return ((hash<glm::vec3>()(vertex.pos) ^
-             (hash<glm::vec3>()(vertex.color) << 1U)) >>
-            1U) ^
+    return (hash<glm::vec3>()(vertex.pos) >> 1U) ^
            (hash<glm::vec2>()(vertex.texCoord) << 1U);
   }
 };

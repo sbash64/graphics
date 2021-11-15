@@ -414,7 +414,7 @@ Pipeline::Pipeline(VkDevice device, VkPhysicalDevice physicalDevice,
   bindingDescription.at(0).stride = sizeof(Vertex);
   bindingDescription.at(0).inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-  std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions{};
+  std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions{};
 
   attributeDescriptions[0].binding = 0;
   attributeDescriptions[0].location = 0;
@@ -423,13 +423,8 @@ Pipeline::Pipeline(VkDevice device, VkPhysicalDevice physicalDevice,
 
   attributeDescriptions[1].binding = 0;
   attributeDescriptions[1].location = 1;
-  attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-  attributeDescriptions[1].offset = offsetof(Vertex, color);
-
-  attributeDescriptions[2].binding = 0;
-  attributeDescriptions[2].location = 2;
-  attributeDescriptions[2].format = VK_FORMAT_R32G32_SFLOAT;
-  attributeDescriptions[2].offset = offsetof(Vertex, texCoord);
+  attributeDescriptions[1].format = VK_FORMAT_R32G32_SFLOAT;
+  attributeDescriptions[1].offset = offsetof(Vertex, texCoord);
 
   vertexInputInfo.vertexBindingDescriptionCount = bindingDescription.size();
   vertexInputInfo.vertexAttributeDescriptionCount =
