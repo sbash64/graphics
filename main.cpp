@@ -542,23 +542,9 @@ static void run(const std::string &vertexShaderCodePath,
       vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
       graphicsQueue, textureImagePaths.at(7))};
 
-  const stbi_wrappers::Image stbiOtherTextureImage{textureImagePaths.at(0)};
-  const vulkan_wrappers::Image vulkanOtherTextureImage{
-      vulkanDevice.device,
-      static_cast<uint32_t>(stbiOtherTextureImage.width),
-      static_cast<uint32_t>(stbiOtherTextureImage.height),
-      VK_FORMAT_R8G8B8A8_SRGB,
-      VK_IMAGE_TILING_OPTIMAL,
-      VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT};
-  const auto vulkanOtherTextureImageMemory{imageMemory(
-      vulkanDevice.device, vulkanPhysicalDevice, vulkanOtherTextureImage.image,
-      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
-  copy(vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
-       graphicsQueue, vulkanOtherTextureImage.image, stbiOtherTextureImage);
-
-  const vulkan_wrappers::ImageView vulkanOtherTextureImageView{
-      vulkanDevice.device, vulkanOtherTextureImage.image,
-      VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT};
+  const auto vulkanOtherTextureImage{textureImage(
+      vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
+      graphicsQueue, textureImagePaths.at(0))};
 
   const vulkan_wrappers::Sampler vulkanTextureSampler{vulkanDevice.device,
                                                       vulkanPhysicalDevice};
@@ -719,7 +705,7 @@ static void run(const std::string &vertexShaderCodePath,
     const vulkan_wrappers::DescriptorPool vulkanOtherDescriptorPool{
         vulkanDevice.device, swapChainImages};
     const auto otherDescriptorSets{graphics::descriptorSets(
-        vulkanDevice, vulkanOtherTextureImageView, vulkanTextureSampler,
+        vulkanDevice, vulkanOtherTextureImage.imageView, vulkanTextureSampler,
         vulkanDescriptorSetLayout, swapChainImages, vulkanOtherDescriptorPool,
         vulkanUniformBuffers)};
 
