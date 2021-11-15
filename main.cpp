@@ -506,6 +506,48 @@ static auto textureImage(VkDevice device, VkPhysicalDevice physicalDevice,
                      std::move(vulkanTextureImageMemory)};
 }
 
+struct VulkanBuffer {
+  vulkan_wrappers::Buffer buffer;
+  vulkan_wrappers::DeviceMemory memory;
+};
+
+struct VulkanDrawable {
+  VulkanBuffer vertexBuffer;
+  VulkanBuffer indexBuffer;
+};
+
+static auto drawable(VkDevice device, VkPhysicalDevice physicalDevice,
+                     VkCommandPool commandPool, VkQueue graphicsQueue,
+                     const Object &object) -> VulkanDrawable {
+  const VkDeviceSize vertexBufferSize{sizeof(object.vertices[0]) *
+                                      object.vertices.size()};
+  vulkan_wrappers::Buffer vulkanVertexBuffer{
+      device,
+      VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+      vertexBufferSize};
+  auto vulkanVertexBufferMemory{
+      bufferMemory(device, physicalDevice, vulkanVertexBuffer.buffer,
+                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
+  copy(device, physicalDevice, commandPool, graphicsQueue,
+       vulkanVertexBuffer.buffer, object.vertices.data(), vertexBufferSize);
+
+  const VkDeviceSize indexBufferSize{sizeof(object.indices[0]) *
+                                     object.indices.size()};
+  vulkan_wrappers::Buffer vulkanIndexBuffer{
+      device,
+      VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+      indexBufferSize};
+  auto vulkanIndexBufferMemory{
+      bufferMemory(device, physicalDevice, vulkanIndexBuffer.buffer,
+                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
+  copy(device, physicalDevice, commandPool, graphicsQueue,
+       vulkanIndexBuffer.buffer, object.indices.data(), indexBufferSize);
+  return VulkanDrawable{VulkanBuffer{std::move(vulkanVertexBuffer),
+                                     std::move(vulkanVertexBufferMemory)},
+                        VulkanBuffer{std::move(vulkanIndexBuffer),
+                                     std::move(vulkanIndexBufferMemory)}};
+}
+
 static void run(const std::string &vertexShaderCodePath,
                 const std::string &fragmentShaderCodePath,
                 const std::string &objectPath,
@@ -559,19 +601,9 @@ static void run(const std::string &vertexShaderCodePath,
                                                       vulkanPhysicalDevice};
 
   const auto modelObjects{readObjects(objectPath)};
-
-  const VkDeviceSize vertexBufferSize{sizeof(modelObjects.front().vertices[0]) *
-                                      modelObjects.front().vertices.size()};
-  const vulkan_wrappers::Buffer vulkanVertexBuffer{
-      vulkanDevice.device,
-      VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-      vertexBufferSize};
-  const auto vulkanVertexBufferMemory{bufferMemory(
-      vulkanDevice.device, vulkanPhysicalDevice, vulkanVertexBuffer.buffer,
-      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
-  copy(vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
-       graphicsQueue, vulkanVertexBuffer.buffer,
-       modelObjects.front().vertices.data(), vertexBufferSize);
+  const auto vulkanDrawable{drawable(vulkanDevice.device, vulkanPhysicalDevice,
+                                     vulkanCommandPool.commandPool,
+                                     graphicsQueue, modelObjects.front())};
 
   const VkDeviceSize otherVertexBufferSize{
       sizeof(modelObjects.back().vertices[0]) *
@@ -586,19 +618,6 @@ static void run(const std::string &vertexShaderCodePath,
   copy(vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
        graphicsQueue, vulkanOtherVertexBuffer.buffer,
        modelObjects.back().vertices.data(), otherVertexBufferSize);
-
-  const VkDeviceSize indexBufferSize{sizeof(modelObjects.front().indices[0]) *
-                                     modelObjects.front().indices.size()};
-  const vulkan_wrappers::Buffer vulkanIndexBuffer{
-      vulkanDevice.device,
-      VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-      indexBufferSize};
-  const auto vulkanIndexBufferMemory{bufferMemory(
-      vulkanDevice.device, vulkanPhysicalDevice, vulkanIndexBuffer.buffer,
-      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
-  copy(vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
-       graphicsQueue, vulkanIndexBuffer.buffer,
-       modelObjects.front().indices.data(), indexBufferSize);
 
   const VkDeviceSize otherIndexBufferSize{
       sizeof(modelObjects.back().indices[0]) *
@@ -742,12 +761,14 @@ static void run(const std::string &vertexShaderCodePath,
                         VK_PIPELINE_BIND_POINT_GRAPHICS,
                         vulkanPipeline.pipeline);
 
-      std::array<VkBuffer, 1> vertexBuffers = {vulkanVertexBuffer.buffer};
+      std::array<VkBuffer, 1> vertexBuffers = {
+          vulkanDrawable.vertexBuffer.buffer.buffer};
       std::array<VkDeviceSize, 1> offsets = {0};
       vkCmdBindVertexBuffers(vulkanCommandBuffers.commandBuffers[i], 0, 1,
                              vertexBuffers.data(), offsets.data());
       vkCmdBindIndexBuffer(vulkanCommandBuffers.commandBuffers[i],
-                           vulkanIndexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
+                           vulkanDrawable.indexBuffer.buffer.buffer, 0,
+                           VK_INDEX_TYPE_UINT32);
       vkCmdBindDescriptorSets(
           vulkanCommandBuffers.commandBuffers[i],
           VK_PIPELINE_BIND_POINT_GRAPHICS, vulkanPipelineLayout.pipelineLayout,
