@@ -601,12 +601,15 @@ static void run(const std::string &vertexShaderCodePath,
                                                       vulkanPhysicalDevice};
 
   const auto modelObjects{readObjects(objectPath)};
-  const auto vulkanDrawable{drawable(vulkanDevice.device, vulkanPhysicalDevice,
-                                     vulkanCommandPool.commandPool,
-                                     graphicsQueue, modelObjects.front())};
-  const auto vulkanOtherDrawable{drawable(
-      vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
-      graphicsQueue, modelObjects.back())};
+  std::vector<VulkanDrawable> vulkanDrawables;
+  std::transform(modelObjects.begin(), modelObjects.end(),
+                 std::back_inserter(vulkanDrawables),
+                 [&vulkanDevice, vulkanPhysicalDevice, &vulkanCommandPool,
+                  graphicsQueue](const Object &object) {
+                   return drawable(vulkanDevice.device, vulkanPhysicalDevice,
+                                   vulkanCommandPool.commandPool, graphicsQueue,
+                                   object);
+                 });
 
   const auto maxFramesInFlight{2};
 
@@ -737,12 +740,12 @@ static void run(const std::string &vertexShaderCodePath,
                         vulkanPipeline.pipeline);
 
       std::array<VkBuffer, 1> vertexBuffers = {
-          vulkanDrawable.vertexBuffer.buffer.buffer};
+          vulkanDrawables.front().vertexBuffer.buffer.buffer};
       std::array<VkDeviceSize, 1> offsets = {0};
       vkCmdBindVertexBuffers(vulkanCommandBuffers.commandBuffers[i], 0, 1,
                              vertexBuffers.data(), offsets.data());
       vkCmdBindIndexBuffer(vulkanCommandBuffers.commandBuffers[i],
-                           vulkanDrawable.indexBuffer.buffer.buffer, 0,
+                           vulkanDrawables.front().indexBuffer.buffer.buffer, 0,
                            VK_INDEX_TYPE_UINT32);
       vkCmdBindDescriptorSets(
           vulkanCommandBuffers.commandBuffers[i],
@@ -755,13 +758,13 @@ static void run(const std::string &vertexShaderCodePath,
 
       {
         std::array<VkBuffer, 1> vertexBuffers = {
-            vulkanOtherDrawable.vertexBuffer.buffer.buffer};
+            vulkanDrawables.back().vertexBuffer.buffer.buffer};
         std::array<VkDeviceSize, 1> offsets = {0};
         vkCmdBindVertexBuffers(vulkanCommandBuffers.commandBuffers[i], 0, 1,
                                vertexBuffers.data(), offsets.data());
         vkCmdBindIndexBuffer(vulkanCommandBuffers.commandBuffers[i],
-                             vulkanOtherDrawable.indexBuffer.buffer.buffer, 0,
-                             VK_INDEX_TYPE_UINT32);
+                             vulkanDrawables.back().indexBuffer.buffer.buffer,
+                             0, VK_INDEX_TYPE_UINT32);
         vkCmdBindDescriptorSets(vulkanCommandBuffers.commandBuffers[i],
                                 VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 vulkanPipelineLayout.pipelineLayout, 0, 1,
