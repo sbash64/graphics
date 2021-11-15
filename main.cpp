@@ -700,17 +700,20 @@ static void run(const std::string &vertexShaderCodePath,
                            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT));
     }
 
-    const auto descriptorSets{graphics::descriptor(
-        vulkanDevice, textureImages.at(7).view, vulkanTextureSampler,
-        vulkanDescriptorSetLayout, swapChainImages, vulkanUniformBuffers)};
+    std::vector<VulkanDescriptor> vulkanTextureImageDescriptors;
+    std::transform(
+        textureImages.begin(), textureImages.end(),
+        std::back_inserter(vulkanTextureImageDescriptors),
+        [&vulkanDevice, &vulkanTextureSampler, &vulkanDescriptorSetLayout,
+         &swapChainImages, &vulkanUniformBuffers](const VulkanImage &image) {
+          return graphics::descriptor(
+              vulkanDevice, image.view, vulkanTextureSampler,
+              vulkanDescriptorSetLayout, swapChainImages, vulkanUniformBuffers);
+        });
 
     const vulkan_wrappers::CommandBuffers vulkanCommandBuffers{
         vulkanDevice.device, vulkanCommandPool.commandPool,
         vulkanFrameBuffers.size()};
-
-    const auto otherDescriptorSets{graphics::descriptor(
-        vulkanDevice, textureImages.at(0).view, vulkanTextureSampler,
-        vulkanDescriptorSetLayout, swapChainImages, vulkanUniformBuffers)};
 
     for (auto i{0}; i < vulkanCommandBuffers.commandBuffers.size(); i++) {
       VkCommandBufferBeginInfo beginInfo{};
@@ -745,10 +748,10 @@ static void run(const std::string &vertexShaderCodePath,
                              vertexBuffers.data(), offsets.data());
       vkCmdBindIndexBuffer(vulkanCommandBuffers.commandBuffers[i],
                            vulkanIndexBuffer.buffer, 0, VK_INDEX_TYPE_UINT32);
-      vkCmdBindDescriptorSets(vulkanCommandBuffers.commandBuffers[i],
-                              VK_PIPELINE_BIND_POINT_GRAPHICS,
-                              vulkanPipelineLayout.pipelineLayout, 0, 1,
-                              &descriptorSets.sets[i], 0, nullptr);
+      vkCmdBindDescriptorSets(
+          vulkanCommandBuffers.commandBuffers[i],
+          VK_PIPELINE_BIND_POINT_GRAPHICS, vulkanPipelineLayout.pipelineLayout,
+          0, 1, &vulkanTextureImageDescriptors.at(7).sets[i], 0, nullptr);
       vkCmdDrawIndexed(
           vulkanCommandBuffers.commandBuffers[i],
           static_cast<uint32_t>(modelObjects.front().indices.size()), 1, 0, 0,
@@ -766,7 +769,8 @@ static void run(const std::string &vertexShaderCodePath,
         vkCmdBindDescriptorSets(vulkanCommandBuffers.commandBuffers[i],
                                 VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 vulkanPipelineLayout.pipelineLayout, 0, 1,
-                                &otherDescriptorSets.sets[i], 0, nullptr);
+                                &vulkanTextureImageDescriptors.at(0).sets[i], 0,
+                                nullptr);
         vkCmdDrawIndexed(
             vulkanCommandBuffers.commandBuffers[i],
             static_cast<uint32_t>(modelObjects.back().indices.size()), 1, 0, 0,
