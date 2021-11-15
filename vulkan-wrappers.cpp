@@ -1,3 +1,4 @@
+#include <cstddef>
 #include <sbash64/graphics/load-object.hpp>
 #include <sbash64/graphics/vulkan-wrappers.hpp>
 
@@ -755,7 +756,15 @@ Image::Image(VkDevice device, uint32_t width, uint32_t height, VkFormat format,
     throw std::runtime_error("failed to create image!");
 }
 
-Image::~Image() { vkDestroyImage(device, image, nullptr); }
+Image::~Image() {
+  if (image != nullptr)
+    vkDestroyImage(device, image, nullptr);
+}
+
+Image::Image(Image &&other) noexcept
+    : device{other.device}, image{other.image} {
+  other.image = nullptr;
+}
 
 Sampler::Sampler(VkDevice device, VkPhysicalDevice physicalDevice)
     : device{device} {

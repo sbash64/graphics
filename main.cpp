@@ -469,6 +469,36 @@ present(bool &framebufferResized, bool &recreatingSwapChain,
     throw std::runtime_error("failed to present swap chain image!");
 }
 
+struct VulkanImage {
+  vulkan_wrappers::Image image;
+  vulkan_wrappers::ImageView imageView;
+  vulkan_wrappers::DeviceMemory memory;
+};
+
+static auto textureImage(VkDevice device, VkPhysicalDevice physicalDevice,
+                         VkCommandPool commandPool, VkQueue graphicsQueue,
+                         const std::string &path) -> VulkanImage {
+  const stbi_wrappers::Image stbiTextureImage{path};
+  vulkan_wrappers::Image vulkanTextureImage{
+      device,
+      static_cast<uint32_t>(stbiTextureImage.width),
+      static_cast<uint32_t>(stbiTextureImage.height),
+      VK_FORMAT_R8G8B8A8_SRGB,
+      VK_IMAGE_TILING_OPTIMAL,
+      VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT};
+  auto vulkanTextureImageMemory{
+      imageMemory(device, physicalDevice, vulkanTextureImage.image,
+                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
+  copy(device, physicalDevice, commandPool, graphicsQueue,
+       vulkanTextureImage.image, stbiTextureImage);
+  vulkan_wrappers::ImageView vulkanTextureImageView{
+      device, vulkanTextureImage.image, VK_FORMAT_R8G8B8A8_SRGB,
+      VK_IMAGE_ASPECT_COLOR_BIT};
+  return VulkanImage{std::move(vulkanTextureImage),
+                     std::move(vulkanTextureImageView),
+                     std::move(vulkanTextureImageMemory)};
+}
+
 static void run(const std::string &vertexShaderCodePath,
                 const std::string &fragmentShaderCodePath,
                 const std::string &objectPath,
@@ -508,23 +538,9 @@ static void run(const std::string &vertexShaderCodePath,
   const vulkan_wrappers::CommandPool vulkanCommandPool{vulkanDevice.device,
                                                        vulkanPhysicalDevice};
 
-  const stbi_wrappers::Image stbiTextureImage{textureImagePaths.at(7)};
-  const vulkan_wrappers::Image vulkanTextureImage{
-      vulkanDevice.device,
-      static_cast<uint32_t>(stbiTextureImage.width),
-      static_cast<uint32_t>(stbiTextureImage.height),
-      VK_FORMAT_R8G8B8A8_SRGB,
-      VK_IMAGE_TILING_OPTIMAL,
-      VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT};
-  const auto vulkanTextureImageMemory{imageMemory(
-      vulkanDevice.device, vulkanPhysicalDevice, vulkanTextureImage.image,
-      VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
-  copy(vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
-       graphicsQueue, vulkanTextureImage.image, stbiTextureImage);
-
-  const vulkan_wrappers::ImageView vulkanTextureImageView{
-      vulkanDevice.device, vulkanTextureImage.image, VK_FORMAT_R8G8B8A8_SRGB,
-      VK_IMAGE_ASPECT_COLOR_BIT};
+  const auto vulkanTextureImage{textureImage(
+      vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
+      graphicsQueue, textureImagePaths.at(7))};
 
   const stbi_wrappers::Image stbiOtherTextureImage{textureImagePaths.at(0)};
   const vulkan_wrappers::Image vulkanOtherTextureImage{
@@ -692,7 +708,7 @@ static void run(const std::string &vertexShaderCodePath,
     const vulkan_wrappers::DescriptorPool vulkanDescriptorPool{
         vulkanDevice.device, swapChainImages};
     const auto descriptorSets{graphics::descriptorSets(
-        vulkanDevice, vulkanTextureImageView, vulkanTextureSampler,
+        vulkanDevice, vulkanTextureImage.imageView, vulkanTextureSampler,
         vulkanDescriptorSetLayout, swapChainImages, vulkanDescriptorPool,
         vulkanUniformBuffers)};
 

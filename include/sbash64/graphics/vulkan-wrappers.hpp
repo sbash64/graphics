@@ -84,10 +84,10 @@ struct Image {
   Image(VkDevice, uint32_t width, uint32_t height, VkFormat, VkImageTiling,
         VkImageUsageFlags);
   ~Image();
+  Image(Image &&) noexcept;
 
   Image(const Image &) = delete;
   auto operator=(const Image &) -> Image & = delete;
-  Image(Image &&) = delete;
   auto operator=(Image &&) -> Image & = delete;
 
   VkDevice device;
