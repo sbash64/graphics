@@ -738,41 +738,26 @@ static void run(const std::string &vertexShaderCodePath,
       vkCmdBindPipeline(vulkanCommandBuffers.commandBuffers[i],
                         VK_PIPELINE_BIND_POINT_GRAPHICS,
                         vulkanPipeline.pipeline);
-
-      std::array<VkBuffer, 1> vertexBuffers = {
-          vulkanDrawables.front().vertexBuffer.buffer.buffer};
-      std::array<VkDeviceSize, 1> offsets = {0};
-      vkCmdBindVertexBuffers(vulkanCommandBuffers.commandBuffers[i], 0, 1,
-                             vertexBuffers.data(), offsets.data());
-      vkCmdBindIndexBuffer(vulkanCommandBuffers.commandBuffers[i],
-                           vulkanDrawables.front().indexBuffer.buffer.buffer, 0,
-                           VK_INDEX_TYPE_UINT32);
-      vkCmdBindDescriptorSets(
-          vulkanCommandBuffers.commandBuffers[i],
-          VK_PIPELINE_BIND_POINT_GRAPHICS, vulkanPipelineLayout.pipelineLayout,
-          0, 1, &vulkanTextureImageDescriptors.at(7).sets[i], 0, nullptr);
-      vkCmdDrawIndexed(
-          vulkanCommandBuffers.commandBuffers[i],
-          static_cast<uint32_t>(modelObjects.front().indices.size()), 1, 0, 0,
-          0);
-
-      {
+      std::vector<int> objectToTextureMapping{7, 5, 2, 3, 1, 6, 4, 0};
+      for (auto j{0}; j < vulkanDrawables.size(); ++j) {
         std::array<VkBuffer, 1> vertexBuffers = {
-            vulkanDrawables.back().vertexBuffer.buffer.buffer};
+            vulkanDrawables.at(j).vertexBuffer.buffer.buffer};
         std::array<VkDeviceSize, 1> offsets = {0};
         vkCmdBindVertexBuffers(vulkanCommandBuffers.commandBuffers[i], 0, 1,
                                vertexBuffers.data(), offsets.data());
         vkCmdBindIndexBuffer(vulkanCommandBuffers.commandBuffers[i],
-                             vulkanDrawables.back().indexBuffer.buffer.buffer,
-                             0, VK_INDEX_TYPE_UINT32);
-        vkCmdBindDescriptorSets(vulkanCommandBuffers.commandBuffers[i],
-                                VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                vulkanPipelineLayout.pipelineLayout, 0, 1,
-                                &vulkanTextureImageDescriptors.at(0).sets[i], 0,
-                                nullptr);
+                             vulkanDrawables.at(j).indexBuffer.buffer.buffer, 0,
+                             VK_INDEX_TYPE_UINT32);
+        vkCmdBindDescriptorSets(
+            vulkanCommandBuffers.commandBuffers[i],
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            vulkanPipelineLayout.pipelineLayout, 0, 1,
+            &vulkanTextureImageDescriptors.at(objectToTextureMapping.at(j))
+                 .sets[i],
+            0, nullptr);
         vkCmdDrawIndexed(
             vulkanCommandBuffers.commandBuffers[i],
-            static_cast<uint32_t>(modelObjects.back().indices.size()), 1, 0, 0,
+            static_cast<uint32_t>(modelObjects.at(j).indices.size()), 1, 0, 0,
             0);
       }
 
