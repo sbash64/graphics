@@ -355,9 +355,12 @@ static auto descriptor(
   allocInfo.pSetLayouts = layouts.data();
 
   // no deallocate needed here per tutorial
-  if (vkAllocateDescriptorSets(vulkanDevice.device, &allocInfo,
-                               descriptorSets.data()) != VK_SUCCESS)
-    throw std::runtime_error("failed to allocate descriptor sets!");
+  throwOnError(
+      [&]() {
+        return vkAllocateDescriptorSets(vulkanDevice.device, &allocInfo,
+                                        descriptorSets.data());
+      },
+      "failed to allocate descriptor sets!");
 
   for (size_t i{0}; i < swapChainImages.size(); i++) {
     VkDescriptorBufferInfo bufferInfo{};
@@ -450,9 +453,12 @@ present(bool &framebufferResized, bool &recreatingSwapChain,
 
   vkResetFences(vulkanDevice.device, 1,
                 &vulkanInFlightFences[currentFrame].fence);
-  if (vkQueueSubmit(graphicsQueue, 1, &submitInfo,
-                    vulkanInFlightFences[currentFrame].fence) != VK_SUCCESS)
-    throw std::runtime_error("failed to submit draw command buffer!");
+  throwOnError(
+      [&]() {
+        return vkQueueSubmit(graphicsQueue, 1, &submitInfo,
+                             vulkanInFlightFences[currentFrame].fence);
+      },
+      "failed to submit draw command buffer!");
 
   VkPresentInfoKHR presentInfo{};
   presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -715,9 +721,12 @@ static void run(const std::string &vertexShaderCodePath,
     for (auto i{0}; i < vulkanCommandBuffers.commandBuffers.size(); i++) {
       VkCommandBufferBeginInfo beginInfo{};
       beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-      if (vkBeginCommandBuffer(vulkanCommandBuffers.commandBuffers[i],
-                               &beginInfo) != VK_SUCCESS)
-        throw std::runtime_error("failed to begin recording command buffer!");
+      throwOnError(
+          [&]() {
+            return vkBeginCommandBuffer(vulkanCommandBuffers.commandBuffers[i],
+                                        &beginInfo);
+          },
+          "failed to begin recording command buffer!");
 
       VkRenderPassBeginInfo renderPassInfo{};
       renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -762,9 +771,11 @@ static void run(const std::string &vertexShaderCodePath,
       }
 
       vkCmdEndRenderPass(vulkanCommandBuffers.commandBuffers[i]);
-      if (vkEndCommandBuffer(vulkanCommandBuffers.commandBuffers[i]) !=
-          VK_SUCCESS)
-        throw std::runtime_error("failed to record command buffer!");
+      throwOnError(
+          [&]() {
+            return vkEndCommandBuffer(vulkanCommandBuffers.commandBuffers[i]);
+          },
+          "failed to record command buffer!");
     }
 
     imagesInFlight.resize(swapChainImages.size(), VK_NULL_HANDLE);
