@@ -402,7 +402,7 @@ static void updateUniformBuffer(
       glm::radians(static_cast<float>(rotationAngleCentidegrees) / 100),
       glm::vec3(0.0F, 1.0F, 0.0F));
   ubo.view =
-      glm::lookAt(glm::vec3(8.0F, 8.0F, 8.0F), glm::vec3(0.0F, 0.0F, 0.0F),
+      glm::lookAt(glm::vec3(8.0F, 8.0F, 8.0F), glm::vec3(4.0F, 5.0F, 4.0F),
                   glm::vec3(0.0F, 1.0F, 1.0F));
   ubo.projection =
       glm::perspective(glm::radians(45.0F),
@@ -414,17 +414,18 @@ static void updateUniformBuffer(
        sizeof(ubo));
 }
 
-static auto
-present(VkQueue presentQueue, const vulkan_wrappers::Swapchain &vulkanSwapchain,
-        uint32_t imageIndex, const std::array<VkSemaphore, 1> &signalSemaphores)
+static auto present(VkQueue presentQueue,
+                    const vulkan_wrappers::Swapchain &swapchain,
+                    uint32_t imageIndex, VkSemaphore signalSemaphore)
     -> VkResult {
   VkPresentInfoKHR presentInfo{};
   presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 
+  std::array<VkSemaphore, 1> signalSemaphores{signalSemaphore};
   presentInfo.waitSemaphoreCount = signalSemaphores.size();
   presentInfo.pWaitSemaphores = signalSemaphores.data();
 
-  const std::array<VkSwapchainKHR, 1> swapChains = {vulkanSwapchain.swapChain};
+  const std::array<VkSwapchainKHR, 1> swapChains = {swapchain.swapChain};
   presentInfo.swapchainCount = swapChains.size();
   presentInfo.pSwapchains = swapChains.data();
 
@@ -433,19 +434,14 @@ present(VkQueue presentQueue, const vulkan_wrappers::Swapchain &vulkanSwapchain,
   return vkQueuePresentKHR(presentQueue, &presentInfo);
 }
 
-static void
-submit(const vulkan_wrappers::Device &vulkanDevice, VkQueue graphicsQueue,
-       const std::vector<vulkan_wrappers::Semaphore>
-           &vulkanImageAvailableSemaphores,
-       const std::vector<vulkan_wrappers::Semaphore>
-           &vulkanRenderFinishedSemaphores,
-       const std::vector<vulkan_wrappers::Fence> &vulkanInFlightFences,
-       VkCommandBuffer commandBuffer, int currentFrame) {
+static void submit(const vulkan_wrappers::Device &device, VkQueue graphicsQueue,
+                   VkSemaphore imageAvailableSemaphore,
+                   VkSemaphore renderFinishedSemaphore, VkFence inFlightFence,
+                   VkCommandBuffer commandBuffer) {
   VkSubmitInfo submitInfo{};
   submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-  const std::array<VkSemaphore, 1> waitSemaphores = {
-      vulkanImageAvailableSemaphores[currentFrame].semaphore};
+  const std::array<VkSemaphore, 1> waitSemaphores = {imageAvailableSemaphore};
   const std::array<VkPipelineStageFlags, 1> waitStages = {
       VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
   submitInfo.waitSemaphoreCount = waitSemaphores.size();
@@ -455,17 +451,14 @@ submit(const vulkan_wrappers::Device &vulkanDevice, VkQueue graphicsQueue,
   submitInfo.commandBufferCount = 1;
   submitInfo.pCommandBuffers = &commandBuffer;
 
-  const std::array<VkSemaphore, 1> signalSemaphores = {
-      vulkanRenderFinishedSemaphores[currentFrame].semaphore};
+  const std::array<VkSemaphore, 1> signalSemaphores = {renderFinishedSemaphore};
   submitInfo.signalSemaphoreCount = signalSemaphores.size();
   submitInfo.pSignalSemaphores = signalSemaphores.data();
 
-  vkResetFences(vulkanDevice.device, 1,
-                &vulkanInFlightFences[currentFrame].fence);
+  vkResetFences(device.device, 1, &inFlightFence);
   throwOnError(
       [&]() {
-        return vkQueueSubmit(graphicsQueue, 1, &submitInfo,
-                             vulkanInFlightFences[currentFrame].fence);
+        return vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFence);
       },
       "failed to submit draw command buffer!");
 }
@@ -612,7 +605,6 @@ static void run(const std::string &vertexShaderCodePath,
   const vulkan_wrappers::DescriptorSetLayout vulkanDescriptorSetLayout{
       vulkanDevice.device};
 
-  auto currentFrame{0};
   const vulkan_wrappers::Swapchain vulkanSwapchain{
       vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface,
       glfwWindow.window};
@@ -758,6 +750,7 @@ static void run(const std::string &vertexShaderCodePath,
   imagesInFlight.resize(swapChainImages.size(), VK_NULL_HANDLE);
   auto recreatingSwapChain{false};
   auto rotationAngleCentidegrees{0};
+  auto currentFrame{0U};
   while (!recreatingSwapChain) {
     if (glfwWindowShouldClose(glfwWindow.window) != 0) {
       break;
@@ -795,13 +788,15 @@ static void run(const std::string &vertexShaderCodePath,
                       VK_TRUE, UINT64_MAX);
 
     imagesInFlight[imageIndex] = vulkanInFlightFences[currentFrame].fence;
-    submit(vulkanDevice, graphicsQueue, vulkanImageAvailableSemaphores,
-           vulkanRenderFinishedSemaphores, vulkanInFlightFences,
-           vulkanCommandBuffers.commandBuffers[imageIndex], currentFrame);
+    submit(vulkanDevice, graphicsQueue,
+           vulkanImageAvailableSemaphores[currentFrame].semaphore,
+           vulkanRenderFinishedSemaphores[currentFrame].semaphore,
+           vulkanInFlightFences[currentFrame].fence,
+           vulkanCommandBuffers.commandBuffers[imageIndex]);
     {
       const auto result{
           present(presentQueue, vulkanSwapchain, imageIndex,
-                  {vulkanRenderFinishedSemaphores[currentFrame].semaphore})};
+                  vulkanRenderFinishedSemaphores[currentFrame].semaphore)};
       if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR ||
           framebufferResized) {
         framebufferResized = false;
