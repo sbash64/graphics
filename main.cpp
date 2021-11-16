@@ -581,7 +581,8 @@ static auto textureImage(VkDevice device, VkPhysicalDevice physicalDevice,
       VK_IMAGE_TILING_OPTIMAL,
       static_cast<uint32_t>(VK_IMAGE_USAGE_TRANSFER_SRC_BIT) |
           VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-      mipLevels};
+      mipLevels,
+      VK_SAMPLE_COUNT_1_BIT};
   auto memory{imageMemory(device, physicalDevice, image.image,
                           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
   copy(device, physicalDevice, commandPool, graphicsQueue, image.image,
@@ -730,6 +731,35 @@ static void run(const std::string &vertexShaderCodePath,
 
   const auto swapChainExtent{swapExtent(
       vulkanPhysicalDevice, vulkanSurface.surface, glfwWindow.window)};
+
+  auto formatCount{vulkanCountFromPhysicalDevice(
+      vulkanPhysicalDevice,
+      [&vulkanSurface](VkPhysicalDevice device_, uint32_t *count) {
+        vkGetPhysicalDeviceSurfaceFormatsKHR(device_, vulkanSurface.surface,
+                                             count, nullptr);
+      })};
+  std::vector<VkSurfaceFormatKHR> formats(formatCount);
+  vkGetPhysicalDeviceSurfaceFormatsKHR(vulkanPhysicalDevice,
+                                       vulkanSurface.surface, &formatCount,
+                                       formats.data());
+  const auto colorFormat{swapSurfaceFormat(formats).format};
+  const vulkan_wrappers::Image vulkanColorImage{
+      vulkanDevice.device,
+      swapChainExtent.width,
+      swapChainExtent.height,
+      colorFormat,
+      VK_IMAGE_TILING_OPTIMAL,
+      VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+          VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT,
+      1,
+      getMaxUsableSampleCount(vulkanPhysicalDevice)};
+  const auto vulkanColorImageMemory{
+      imageMemory(vulkanDevice.device, vulkanPhysicalDevice,
+                  vulkanColorImage.image, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
+  const vulkan_wrappers::ImageView vulkanColorImageView{
+      vulkanDevice.device, vulkanColorImage.image, colorFormat,
+      VK_IMAGE_ASPECT_COLOR_BIT, 1};
+
   const auto depthFormat{findDepthFormat(vulkanPhysicalDevice)};
   const vulkan_wrappers::Image vulkanDepthImage{
       vulkanDevice.device,
@@ -737,9 +767,9 @@ static void run(const std::string &vertexShaderCodePath,
       swapChainExtent.height,
       depthFormat,
       VK_IMAGE_TILING_OPTIMAL,
-      VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
-          VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT,
-      1};
+      VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+      1,
+      getMaxUsableSampleCount(vulkanPhysicalDevice)};
   const auto vulkanDepthImageMemory{
       imageMemory(vulkanDevice.device, vulkanPhysicalDevice,
                   vulkanDepthImage.image, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
@@ -751,14 +781,16 @@ static void run(const std::string &vertexShaderCodePath,
   std::transform(swapChainImageViews.begin(), swapChainImageViews.end(),
                  std::back_inserter(vulkanFrameBuffers),
                  [&vulkanDevice, vulkanPhysicalDevice, &vulkanSurface,
-                  &vulkanRenderPass, &vulkanDepthImageView,
+                  &vulkanRenderPass, &vulkanColorImageView,
+                  &vulkanDepthImageView,
                   &glfwWindow](const vulkan_wrappers::ImageView &imageView) {
                    return vulkan_wrappers::Framebuffer{
                        vulkanDevice.device,
                        vulkanPhysicalDevice,
                        vulkanSurface.surface,
                        vulkanRenderPass.renderPass,
-                       {imageView.view, vulkanDepthImageView.view},
+                       {vulkanColorImageView.view, vulkanDepthImageView.view,
+                        imageView.view},
                        glfwWindow.window};
                  });
 

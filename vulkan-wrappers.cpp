@@ -316,7 +316,7 @@ PipelineLayout::~PipelineLayout() {
 RenderPass::RenderPass(VkDevice device, VkPhysicalDevice physicalDevice,
                        VkSurfaceKHR surface)
     : device{device} {
-  std::array<VkAttachmentDescription, 2> attachments{};
+  std::array<VkAttachmentDescription, 3> attachments{};
 
   auto formatCount{vulkanCountFromPhysicalDevice(
       physicalDevice, [&surface](VkPhysicalDevice device_, uint32_t *count) {
@@ -327,22 +327,31 @@ RenderPass::RenderPass(VkDevice device, VkPhysicalDevice physicalDevice,
                                        formats.data());
   attachments[0].format = swapSurfaceFormat(formats).format;
 
-  attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
+  attachments[0].samples = getMaxUsableSampleCount(physicalDevice);
   attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
   attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
   attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
   attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
   attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-  attachments[0].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+  attachments[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
   attachments[1].format = findDepthFormat(physicalDevice);
-  attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
+  attachments[1].samples = getMaxUsableSampleCount(physicalDevice);
   attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
   attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
   attachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
   attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
   attachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
   attachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+  attachments[2].format = swapSurfaceFormat(formats).format;
+  attachments[2].samples = VK_SAMPLE_COUNT_1_BIT;
+  attachments[2].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+  attachments[2].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+  attachments[2].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+  attachments[2].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+  attachments[2].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+  attachments[2].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
   std::array<VkAttachmentReference, 1> colorAttachmentRef{};
   colorAttachmentRef[0].attachment = 0;
@@ -352,11 +361,16 @@ RenderPass::RenderPass(VkDevice device, VkPhysicalDevice physicalDevice,
   depthAttachmentRef.attachment = 1;
   depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
+  VkAttachmentReference colorAttachmentResolveRef{};
+  colorAttachmentResolveRef.attachment = 2;
+  colorAttachmentResolveRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
   std::array<VkSubpassDescription, 1> subpass{};
   subpass[0].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
   subpass[0].colorAttachmentCount = colorAttachmentRef.size();
   subpass[0].pColorAttachments = colorAttachmentRef.data();
   subpass[0].pDepthStencilAttachment = &depthAttachmentRef;
+  subpass[0].pResolveAttachments = &colorAttachmentResolveRef;
 
   std::array<VkSubpassDependency, 1> dependency{};
   dependency[0].srcSubpass = VK_SUBPASS_EXTERNAL;
@@ -496,7 +510,7 @@ Pipeline::Pipeline(VkDevice device, VkPhysicalDevice physicalDevice,
   multisampling.sType =
       VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
   multisampling.sampleShadingEnable = VK_FALSE;
-  multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+  multisampling.rasterizationSamples = getMaxUsableSampleCount(physicalDevice);
   pipelineInfo[0].pMultisampleState = &multisampling;
 
   std::array<VkPipelineColorBlendAttachmentState, 1> colorBlendAttachment{};
@@ -777,7 +791,8 @@ DescriptorPool::DescriptorPool(DescriptorPool &&other) noexcept
 }
 
 Image::Image(VkDevice device, uint32_t width, uint32_t height, VkFormat format,
-             VkImageTiling tiling, VkImageUsageFlags usage, uint32_t mipLevels)
+             VkImageTiling tiling, VkImageUsageFlags usage, uint32_t mipLevels,
+             VkSampleCountFlagBits samples)
     : device{device} {
   VkImageCreateInfo imageInfo{};
   imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -791,7 +806,7 @@ Image::Image(VkDevice device, uint32_t width, uint32_t height, VkFormat format,
   imageInfo.tiling = tiling;
   imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
   imageInfo.usage = usage;
-  imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+  imageInfo.samples = samples;
   imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
   throwOnError(
@@ -936,5 +951,35 @@ void throwOnError(const std::function<VkResult()> &f,
                   const std::string &message) {
   if (f() != VK_SUCCESS)
     throw std::runtime_error{message};
+}
+
+auto getMaxUsableSampleCount(VkPhysicalDevice physicalDevice)
+    -> VkSampleCountFlagBits {
+  VkPhysicalDeviceProperties physicalDeviceProperties;
+  vkGetPhysicalDeviceProperties(physicalDevice, &physicalDeviceProperties);
+
+  VkSampleCountFlags counts =
+      physicalDeviceProperties.limits.framebufferColorSampleCounts &
+      physicalDeviceProperties.limits.framebufferDepthSampleCounts;
+  if ((counts & VK_SAMPLE_COUNT_64_BIT) != 0U) {
+    return VK_SAMPLE_COUNT_64_BIT;
+  }
+  if ((counts & VK_SAMPLE_COUNT_32_BIT) != 0U) {
+    return VK_SAMPLE_COUNT_32_BIT;
+  }
+  if ((counts & VK_SAMPLE_COUNT_16_BIT) != 0U) {
+    return VK_SAMPLE_COUNT_16_BIT;
+  }
+  if ((counts & VK_SAMPLE_COUNT_8_BIT) != 0U) {
+    return VK_SAMPLE_COUNT_8_BIT;
+  }
+  if ((counts & VK_SAMPLE_COUNT_4_BIT) != 0U) {
+    return VK_SAMPLE_COUNT_4_BIT;
+  }
+  if ((counts & VK_SAMPLE_COUNT_2_BIT) != 0U) {
+    return VK_SAMPLE_COUNT_2_BIT;
+  }
+
+  return VK_SAMPLE_COUNT_1_BIT;
 }
 } // namespace sbash64::graphics

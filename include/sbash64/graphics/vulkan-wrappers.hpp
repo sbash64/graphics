@@ -30,6 +30,8 @@ auto swapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &)
 auto findDepthFormat(VkPhysicalDevice) -> VkFormat;
 void throwOnError(const std::function<VkResult()> &,
                   const std::string &message);
+auto getMaxUsableSampleCount(VkPhysicalDevice physicalDevice)
+    -> VkSampleCountFlagBits;
 
 namespace vulkan_wrappers {
 struct Instance {
@@ -84,7 +86,7 @@ struct Swapchain {
 
 struct Image {
   Image(VkDevice, uint32_t width, uint32_t height, VkFormat, VkImageTiling,
-        VkImageUsageFlags, uint32_t mipLevels);
+        VkImageUsageFlags, uint32_t mipLevels, VkSampleCountFlagBits);
   ~Image();
   Image(Image &&) noexcept;
 
