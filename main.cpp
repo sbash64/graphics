@@ -419,16 +419,33 @@ static void updateUniformBuffer(
 }
 
 static auto
+present(VkQueue presentQueue, const vulkan_wrappers::Swapchain &vulkanSwapchain,
+        uint32_t imageIndex, const std::array<VkSemaphore, 1> &signalSemaphores)
+    -> VkResult {
+  VkPresentInfoKHR presentInfo{};
+  presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+
+  presentInfo.waitSemaphoreCount = signalSemaphores.size();
+  presentInfo.pWaitSemaphores = signalSemaphores.data();
+
+  const std::array<VkSwapchainKHR, 1> swapChains = {vulkanSwapchain.swapChain};
+  presentInfo.swapchainCount = swapChains.size();
+  presentInfo.pSwapchains = swapChains.data();
+
+  presentInfo.pImageIndices = &imageIndex;
+
+  return vkQueuePresentKHR(presentQueue, &presentInfo);
+}
+
+static void
 present(const vulkan_wrappers::Device &vulkanDevice, VkQueue graphicsQueue,
-        VkQueue presentQueue,
         const std::vector<vulkan_wrappers::Semaphore>
             &vulkanImageAvailableSemaphores,
         const std::vector<vulkan_wrappers::Semaphore>
             &vulkanRenderFinishedSemaphores,
         const std::vector<vulkan_wrappers::Fence> &vulkanInFlightFences,
-        const vulkan_wrappers::Swapchain &vulkanSwapchain,
         const vulkan_wrappers::CommandBuffers &vulkanCommandBuffers,
-        uint32_t imageIndex, int currentFrame) -> VkResult {
+        uint32_t imageIndex, int currentFrame) {
   VkSubmitInfo submitInfo{};
   submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
@@ -456,20 +473,6 @@ present(const vulkan_wrappers::Device &vulkanDevice, VkQueue graphicsQueue,
                              vulkanInFlightFences[currentFrame].fence);
       },
       "failed to submit draw command buffer!");
-
-  VkPresentInfoKHR presentInfo{};
-  presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-
-  presentInfo.waitSemaphoreCount = waitSemaphores.size();
-  presentInfo.pWaitSemaphores = signalSemaphores.data();
-
-  const std::array<VkSwapchainKHR, 1> swapChains = {vulkanSwapchain.swapChain};
-  presentInfo.swapchainCount = swapChains.size();
-  presentInfo.pSwapchains = swapChains.data();
-
-  presentInfo.pImageIndices = &imageIndex;
-
-  return vkQueuePresentKHR(presentQueue, &presentInfo);
 }
 
 struct VulkanImage {
@@ -797,12 +800,13 @@ static void run(const std::string &vertexShaderCodePath,
                       VK_TRUE, UINT64_MAX);
 
     imagesInFlight[imageIndex] = vulkanInFlightFences[currentFrame].fence;
+    present(vulkanDevice, graphicsQueue, vulkanImageAvailableSemaphores,
+            vulkanRenderFinishedSemaphores, vulkanInFlightFences,
+            vulkanCommandBuffers, imageIndex, currentFrame);
     {
-      const auto result{present(
-          vulkanDevice, graphicsQueue, presentQueue,
-          vulkanImageAvailableSemaphores, vulkanRenderFinishedSemaphores,
-          vulkanInFlightFences, vulkanSwapchain, vulkanCommandBuffers,
-          imageIndex, currentFrame)};
+      const auto result{
+          present(presentQueue, vulkanSwapchain, imageIndex,
+                  {vulkanRenderFinishedSemaphores[currentFrame].semaphore})};
       if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR ||
           framebufferResized) {
         framebufferResized = false;
