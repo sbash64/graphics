@@ -137,10 +137,10 @@ static void
 submitAndWait(const vulkan_wrappers::CommandBuffers &vulkanCommandBuffers,
               VkQueue graphicsQueue) {
   std::array<VkSubmitInfo, 1> submitInfo{};
-  submitInfo.at(0).sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-  submitInfo.at(0).commandBufferCount =
+  submitInfo[0].sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+  submitInfo[0].commandBufferCount =
       static_cast<uint32_t>(vulkanCommandBuffers.commandBuffers.size());
-  submitInfo.at(0).pCommandBuffers = vulkanCommandBuffers.commandBuffers.data();
+  submitInfo[0].pCommandBuffers = vulkanCommandBuffers.commandBuffers.data();
   vkQueueSubmit(graphicsQueue, submitInfo.size(), submitInfo.data(),
                 VK_NULL_HANDLE);
   vkQueueWaitIdle(graphicsQueue);
@@ -157,12 +157,12 @@ static void copyBuffer(VkDevice device, VkCommandPool commandPool,
                        VkQueue graphicsQueue, VkBuffer sourceBuffer,
                        VkBuffer destinationBuffer, VkDeviceSize size) {
   vulkan_wrappers::CommandBuffers vulkanCommandBuffers{device, commandPool, 1};
-  begin(vulkanCommandBuffers.commandBuffers.at(0));
+  begin(vulkanCommandBuffers.commandBuffers[0]);
   std::array<VkBufferCopy, 1> copyRegion{};
-  copyRegion.at(0).size = size;
-  vkCmdCopyBuffer(vulkanCommandBuffers.commandBuffers.at(0), sourceBuffer,
+  copyRegion[0].size = size;
+  vkCmdCopyBuffer(vulkanCommandBuffers.commandBuffers[0], sourceBuffer,
                   destinationBuffer, copyRegion.size(), copyRegion.data());
-  vkEndCommandBuffer(vulkanCommandBuffers.commandBuffers.at(0));
+  vkEndCommandBuffer(vulkanCommandBuffers.commandBuffers[0]);
   submitAndWait(vulkanCommandBuffers, graphicsQueue);
 }
 
@@ -179,7 +179,7 @@ static void transitionImageLayout(VkDevice device, VkCommandPool commandPool,
                                   VkImageLayout oldLayout,
                                   VkImageLayout newLayout) {
   vulkan_wrappers::CommandBuffers vulkanCommandBuffers{device, commandPool, 1};
-  begin(vulkanCommandBuffers.commandBuffers.at(0));
+  begin(vulkanCommandBuffers.commandBuffers[0]);
 
   VkImageMemoryBarrier barrier{};
   barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -214,10 +214,10 @@ static void transitionImageLayout(VkDevice device, VkCommandPool commandPool,
   } else
     throw std::invalid_argument("unsupported layout transition!");
 
-  vkCmdPipelineBarrier(vulkanCommandBuffers.commandBuffers.at(0), sourceStage,
+  vkCmdPipelineBarrier(vulkanCommandBuffers.commandBuffers[0], sourceStage,
                        destinationStage, 0, 0, nullptr, 0, nullptr, 1,
                        &barrier);
-  vkEndCommandBuffer(vulkanCommandBuffers.commandBuffers.at(0));
+  vkEndCommandBuffer(vulkanCommandBuffers.commandBuffers[0]);
   submitAndWait(vulkanCommandBuffers, graphicsQueue);
 }
 
@@ -225,7 +225,7 @@ static void copyBufferToImage(VkDevice device, VkCommandPool commandPool,
                               VkQueue graphicsQueue, VkBuffer buffer,
                               VkImage image, uint32_t width, uint32_t height) {
   vulkan_wrappers::CommandBuffers vulkanCommandBuffers{device, commandPool, 1};
-  begin(vulkanCommandBuffers.commandBuffers.at(0));
+  begin(vulkanCommandBuffers.commandBuffers[0]);
 
   VkBufferImageCopy region{};
   region.bufferOffset = 0;
@@ -238,10 +238,9 @@ static void copyBufferToImage(VkDevice device, VkCommandPool commandPool,
   region.imageOffset = {0, 0, 0};
   region.imageExtent = {width, height, 1};
 
-  vkCmdCopyBufferToImage(vulkanCommandBuffers.commandBuffers.at(0), buffer,
-                         image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1,
-                         &region);
-  vkEndCommandBuffer(vulkanCommandBuffers.commandBuffers.at(0));
+  vkCmdCopyBufferToImage(vulkanCommandBuffers.commandBuffers[0], buffer, image,
+                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+  vkEndCommandBuffer(vulkanCommandBuffers.commandBuffers[0]);
   submitAndWait(vulkanCommandBuffers, graphicsQueue);
 }
 
@@ -374,13 +373,13 @@ static auto descriptor(
     imageInfo.sampler = vulkanTextureSampler.sampler;
 
     std::array<VkWriteDescriptorSet, 2> descriptorWrite{};
-    descriptorWrite.at(0).sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrite.at(0).dstSet = descriptorSets[i];
-    descriptorWrite.at(0).dstBinding = 0;
-    descriptorWrite.at(0).dstArrayElement = 0;
-    descriptorWrite.at(0).descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    descriptorWrite.at(0).descriptorCount = 1;
-    descriptorWrite.at(0).pBufferInfo = &bufferInfo;
+    descriptorWrite[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrite[0].dstSet = descriptorSets[i];
+    descriptorWrite[0].dstBinding = 0;
+    descriptorWrite[0].dstArrayElement = 0;
+    descriptorWrite[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptorWrite[0].descriptorCount = 1;
+    descriptorWrite[0].pBufferInfo = &bufferInfo;
 
     descriptorWrite[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     descriptorWrite[1].dstSet = descriptorSets[i];
@@ -491,25 +490,21 @@ struct VulkanImage {
 static auto textureImage(VkDevice device, VkPhysicalDevice physicalDevice,
                          VkCommandPool commandPool, VkQueue graphicsQueue,
                          const std::string &path) -> VulkanImage {
-  const stbi_wrappers::Image stbiTextureImage{path};
-  vulkan_wrappers::Image vulkanTextureImage{
-      device,
-      static_cast<uint32_t>(stbiTextureImage.width),
-      static_cast<uint32_t>(stbiTextureImage.height),
-      VK_FORMAT_R8G8B8A8_SRGB,
-      VK_IMAGE_TILING_OPTIMAL,
-      VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT};
-  auto vulkanTextureImageMemory{
-      imageMemory(device, physicalDevice, vulkanTextureImage.image,
-                  VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
-  copy(device, physicalDevice, commandPool, graphicsQueue,
-       vulkanTextureImage.image, stbiTextureImage);
-  vulkan_wrappers::ImageView vulkanTextureImageView{
-      device, vulkanTextureImage.image, VK_FORMAT_R8G8B8A8_SRGB,
-      VK_IMAGE_ASPECT_COLOR_BIT};
-  return VulkanImage{std::move(vulkanTextureImage),
-                     std::move(vulkanTextureImageView),
-                     std::move(vulkanTextureImageMemory)};
+  const stbi_wrappers::Image stbiImage{path};
+  vulkan_wrappers::Image image{device,
+                               static_cast<uint32_t>(stbiImage.width),
+                               static_cast<uint32_t>(stbiImage.height),
+                               VK_FORMAT_R8G8B8A8_SRGB,
+                               VK_IMAGE_TILING_OPTIMAL,
+                               VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                                   VK_IMAGE_USAGE_SAMPLED_BIT};
+  auto memory{imageMemory(device, physicalDevice, image.image,
+                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
+  copy(device, physicalDevice, commandPool, graphicsQueue, image.image,
+       stbiImage);
+  vulkan_wrappers::ImageView view{device, image.image, VK_FORMAT_R8G8B8A8_SRGB,
+                                  VK_IMAGE_ASPECT_COLOR_BIT};
+  return VulkanImage{std::move(image), std::move(view), std::move(memory)};
 }
 
 struct VulkanBuffer {

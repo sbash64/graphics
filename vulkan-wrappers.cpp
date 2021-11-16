@@ -325,39 +325,38 @@ RenderPass::RenderPass(VkDevice device, VkPhysicalDevice physicalDevice,
   std::vector<VkSurfaceFormatKHR> formats(formatCount);
   vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount,
                                        formats.data());
-  attachments.at(0).format = swapSurfaceFormat(formats).format;
+  attachments[0].format = swapSurfaceFormat(formats).format;
 
-  attachments.at(0).samples = VK_SAMPLE_COUNT_1_BIT;
-  attachments.at(0).loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-  attachments.at(0).storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-  attachments.at(0).stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-  attachments.at(0).stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-  attachments.at(0).initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-  attachments.at(0).finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+  attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
+  attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+  attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+  attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+  attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+  attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+  attachments[0].finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
-  attachments.at(1).format = findDepthFormat(physicalDevice);
-  attachments.at(1).samples = VK_SAMPLE_COUNT_1_BIT;
-  attachments.at(1).loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-  attachments.at(1).storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-  attachments.at(1).stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-  attachments.at(1).stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-  attachments.at(1).initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-  attachments.at(1).finalLayout =
-      VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+  attachments[1].format = findDepthFormat(physicalDevice);
+  attachments[1].samples = VK_SAMPLE_COUNT_1_BIT;
+  attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+  attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+  attachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+  attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+  attachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+  attachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
   std::array<VkAttachmentReference, 1> colorAttachmentRef{};
-  colorAttachmentRef.at(0).attachment = 0;
-  colorAttachmentRef.at(0).layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+  colorAttachmentRef[0].attachment = 0;
+  colorAttachmentRef[0].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
   VkAttachmentReference depthAttachmentRef{};
   depthAttachmentRef.attachment = 1;
   depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
   std::array<VkSubpassDescription, 1> subpass{};
-  subpass.at(0).pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-  subpass.at(0).colorAttachmentCount = colorAttachmentRef.size();
-  subpass.at(0).pColorAttachments = colorAttachmentRef.data();
-  subpass.at(0).pDepthStencilAttachment = &depthAttachmentRef;
+  subpass[0].pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+  subpass[0].colorAttachmentCount = colorAttachmentRef.size();
+  subpass[0].pColorAttachments = colorAttachmentRef.data();
+  subpass[0].pDepthStencilAttachment = &depthAttachmentRef;
 
   std::array<VkSubpassDependency, 1> dependency{};
   dependency[0].srcSubpass = VK_SUBPASS_EXTERNAL;
@@ -402,7 +401,7 @@ Pipeline::Pipeline(VkDevice device, VkPhysicalDevice physicalDevice,
       device, readFile(fragmentShaderCodePath)};
 
   std::array<VkGraphicsPipelineCreateInfo, 1> pipelineInfo{};
-  pipelineInfo.at(0).sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+  pipelineInfo[0].sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
 
   VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
   vertShaderStageInfo.sType =
@@ -420,17 +419,17 @@ Pipeline::Pipeline(VkDevice device, VkPhysicalDevice physicalDevice,
 
   const std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages = {
       vertShaderStageInfo, fragShaderStageInfo};
-  pipelineInfo.at(0).stageCount = shaderStages.size();
-  pipelineInfo.at(0).pStages = shaderStages.data();
+  pipelineInfo[0].stageCount = shaderStages.size();
+  pipelineInfo[0].pStages = shaderStages.data();
 
   VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
   vertexInputInfo.sType =
       VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
 
   std::array<VkVertexInputBindingDescription, 1> bindingDescription{};
-  bindingDescription.at(0).binding = 0;
-  bindingDescription.at(0).stride = sizeof(Vertex);
-  bindingDescription.at(0).inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+  bindingDescription[0].binding = 0;
+  bindingDescription[0].stride = sizeof(Vertex);
+  bindingDescription[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
   std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions{};
 
@@ -456,23 +455,23 @@ Pipeline::Pipeline(VkDevice device, VkPhysicalDevice physicalDevice,
   inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
   inputAssembly.primitiveRestartEnable = VK_FALSE;
 
-  pipelineInfo.at(0).pVertexInputState = &vertexInputInfo;
-  pipelineInfo.at(0).pInputAssemblyState = &inputAssembly;
+  pipelineInfo[0].pVertexInputState = &vertexInputInfo;
+  pipelineInfo[0].pInputAssemblyState = &inputAssembly;
 
   std::array<VkViewport, 1> viewport{};
-  viewport.at(0).x = 0.0F;
-  viewport.at(0).y = 0.0F;
+  viewport[0].x = 0.0F;
+  viewport[0].y = 0.0F;
 
   const auto swapChainExtent{swapExtent(physicalDevice, surface, window)};
-  viewport.at(0).width = static_cast<float>(swapChainExtent.width);
-  viewport.at(0).height = static_cast<float>(swapChainExtent.height);
+  viewport[0].width = static_cast<float>(swapChainExtent.width);
+  viewport[0].height = static_cast<float>(swapChainExtent.height);
 
-  viewport.at(0).minDepth = 0.0F;
-  viewport.at(0).maxDepth = 1.0F;
+  viewport[0].minDepth = 0.0F;
+  viewport[0].maxDepth = 1.0F;
 
   std::array<VkRect2D, 1> scissor{};
-  scissor.at(0).offset = {0, 0};
-  scissor.at(0).extent = swapChainExtent;
+  scissor[0].offset = {0, 0};
+  scissor[0].extent = swapChainExtent;
 
   VkPipelineViewportStateCreateInfo viewportState{};
   viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -480,7 +479,7 @@ Pipeline::Pipeline(VkDevice device, VkPhysicalDevice physicalDevice,
   viewportState.pViewports = viewport.data();
   viewportState.scissorCount = scissor.size();
   viewportState.pScissors = scissor.data();
-  pipelineInfo.at(0).pViewportState = &viewportState;
+  pipelineInfo[0].pViewportState = &viewportState;
 
   VkPipelineRasterizationStateCreateInfo rasterizer{};
   rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
@@ -491,21 +490,21 @@ Pipeline::Pipeline(VkDevice device, VkPhysicalDevice physicalDevice,
   rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
   rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
   rasterizer.depthBiasEnable = VK_FALSE;
-  pipelineInfo.at(0).pRasterizationState = &rasterizer;
+  pipelineInfo[0].pRasterizationState = &rasterizer;
 
   VkPipelineMultisampleStateCreateInfo multisampling{};
   multisampling.sType =
       VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
   multisampling.sampleShadingEnable = VK_FALSE;
   multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-  pipelineInfo.at(0).pMultisampleState = &multisampling;
+  pipelineInfo[0].pMultisampleState = &multisampling;
 
   std::array<VkPipelineColorBlendAttachmentState, 1> colorBlendAttachment{};
-  colorBlendAttachment.at(0).colorWriteMask =
+  colorBlendAttachment[0].colorWriteMask =
       static_cast<unsigned>(VK_COLOR_COMPONENT_R_BIT) |
       VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
       VK_COLOR_COMPONENT_A_BIT;
-  colorBlendAttachment.at(0).blendEnable = VK_FALSE;
+  colorBlendAttachment[0].blendEnable = VK_FALSE;
 
   VkPipelineColorBlendStateCreateInfo colorBlending{};
   colorBlending.sType =
@@ -518,12 +517,12 @@ Pipeline::Pipeline(VkDevice device, VkPhysicalDevice physicalDevice,
   colorBlending.blendConstants[1] = 0.0F;
   colorBlending.blendConstants[2] = 0.0F;
   colorBlending.blendConstants[3] = 0.0F;
-  pipelineInfo.at(0).pColorBlendState = &colorBlending;
+  pipelineInfo[0].pColorBlendState = &colorBlending;
 
-  pipelineInfo.at(0).layout = pipelineLayout;
-  pipelineInfo.at(0).renderPass = renderPass;
-  pipelineInfo.at(0).subpass = 0;
-  pipelineInfo.at(0).basePipelineHandle = VK_NULL_HANDLE;
+  pipelineInfo[0].layout = pipelineLayout;
+  pipelineInfo[0].renderPass = renderPass;
+  pipelineInfo[0].subpass = 0;
+  pipelineInfo[0].basePipelineHandle = VK_NULL_HANDLE;
 
   VkPipelineDepthStencilStateCreateInfo depthStencil{};
   depthStencil.sType =
@@ -533,7 +532,7 @@ Pipeline::Pipeline(VkDevice device, VkPhysicalDevice physicalDevice,
   depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
   depthStencil.depthBoundsTestEnable = VK_FALSE;
   depthStencil.stencilTestEnable = VK_FALSE;
-  pipelineInfo.at(0).pDepthStencilState = &depthStencil;
+  pipelineInfo[0].pDepthStencilState = &depthStencil;
 
   throwOnError(
       [&]() {
@@ -748,9 +747,8 @@ DescriptorPool::DescriptorPool(VkDevice device,
                                const std::vector<VkImage> &swapChainImages)
     : device{device} {
   std::array<VkDescriptorPoolSize, 2> poolSize{};
-  poolSize.at(0).type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  poolSize.at(0).descriptorCount =
-      static_cast<uint32_t>(swapChainImages.size());
+  poolSize[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  poolSize[0].descriptorCount = static_cast<uint32_t>(swapChainImages.size());
   poolSize[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
   poolSize[1].descriptorCount = static_cast<uint32_t>(swapChainImages.size());
 
