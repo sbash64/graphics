@@ -27,7 +27,7 @@ namespace sbash64::graphics {
 struct UniformBufferObject {
   alignas(16) glm::mat4 model;
   alignas(16) glm::mat4 view;
-  alignas(16) glm::mat4 proj;
+  alignas(16) glm::mat4 projection;
 };
 
 static auto suitable(VkPhysicalDevice device, VkSurfaceKHR surface) -> bool {
@@ -116,7 +116,7 @@ static auto swapChainImages(VkDevice device, VkSwapchainKHR swapChain)
 
 static void framebufferResizeCallback(GLFWwindow *window, int /*width*/,
                                       int /*height*/) {
-  auto *framebufferResized =
+  auto *const framebufferResized =
       static_cast<bool *>(glfwGetWindowUserPointer(window));
   *framebufferResized = true;
 }
@@ -201,14 +201,12 @@ static void transitionImageLayout(VkDevice device, VkCommandPool commandPool,
       newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
     barrier.srcAccessMask = 0;
     barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-
     sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
     destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
   } else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL &&
              newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
     barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
     barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-
     sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
     destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
   } else
@@ -269,14 +267,13 @@ static auto imageMemory(VkDevice device, VkPhysicalDevice physicalDevice,
 static void copy(VkDevice device, VkPhysicalDevice physicalDevice,
                  VkCommandPool commandPool, VkQueue graphicsQueue,
                  VkBuffer destinationBuffer, const void *source, size_t size) {
-  const vulkan_wrappers::Buffer vulkanStagingBuffer{
+  const vulkan_wrappers::Buffer stagingBuffer{
       device, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, size};
-  const auto vulkanStagingBufferMemory{
-      bufferMemory(device, physicalDevice, vulkanStagingBuffer.buffer,
-                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                       VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
-  copy(device, vulkanStagingBufferMemory.memory, source, size);
-  copyBuffer(device, commandPool, graphicsQueue, vulkanStagingBuffer.buffer,
+  const auto memory{bufferMemory(device, physicalDevice, stagingBuffer.buffer,
+                                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                     VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
+  copy(device, memory.memory, source, size);
+  copyBuffer(device, commandPool, graphicsQueue, stagingBuffer.buffer,
              destinationBuffer, size);
 }
 
@@ -286,19 +283,17 @@ static void copy(VkDevice device, VkPhysicalDevice physicalDevice,
                  const stbi_wrappers::Image &sourceImage) {
   const auto imageSize{
       static_cast<VkDeviceSize>(sourceImage.width * sourceImage.height * 4)};
-  const vulkan_wrappers::Buffer vulkanStagingBuffer{
+  const vulkan_wrappers::Buffer stagingBuffer{
       device, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, imageSize};
-  const auto vulkanStagingBufferMemory{
-      bufferMemory(device, physicalDevice, vulkanStagingBuffer.buffer,
-                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                       VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
-  copy(device, vulkanStagingBufferMemory.memory, sourceImage.pixels, imageSize);
+  const auto memory{bufferMemory(device, physicalDevice, stagingBuffer.buffer,
+                                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                     VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
+  copy(device, memory.memory, sourceImage.pixels, imageSize);
   transitionImageLayout(device, commandPool, graphicsQueue, destinationImage,
                         VK_IMAGE_LAYOUT_UNDEFINED,
                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-  copyBufferToImage(device, commandPool, graphicsQueue,
-                    vulkanStagingBuffer.buffer, destinationImage,
-                    static_cast<uint32_t>(sourceImage.width),
+  copyBufferToImage(device, commandPool, graphicsQueue, stagingBuffer.buffer,
+                    destinationImage, static_cast<uint32_t>(sourceImage.width),
                     static_cast<uint32_t>(sourceImage.height));
   transitionImageLayout(device, commandPool, graphicsQueue, destinationImage,
                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
@@ -409,11 +404,12 @@ static void updateUniformBuffer(
   ubo.view =
       glm::lookAt(glm::vec3(8.0F, 8.0F, 8.0F), glm::vec3(0.0F, 0.0F, 0.0F),
                   glm::vec3(0.0F, 1.0F, 1.0F));
-  ubo.proj = glm::perspective(glm::radians(45.0F),
-                              static_cast<float>(swapChainExtent.width) /
-                                  static_cast<float>(swapChainExtent.height),
-                              0.1F, 20.0F);
-  ubo.proj[1][1] *= -1;
+  ubo.projection =
+      glm::perspective(glm::radians(45.0F),
+                       static_cast<float>(swapChainExtent.width) /
+                           static_cast<float>(swapChainExtent.height),
+                       0.1F, 20.0F);
+  ubo.projection[1][1] *= -1;
   copy(vulkanDevice.device, vulkanUniformBuffersMemory.memory, &ubo,
        sizeof(ubo));
 }
