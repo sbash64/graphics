@@ -438,14 +438,13 @@ present(VkQueue presentQueue, const vulkan_wrappers::Swapchain &vulkanSwapchain,
 }
 
 static void
-present(const vulkan_wrappers::Device &vulkanDevice, VkQueue graphicsQueue,
-        const std::vector<vulkan_wrappers::Semaphore>
-            &vulkanImageAvailableSemaphores,
-        const std::vector<vulkan_wrappers::Semaphore>
-            &vulkanRenderFinishedSemaphores,
-        const std::vector<vulkan_wrappers::Fence> &vulkanInFlightFences,
-        const vulkan_wrappers::CommandBuffers &vulkanCommandBuffers,
-        uint32_t imageIndex, int currentFrame) {
+submit(const vulkan_wrappers::Device &vulkanDevice, VkQueue graphicsQueue,
+       const std::vector<vulkan_wrappers::Semaphore>
+           &vulkanImageAvailableSemaphores,
+       const std::vector<vulkan_wrappers::Semaphore>
+           &vulkanRenderFinishedSemaphores,
+       const std::vector<vulkan_wrappers::Fence> &vulkanInFlightFences,
+       VkCommandBuffer commandBuffer, int currentFrame) {
   VkSubmitInfo submitInfo{};
   submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
@@ -458,7 +457,7 @@ present(const vulkan_wrappers::Device &vulkanDevice, VkQueue graphicsQueue,
   submitInfo.pWaitDstStageMask = waitStages.data();
 
   submitInfo.commandBufferCount = 1;
-  submitInfo.pCommandBuffers = &vulkanCommandBuffers.commandBuffers[imageIndex];
+  submitInfo.pCommandBuffers = &commandBuffer;
 
   const std::array<VkSemaphore, 1> signalSemaphores = {
       vulkanRenderFinishedSemaphores[currentFrame].semaphore};
@@ -800,9 +799,9 @@ static void run(const std::string &vertexShaderCodePath,
                       VK_TRUE, UINT64_MAX);
 
     imagesInFlight[imageIndex] = vulkanInFlightFences[currentFrame].fence;
-    present(vulkanDevice, graphicsQueue, vulkanImageAvailableSemaphores,
-            vulkanRenderFinishedSemaphores, vulkanInFlightFences,
-            vulkanCommandBuffers, imageIndex, currentFrame);
+    submit(vulkanDevice, graphicsQueue, vulkanImageAvailableSemaphores,
+           vulkanRenderFinishedSemaphores, vulkanInFlightFences,
+           vulkanCommandBuffers.commandBuffers[imageIndex], currentFrame);
     {
       const auto result{
           present(presentQueue, vulkanSwapchain, imageIndex,
