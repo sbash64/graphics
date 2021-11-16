@@ -28,6 +28,8 @@ auto swapExtent(VkPhysicalDevice, VkSurfaceKHR, GLFWwindow *) -> VkExtent2D;
 auto swapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &)
     -> VkSurfaceFormatKHR;
 auto findDepthFormat(VkPhysicalDevice) -> VkFormat;
+void throwOnError(const std::function<VkResult()> &,
+                  const std::string &message);
 
 namespace vulkan_wrappers {
 struct Instance {

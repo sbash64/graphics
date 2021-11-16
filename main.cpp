@@ -800,7 +800,7 @@ static void run(const std::string &vertexShaderCodePath,
       updateUniformBuffer(vulkanDevice, vulkanUniformBuffersMemory[imageIndex],
                           swapChainExtent, rotationAngleCentidegrees);
 
-      if ((rotationAngleCentidegrees += 4) == 36000)
+      if ((rotationAngleCentidegrees += 9) == 36000)
         rotationAngleCentidegrees = 0;
 
       if (imagesInFlight[imageIndex] != VK_NULL_HANDLE)

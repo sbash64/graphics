@@ -88,8 +88,9 @@ Instance::Instance() {
   createInfo.enabledLayerCount = 0;
   createInfo.pNext = nullptr;
 
-  if (vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS)
-    throw std::runtime_error("failed to create instance!");
+  throwOnError(
+      [&]() { return vkCreateInstance(&createInfo, nullptr, &instance); },
+      "failed to create instance!");
 }
 
 Instance::~Instance() { vkDestroyInstance(instance, nullptr); }
@@ -135,17 +136,21 @@ Device::Device(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface) {
 
   createInfo.enabledLayerCount = 0;
 
-  if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) !=
-      VK_SUCCESS)
-    throw std::runtime_error("failed to create logical device!");
+  throwOnError(
+      [&]() {
+        return vkCreateDevice(physicalDevice, &createInfo, nullptr, &device);
+      },
+      "failed to create logical device!");
 }
 
 Device::~Device() { vkDestroyDevice(device, nullptr); }
 
 Surface::Surface(VkInstance instance, GLFWwindow *window) : instance{instance} {
-  if (glfwCreateWindowSurface(instance, window, nullptr, &surface) !=
-      VK_SUCCESS)
-    throw std::runtime_error("failed to create window surface!");
+  throwOnError(
+      [&]() {
+        return glfwCreateWindowSurface(instance, window, nullptr, &surface);
+      },
+      "failed to create window surface!");
 }
 
 Surface::~Surface() { vkDestroySurfaceKHR(instance, surface, nullptr); }
@@ -225,9 +230,11 @@ Swapchain::Swapchain(VkDevice device, VkPhysicalDevice physicalDevice,
 
   createInfo.oldSwapchain = VK_NULL_HANDLE;
 
-  if (vkCreateSwapchainKHR(device, &createInfo, nullptr, &swapChain) !=
-      VK_SUCCESS)
-    throw std::runtime_error("failed to create swap chain!");
+  throwOnError(
+      [&]() {
+        return vkCreateSwapchainKHR(device, &createInfo, nullptr, &swapChain);
+      },
+      "failed to create swap chain!");
 }
 
 Swapchain::~Swapchain() { vkDestroySwapchainKHR(device, swapChain, nullptr); }
@@ -250,8 +257,9 @@ ImageView::ImageView(VkDevice device, VkImage image, VkFormat format,
   createInfo.subresourceRange.baseArrayLayer = 0;
   createInfo.subresourceRange.layerCount = 1;
 
-  if (vkCreateImageView(device, &createInfo, nullptr, &view) != VK_SUCCESS)
-    throw std::runtime_error("failed to create image view!");
+  throwOnError(
+      [&]() { return vkCreateImageView(device, &createInfo, nullptr, &view); },
+      "failed to create image view!");
 }
 
 ImageView::~ImageView() {
@@ -272,8 +280,11 @@ ShaderModule::ShaderModule(VkDevice device, const std::vector<char> &code)
   createInfo.codeSize = code.size();
   createInfo.pCode = reinterpret_cast<const uint32_t *>(code.data());
 
-  if (vkCreateShaderModule(device, &createInfo, nullptr, &module) != VK_SUCCESS)
-    throw std::runtime_error("failed to create shader module!");
+  throwOnError(
+      [&]() {
+        return vkCreateShaderModule(device, &createInfo, nullptr, &module);
+      },
+      "failed to create shader module!");
 }
 
 ShaderModule::~ShaderModule() {
@@ -290,9 +301,12 @@ PipelineLayout::PipelineLayout(VkDevice device,
       descriptorSetLayout};
   pipelineLayoutInfo.setLayoutCount = descriptorSetLayouts.size();
   pipelineLayoutInfo.pSetLayouts = descriptorSetLayouts.data();
-  if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr,
-                             &pipelineLayout) != VK_SUCCESS)
-    throw std::runtime_error("failed to create pipeline layout!");
+  throwOnError(
+      [&]() {
+        return vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr,
+                                      &pipelineLayout);
+      },
+      "failed to create pipeline layout!");
 }
 
 PipelineLayout::~PipelineLayout() {
@@ -365,9 +379,12 @@ RenderPass::RenderPass(VkDevice device, VkPhysicalDevice physicalDevice,
   renderPassInfo.dependencyCount = dependency.size();
   renderPassInfo.pDependencies = dependency.data();
 
-  if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass) !=
-      VK_SUCCESS)
-    throw std::runtime_error("failed to create render pass!");
+  throwOnError(
+      [&]() {
+        return vkCreateRenderPass(device, &renderPassInfo, nullptr,
+                                  &renderPass);
+      },
+      "failed to create render pass!");
 }
 
 RenderPass::~RenderPass() { vkDestroyRenderPass(device, renderPass, nullptr); }
@@ -518,10 +535,13 @@ Pipeline::Pipeline(VkDevice device, VkPhysicalDevice physicalDevice,
   depthStencil.stencilTestEnable = VK_FALSE;
   pipelineInfo.at(0).pDepthStencilState = &depthStencil;
 
-  if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, pipelineInfo.size(),
-                                pipelineInfo.data(), nullptr,
-                                &pipeline) != VK_SUCCESS)
-    throw std::runtime_error("failed to create graphics pipeline!");
+  throwOnError(
+      [&]() {
+        return vkCreateGraphicsPipelines(
+            device, VK_NULL_HANDLE, pipelineInfo.size(), pipelineInfo.data(),
+            nullptr, &pipeline);
+      },
+      "failed to create graphics pipeline!");
 }
 
 Pipeline::~Pipeline() { vkDestroyPipeline(device, pipeline, nullptr); }
@@ -543,10 +563,12 @@ Framebuffer::Framebuffer(VkDevice device, VkPhysicalDevice physicalDevice,
 
   framebufferInfo.layers = 1;
 
-  if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &framebuffer) !=
-      VK_SUCCESS) {
-    throw std::runtime_error("failed to create framebuffer!");
-  }
+  throwOnError(
+      [&]() {
+        return vkCreateFramebuffer(device, &framebufferInfo, nullptr,
+                                   &framebuffer);
+      },
+      "failed to create framebuffer!");
 }
 
 Framebuffer::~Framebuffer() {
@@ -565,9 +587,11 @@ CommandPool::CommandPool(VkDevice device, VkPhysicalDevice physicalDevice)
   poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
   poolInfo.queueFamilyIndex =
       graphicsSupportingQueueFamilyIndex(physicalDevice);
-  if (vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool) !=
-      VK_SUCCESS)
-    throw std::runtime_error("failed to create command pool!");
+  throwOnError(
+      [&]() {
+        return vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool);
+      },
+      "failed to create command pool!");
 }
 
 CommandPool::~CommandPool() {
@@ -577,9 +601,11 @@ CommandPool::~CommandPool() {
 Semaphore::Semaphore(VkDevice device) : device{device} {
   VkSemaphoreCreateInfo semaphoreInfo{};
   semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-  if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphore) !=
-      VK_SUCCESS)
-    throw std::runtime_error("failed to create semaphore!");
+  throwOnError(
+      [&]() {
+        return vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphore);
+      },
+      "failed to create semaphore!");
 }
 
 Semaphore::~Semaphore() {
@@ -596,8 +622,9 @@ Fence::Fence(VkDevice device) : device{device} {
   VkFenceCreateInfo fenceInfo{};
   fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
   fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-  if (vkCreateFence(device, &fenceInfo, nullptr, &fence) != VK_SUCCESS)
-    throw std::runtime_error("failed to create fence!");
+  throwOnError(
+      [&]() { return vkCreateFence(device, &fenceInfo, nullptr, &fence); },
+      "failed to create fence!");
 }
 
 Fence::~Fence() {
@@ -620,9 +647,12 @@ CommandBuffers::CommandBuffers(VkDevice device, VkCommandPool commandPool,
 
   allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
   allocInfo.commandBufferCount = static_cast<uint32_t>(commandBuffers.size());
-  if (vkAllocateCommandBuffers(device, &allocInfo, commandBuffers.data()) !=
-      VK_SUCCESS)
-    throw std::runtime_error("failed to allocate command buffers!");
+  throwOnError(
+      [&]() {
+        return vkAllocateCommandBuffers(device, &allocInfo,
+                                        commandBuffers.data());
+      },
+      "failed to allocate command buffers!");
 }
 
 CommandBuffers::~CommandBuffers() {
@@ -639,8 +669,9 @@ Buffer::Buffer(VkDevice device, VkBufferUsageFlags usage,
   bufferInfo.size = bufferSize;
   bufferInfo.usage = usage;
   bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-  if (vkCreateBuffer(device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS)
-    throw std::runtime_error("failed to create buffer!");
+  throwOnError(
+      [&]() { return vkCreateBuffer(device, &bufferInfo, nullptr, &buffer); },
+      "failed to create buffer!");
 }
 
 Buffer::~Buffer() {
@@ -663,8 +694,9 @@ DeviceMemory::DeviceMemory(VkDevice device, VkPhysicalDevice physicalDevice,
   allocInfo.memoryTypeIndex = findMemoryType(
       physicalDevice, memoryRequirements.memoryTypeBits, properties);
 
-  if (vkAllocateMemory(device, &allocInfo, nullptr, &memory) != VK_SUCCESS)
-    throw std::runtime_error("failed to allocate device memory!");
+  throwOnError(
+      [&]() { return vkAllocateMemory(device, &allocInfo, nullptr, &memory); },
+      "failed to allocate device memory!");
 }
 
 DeviceMemory::~DeviceMemory() {
@@ -700,9 +732,12 @@ DescriptorSetLayout::DescriptorSetLayout(VkDevice device) : device{device} {
   layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
   layoutInfo.pBindings = bindings.data();
 
-  if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr,
-                                  &descriptorSetLayout) != VK_SUCCESS)
-    throw std::runtime_error("failed to create descriptor set layout!");
+  throwOnError(
+      [&]() {
+        return vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr,
+                                           &descriptorSetLayout);
+      },
+      "failed to create descriptor set layout!");
 }
 
 DescriptorSetLayout::~DescriptorSetLayout() {
@@ -725,9 +760,12 @@ DescriptorPool::DescriptorPool(VkDevice device,
   poolInfo.pPoolSizes = poolSize.data();
   poolInfo.maxSets = static_cast<uint32_t>(swapChainImages.size());
 
-  if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) !=
-      VK_SUCCESS)
-    throw std::runtime_error("failed to create descriptor pool!");
+  throwOnError(
+      [&]() {
+        return vkCreateDescriptorPool(device, &poolInfo, nullptr,
+                                      &descriptorPool);
+      },
+      "failed to create descriptor pool!");
 }
 
 DescriptorPool::~DescriptorPool() {
@@ -758,8 +796,9 @@ Image::Image(VkDevice device, uint32_t width, uint32_t height, VkFormat format,
   imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
   imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-  if (vkCreateImage(device, &imageInfo, nullptr, &image) != VK_SUCCESS)
-    throw std::runtime_error("failed to create image!");
+  throwOnError(
+      [&]() { return vkCreateImage(device, &imageInfo, nullptr, &image); },
+      "failed to create image!");
 }
 
 Image::~Image() {
@@ -796,8 +835,11 @@ Sampler::Sampler(VkDevice device, VkPhysicalDevice physicalDevice)
   samplerInfo.minLod = 0.0F;
   samplerInfo.maxLod = 0.0F;
 
-  if (vkCreateSampler(device, &samplerInfo, nullptr, &sampler) != VK_SUCCESS)
-    throw std::runtime_error("failed to create texture sampler!");
+  throwOnError(
+      [&]() {
+        return vkCreateSampler(device, &samplerInfo, nullptr, &sampler);
+      },
+      "failed to create texture sampler!");
 }
 
 Sampler::~Sampler() { vkDestroySampler(device, sampler, nullptr); }
@@ -889,5 +931,11 @@ auto findDepthFormat(VkPhysicalDevice physicalDevice) -> VkFormat {
       return format;
   }
   throw std::runtime_error("failed to find depth format");
+}
+
+void throwOnError(const std::function<VkResult()> &f,
+                  const std::string &message) {
+  if (f() != VK_SUCCESS)
+    throw std::runtime_error{message};
 }
 } // namespace sbash64::graphics
