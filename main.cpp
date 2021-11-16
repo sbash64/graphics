@@ -177,7 +177,7 @@ static void copy(VkDevice device, VkDeviceMemory memory, const void *source,
 static void transitionImageLayout(VkDevice device, VkCommandPool commandPool,
                                   VkQueue graphicsQueue, VkImage image,
                                   VkImageLayout oldLayout,
-                                  VkImageLayout newLayout) {
+                                  VkImageLayout newLayout, uint32_t mipLevels) {
   vulkan_wrappers::CommandBuffers vulkanCommandBuffers{device, commandPool, 1};
   begin(vulkanCommandBuffers.commandBuffers[0]);
 
@@ -190,7 +190,7 @@ static void transitionImageLayout(VkDevice device, VkCommandPool commandPool,
   barrier.image = image;
   barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
   barrier.subresourceRange.baseMipLevel = 0;
-  barrier.subresourceRange.levelCount = 1;
+  barrier.subresourceRange.levelCount = mipLevels;
   barrier.subresourceRange.baseArrayLayer = 0;
   barrier.subresourceRange.layerCount = 1;
 
@@ -277,6 +277,100 @@ static void copy(VkDevice device, VkPhysicalDevice physicalDevice,
              destinationBuffer, size);
 }
 
+static void generateMipmaps(VkDevice device, VkPhysicalDevice physicalDevice,
+                            VkCommandPool commandPool, VkQueue graphicsQueue,
+                            VkImage image, VkFormat imageFormat,
+                            int32_t texWidth, int32_t texHeight,
+                            uint32_t mipLevels) {
+  // Check if image format supports linear blitting
+  VkFormatProperties formatProperties;
+  vkGetPhysicalDeviceFormatProperties(physicalDevice, imageFormat,
+                                      &formatProperties);
+
+  if (!(formatProperties.optimalTilingFeatures &
+        VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) {
+    throw std::runtime_error(
+        "texture image format does not support linear blitting!");
+  }
+
+  vulkan_wrappers::CommandBuffers vulkanCommandBuffers{device, commandPool, 1};
+  begin(vulkanCommandBuffers.commandBuffers[0]);
+
+  VkImageMemoryBarrier barrier{};
+  barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+  barrier.image = image;
+  barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  barrier.subresourceRange.baseArrayLayer = 0;
+  barrier.subresourceRange.layerCount = 1;
+  barrier.subresourceRange.levelCount = 1;
+
+  int32_t mipWidth = texWidth;
+  int32_t mipHeight = texHeight;
+
+  for (uint32_t i = 1; i < mipLevels; i++) {
+    barrier.subresourceRange.baseMipLevel = i - 1;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+
+    vkCmdPipelineBarrier(
+        vulkanCommandBuffers.commandBuffers[0], VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    VkImageBlit blit{};
+    blit.srcOffsets[0] = {0, 0, 0};
+    blit.srcOffsets[1] = {mipWidth, mipHeight, 1};
+    blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    blit.srcSubresource.mipLevel = i - 1;
+    blit.srcSubresource.baseArrayLayer = 0;
+    blit.srcSubresource.layerCount = 1;
+    blit.dstOffsets[0] = {0, 0, 0};
+    blit.dstOffsets[1] = {mipWidth > 1 ? mipWidth / 2 : 1,
+                          mipHeight > 1 ? mipHeight / 2 : 1, 1};
+    blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    blit.dstSubresource.mipLevel = i;
+    blit.dstSubresource.baseArrayLayer = 0;
+    blit.dstSubresource.layerCount = 1;
+
+    vkCmdBlitImage(vulkanCommandBuffers.commandBuffers[0], image,
+                   VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image,
+                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit,
+                   VK_FILTER_LINEAR);
+
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+    vkCmdPipelineBarrier(vulkanCommandBuffers.commandBuffers[0],
+                         VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr,
+                         0, nullptr, 1, &barrier);
+
+    if (mipWidth > 1)
+      mipWidth /= 2;
+    if (mipHeight > 1)
+      mipHeight /= 2;
+  }
+
+  barrier.subresourceRange.baseMipLevel = mipLevels - 1;
+  barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+  barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+  barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+  barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+  vkCmdPipelineBarrier(vulkanCommandBuffers.commandBuffers[0],
+                       VK_PIPELINE_STAGE_TRANSFER_BIT,
+                       VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0,
+                       nullptr, 1, &barrier);
+
+  vkEndCommandBuffer(vulkanCommandBuffers.commandBuffers[0]);
+  submitAndWait(vulkanCommandBuffers, graphicsQueue);
+}
+
 static void copy(VkDevice device, VkPhysicalDevice physicalDevice,
                  VkCommandPool commandPool, VkQueue graphicsQueue,
                  VkImage destinationImage,
@@ -289,15 +383,18 @@ static void copy(VkDevice device, VkPhysicalDevice physicalDevice,
                                  VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                                      VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
   copy(device, memory.memory, sourceImage.pixels, imageSize);
+  const auto mipLevels{static_cast<uint32_t>(std::floor(std::log2(
+                           std::max(sourceImage.width, sourceImage.height)))) +
+                       1};
   transitionImageLayout(device, commandPool, graphicsQueue, destinationImage,
                         VK_IMAGE_LAYOUT_UNDEFINED,
-                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, mipLevels);
   copyBufferToImage(device, commandPool, graphicsQueue, stagingBuffer.buffer,
                     destinationImage, static_cast<uint32_t>(sourceImage.width),
                     static_cast<uint32_t>(sourceImage.height));
-  transitionImageLayout(device, commandPool, graphicsQueue, destinationImage,
-                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+  generateMipmaps(device, physicalDevice, commandPool, graphicsQueue,
+                  destinationImage, VK_FORMAT_R8G8B8A8_SRGB, sourceImage.width,
+                  sourceImage.height, mipLevels);
 }
 
 static auto swapChainImageViews(VkDevice device,
@@ -317,8 +414,8 @@ static auto swapChainImageViews(VkDevice device,
   std::transform(swapChainImages.begin(), swapChainImages.end(),
                  std::back_inserter(swapChainImageViews),
                  [device, format](VkImage image) {
-                   return vulkan_wrappers::ImageView{device, image, format,
-                                                     VK_IMAGE_ASPECT_COLOR_BIT};
+                   return vulkan_wrappers::ImageView{
+                       device, image, format, VK_IMAGE_ASPECT_COLOR_BIT, 1};
                  });
   return swapChainImageViews;
 }
@@ -473,19 +570,24 @@ static auto textureImage(VkDevice device, VkPhysicalDevice physicalDevice,
                          VkCommandPool commandPool, VkQueue graphicsQueue,
                          const std::string &path) -> VulkanImage {
   const stbi_wrappers::Image stbiImage{path};
-  vulkan_wrappers::Image image{device,
-                               static_cast<uint32_t>(stbiImage.width),
-                               static_cast<uint32_t>(stbiImage.height),
-                               VK_FORMAT_R8G8B8A8_SRGB,
-                               VK_IMAGE_TILING_OPTIMAL,
-                               VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-                                   VK_IMAGE_USAGE_SAMPLED_BIT};
+  const auto mipLevels{static_cast<uint32_t>(std::floor(std::log2(
+                           std::max(stbiImage.width, stbiImage.height)))) +
+                       1};
+  vulkan_wrappers::Image image{
+      device,
+      static_cast<uint32_t>(stbiImage.width),
+      static_cast<uint32_t>(stbiImage.height),
+      VK_FORMAT_R8G8B8A8_SRGB,
+      VK_IMAGE_TILING_OPTIMAL,
+      static_cast<uint32_t>(VK_IMAGE_USAGE_TRANSFER_SRC_BIT) |
+          VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+      mipLevels};
   auto memory{imageMemory(device, physicalDevice, image.image,
                           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
   copy(device, physicalDevice, commandPool, graphicsQueue, image.image,
        stbiImage);
   vulkan_wrappers::ImageView view{device, image.image, VK_FORMAT_R8G8B8A8_SRGB,
-                                  VK_IMAGE_ASPECT_COLOR_BIT};
+                                  VK_IMAGE_ASPECT_COLOR_BIT, mipLevels};
   return VulkanImage{std::move(image), std::move(view), std::move(memory)};
 }
 
@@ -577,7 +679,7 @@ static void run(const std::string &vertexShaderCodePath,
                  });
 
   const vulkan_wrappers::Sampler vulkanTextureSampler{vulkanDevice.device,
-                                                      vulkanPhysicalDevice};
+                                                      vulkanPhysicalDevice, 1};
 
   const auto modelObjects{readObjects(objectPath)};
   std::vector<VulkanDrawable> vulkanDrawables;
@@ -636,13 +738,14 @@ static void run(const std::string &vertexShaderCodePath,
       depthFormat,
       VK_IMAGE_TILING_OPTIMAL,
       VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
-          VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT};
+          VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT,
+      1};
   const auto vulkanDepthImageMemory{
       imageMemory(vulkanDevice.device, vulkanPhysicalDevice,
                   vulkanDepthImage.image, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
   const vulkan_wrappers::ImageView vulkanDepthImageView{
       vulkanDevice.device, vulkanDepthImage.image, depthFormat,
-      VK_IMAGE_ASPECT_DEPTH_BIT};
+      VK_IMAGE_ASPECT_DEPTH_BIT, 1};
 
   std::vector<vulkan_wrappers::Framebuffer> vulkanFrameBuffers;
   std::transform(swapChainImageViews.begin(), swapChainImageViews.end(),

@@ -84,7 +84,7 @@ struct Swapchain {
 
 struct Image {
   Image(VkDevice, uint32_t width, uint32_t height, VkFormat, VkImageTiling,
-        VkImageUsageFlags);
+        VkImageUsageFlags, uint32_t mipLevels);
   ~Image();
   Image(Image &&) noexcept;
 
@@ -97,7 +97,8 @@ struct Image {
 };
 
 struct ImageView {
-  ImageView(VkDevice, VkImage, VkFormat, VkImageAspectFlags);
+  ImageView(VkDevice, VkImage, VkFormat, VkImageAspectFlags,
+            uint32_t mipLevels);
   ~ImageView();
   ImageView(ImageView &&) noexcept;
 
@@ -110,7 +111,7 @@ struct ImageView {
 };
 
 struct Sampler {
-  Sampler(VkDevice, VkPhysicalDevice);
+  Sampler(VkDevice, VkPhysicalDevice, uint32_t mipLevels);
   ~Sampler();
 
   Sampler(Sampler &&) = delete;

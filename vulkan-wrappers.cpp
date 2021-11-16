@@ -240,7 +240,7 @@ Swapchain::Swapchain(VkDevice device, VkPhysicalDevice physicalDevice,
 Swapchain::~Swapchain() { vkDestroySwapchainKHR(device, swapChain, nullptr); }
 
 ImageView::ImageView(VkDevice device, VkImage image, VkFormat format,
-                     VkImageAspectFlags aspectFlags)
+                     VkImageAspectFlags aspectFlags, uint32_t mipLevels)
     : device{device} {
   VkImageViewCreateInfo createInfo{};
   createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -253,7 +253,7 @@ ImageView::ImageView(VkDevice device, VkImage image, VkFormat format,
   createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
   createInfo.subresourceRange.aspectMask = aspectFlags;
   createInfo.subresourceRange.baseMipLevel = 0;
-  createInfo.subresourceRange.levelCount = 1;
+  createInfo.subresourceRange.levelCount = mipLevels;
   createInfo.subresourceRange.baseArrayLayer = 0;
   createInfo.subresourceRange.layerCount = 1;
 
@@ -777,7 +777,7 @@ DescriptorPool::DescriptorPool(DescriptorPool &&other) noexcept
 }
 
 Image::Image(VkDevice device, uint32_t width, uint32_t height, VkFormat format,
-             VkImageTiling tiling, VkImageUsageFlags usage)
+             VkImageTiling tiling, VkImageUsageFlags usage, uint32_t mipLevels)
     : device{device} {
   VkImageCreateInfo imageInfo{};
   imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -785,7 +785,7 @@ Image::Image(VkDevice device, uint32_t width, uint32_t height, VkFormat format,
   imageInfo.extent.width = width;
   imageInfo.extent.height = height;
   imageInfo.extent.depth = 1;
-  imageInfo.mipLevels = 1;
+  imageInfo.mipLevels = mipLevels;
   imageInfo.arrayLayers = 1;
   imageInfo.format = format;
   imageInfo.tiling = tiling;
@@ -809,7 +809,8 @@ Image::Image(Image &&other) noexcept
   other.image = nullptr;
 }
 
-Sampler::Sampler(VkDevice device, VkPhysicalDevice physicalDevice)
+Sampler::Sampler(VkDevice device, VkPhysicalDevice physicalDevice,
+                 uint32_t mipLevels)
     : device{device} {
   VkSamplerCreateInfo samplerInfo{};
   samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -831,7 +832,7 @@ Sampler::Sampler(VkDevice device, VkPhysicalDevice physicalDevice)
   samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
   samplerInfo.mipLodBias = 0.0F;
   samplerInfo.minLod = 0.0F;
-  samplerInfo.maxLod = 0.0F;
+  samplerInfo.maxLod = static_cast<float>(mipLevels);
 
   throwOnError(
       [&]() {
