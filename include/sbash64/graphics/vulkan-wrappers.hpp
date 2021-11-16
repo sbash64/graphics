@@ -25,13 +25,11 @@ auto graphicsSupportingQueueFamilyIndex(VkPhysicalDevice) -> uint32_t;
 auto presentSupportingQueueFamilyIndex(VkPhysicalDevice, VkSurfaceKHR)
     -> uint32_t;
 auto swapExtent(VkPhysicalDevice, VkSurfaceKHR, GLFWwindow *) -> VkExtent2D;
-auto swapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &)
-    -> VkSurfaceFormatKHR;
+auto swapSurfaceFormat(VkPhysicalDevice, VkSurfaceKHR) -> VkSurfaceFormatKHR;
 auto findDepthFormat(VkPhysicalDevice) -> VkFormat;
 void throwOnError(const std::function<VkResult()> &,
                   const std::string &message);
-auto getMaxUsableSampleCount(VkPhysicalDevice physicalDevice)
-    -> VkSampleCountFlagBits;
+auto maxUsableSampleCount(VkPhysicalDevice) -> VkSampleCountFlagBits;
 
 namespace vulkan_wrappers {
 struct Instance {

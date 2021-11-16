@@ -8,13 +8,20 @@
 #include <stdexcept>
 
 namespace sbash64::graphics {
-auto swapSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &formats)
+auto swapSurfaceFormat(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface)
     -> VkSurfaceFormatKHR {
   // auto surface_priority_list = std::vector<VkSurfaceFormatKHR>{
   //     {VK_FORMAT_R8G8B8A8_SRGB, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
   //     {VK_FORMAT_B8G8R8A8_SRGB, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
   //     {VK_FORMAT_R8G8B8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR},
   //     {VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR}};
+  auto formatCount{vulkanCountFromPhysicalDevice(
+      physicalDevice, [&surface](VkPhysicalDevice device_, uint32_t *count) {
+        vkGetPhysicalDeviceSurfaceFormatsKHR(device_, surface, count, nullptr);
+      })};
+  std::vector<VkSurfaceFormatKHR> formats(formatCount);
+  vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount,
+                                       formats.data());
   for (const auto &format : formats)
     if (format.format == VK_FORMAT_B8G8R8A8_SRGB &&
         format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
@@ -172,14 +179,7 @@ Swapchain::Swapchain(VkDevice device, VkPhysicalDevice physicalDevice,
   if (imageCount < capabilities.minImageCount)
     imageCount = capabilities.minImageCount;
 
-  auto formatCount{vulkanCountFromPhysicalDevice(
-      physicalDevice, [&surface](VkPhysicalDevice device_, uint32_t *count) {
-        vkGetPhysicalDeviceSurfaceFormatsKHR(device_, surface, count, nullptr);
-      })};
-  std::vector<VkSurfaceFormatKHR> formats(formatCount);
-  vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount,
-                                       formats.data());
-  const auto surfaceFormat{swapSurfaceFormat(formats)};
+  const auto surfaceFormat{swapSurfaceFormat(physicalDevice, surface)};
   createInfo.imageFormat = surfaceFormat.format;
   createInfo.imageColorSpace = surfaceFormat.colorSpace;
 
@@ -318,16 +318,8 @@ RenderPass::RenderPass(VkDevice device, VkPhysicalDevice physicalDevice,
     : device{device} {
   std::array<VkAttachmentDescription, 3> attachments{};
 
-  auto formatCount{vulkanCountFromPhysicalDevice(
-      physicalDevice, [&surface](VkPhysicalDevice device_, uint32_t *count) {
-        vkGetPhysicalDeviceSurfaceFormatsKHR(device_, surface, count, nullptr);
-      })};
-  std::vector<VkSurfaceFormatKHR> formats(formatCount);
-  vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount,
-                                       formats.data());
-  attachments[0].format = swapSurfaceFormat(formats).format;
-
-  attachments[0].samples = getMaxUsableSampleCount(physicalDevice);
+  attachments[0].format = swapSurfaceFormat(physicalDevice, surface).format;
+  attachments[0].samples = maxUsableSampleCount(physicalDevice);
   attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
   attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
   attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
@@ -336,7 +328,7 @@ RenderPass::RenderPass(VkDevice device, VkPhysicalDevice physicalDevice,
   attachments[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
   attachments[1].format = findDepthFormat(physicalDevice);
-  attachments[1].samples = getMaxUsableSampleCount(physicalDevice);
+  attachments[1].samples = maxUsableSampleCount(physicalDevice);
   attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
   attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
   attachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
@@ -344,7 +336,7 @@ RenderPass::RenderPass(VkDevice device, VkPhysicalDevice physicalDevice,
   attachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
   attachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
-  attachments[2].format = swapSurfaceFormat(formats).format;
+  attachments[2].format = swapSurfaceFormat(physicalDevice, surface).format;
   attachments[2].samples = VK_SAMPLE_COUNT_1_BIT;
   attachments[2].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
   attachments[2].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -510,7 +502,7 @@ Pipeline::Pipeline(VkDevice device, VkPhysicalDevice physicalDevice,
   multisampling.sType =
       VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
   multisampling.sampleShadingEnable = VK_FALSE;
-  multisampling.rasterizationSamples = getMaxUsableSampleCount(physicalDevice);
+  multisampling.rasterizationSamples = maxUsableSampleCount(physicalDevice);
   pipelineInfo[0].pMultisampleState = &multisampling;
 
   std::array<VkPipelineColorBlendAttachmentState, 1> colorBlendAttachment{};
@@ -953,33 +945,17 @@ void throwOnError(const std::function<VkResult()> &f,
     throw std::runtime_error{message};
 }
 
-auto getMaxUsableSampleCount(VkPhysicalDevice physicalDevice)
+auto maxUsableSampleCount(VkPhysicalDevice physicalDevice)
     -> VkSampleCountFlagBits {
-  VkPhysicalDeviceProperties physicalDeviceProperties;
-  vkGetPhysicalDeviceProperties(physicalDevice, &physicalDeviceProperties);
-
-  VkSampleCountFlags counts =
-      physicalDeviceProperties.limits.framebufferColorSampleCounts &
-      physicalDeviceProperties.limits.framebufferDepthSampleCounts;
-  if ((counts & VK_SAMPLE_COUNT_64_BIT) != 0U) {
-    return VK_SAMPLE_COUNT_64_BIT;
-  }
-  if ((counts & VK_SAMPLE_COUNT_32_BIT) != 0U) {
-    return VK_SAMPLE_COUNT_32_BIT;
-  }
-  if ((counts & VK_SAMPLE_COUNT_16_BIT) != 0U) {
-    return VK_SAMPLE_COUNT_16_BIT;
-  }
-  if ((counts & VK_SAMPLE_COUNT_8_BIT) != 0U) {
-    return VK_SAMPLE_COUNT_8_BIT;
-  }
-  if ((counts & VK_SAMPLE_COUNT_4_BIT) != 0U) {
-    return VK_SAMPLE_COUNT_4_BIT;
-  }
-  if ((counts & VK_SAMPLE_COUNT_2_BIT) != 0U) {
-    return VK_SAMPLE_COUNT_2_BIT;
-  }
-
+  VkPhysicalDeviceProperties properties;
+  vkGetPhysicalDeviceProperties(physicalDevice, &properties);
+  const auto counts{properties.limits.framebufferColorSampleCounts &
+                    properties.limits.framebufferDepthSampleCounts};
+  for (const auto count :
+       {VK_SAMPLE_COUNT_64_BIT, VK_SAMPLE_COUNT_32_BIT, VK_SAMPLE_COUNT_16_BIT,
+        VK_SAMPLE_COUNT_8_BIT, VK_SAMPLE_COUNT_4_BIT, VK_SAMPLE_COUNT_2_BIT})
+    if ((counts & count) != 0U)
+      return count;
   return VK_SAMPLE_COUNT_1_BIT;
 }
 } // namespace sbash64::graphics
