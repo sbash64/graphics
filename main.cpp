@@ -517,36 +517,32 @@ struct VulkanDrawable {
   VulkanBuffer indexBuffer;
 };
 
+static auto vulkanBuffer(VkDevice device, VkPhysicalDevice physicalDevice,
+                         VkCommandPool commandPool, VkQueue graphicsQueue,
+                         VkBufferUsageFlags usageFlags, const void *source,
+                         size_t size) -> VulkanBuffer {
+  vulkan_wrappers::Buffer buffer{device, usageFlags, size};
+  auto memory{bufferMemory(device, physicalDevice, buffer.buffer,
+                           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
+  copy(device, physicalDevice, commandPool, graphicsQueue, buffer.buffer,
+       source, size);
+  return VulkanBuffer{std::move(buffer), std::move(memory)};
+}
+
 static auto drawable(VkDevice device, VkPhysicalDevice physicalDevice,
                      VkCommandPool commandPool, VkQueue graphicsQueue,
                      const Object &object) -> VulkanDrawable {
-  const VkDeviceSize vertexBufferSize{sizeof(object.vertices[0]) *
-                                      object.vertices.size()};
-  vulkan_wrappers::Buffer vulkanVertexBuffer{
-      device,
-      VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-      vertexBufferSize};
-  auto vulkanVertexBufferMemory{
-      bufferMemory(device, physicalDevice, vulkanVertexBuffer.buffer,
-                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
-  copy(device, physicalDevice, commandPool, graphicsQueue,
-       vulkanVertexBuffer.buffer, object.vertices.data(), vertexBufferSize);
-
-  const VkDeviceSize indexBufferSize{sizeof(object.indices[0]) *
-                                     object.indices.size()};
-  vulkan_wrappers::Buffer vulkanIndexBuffer{
-      device,
-      VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-      indexBufferSize};
-  auto vulkanIndexBufferMemory{
-      bufferMemory(device, physicalDevice, vulkanIndexBuffer.buffer,
-                   VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
-  copy(device, physicalDevice, commandPool, graphicsQueue,
-       vulkanIndexBuffer.buffer, object.indices.data(), indexBufferSize);
-  return VulkanDrawable{VulkanBuffer{std::move(vulkanVertexBuffer),
-                                     std::move(vulkanVertexBufferMemory)},
-                        VulkanBuffer{std::move(vulkanIndexBuffer),
-                                     std::move(vulkanIndexBufferMemory)}};
+  return VulkanDrawable{
+      vulkanBuffer(device, physicalDevice, commandPool, graphicsQueue,
+                   VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                       VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                   object.vertices.data(),
+                   sizeof(object.vertices[0]) * object.vertices.size()),
+      vulkanBuffer(device, physicalDevice, commandPool, graphicsQueue,
+                   VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                       VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                   object.indices.data(),
+                   sizeof(object.indices[0]) * object.indices.size())};
 }
 
 static void run(const std::string &vertexShaderCodePath,
