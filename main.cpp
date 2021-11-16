@@ -43,7 +43,7 @@ static auto suitable(VkPhysicalDevice device, VkSurfaceKHR surface) -> bool {
   std::transform(extensionProperties.begin(), extensionProperties.end(),
                  extensionNames.begin(),
                  [](const VkExtensionProperties &properties) {
-                   return properties.extensionName;
+                   return static_cast<const char *>(properties.extensionName);
                  });
 
   if (!std::includes(extensionNames.begin(), extensionNames.end(),
@@ -688,7 +688,7 @@ static void run(const std::string &vertexShaderCodePath,
       vulkanDevice.device, vulkanCommandPool.commandPool,
       vulkanFrameBuffers.size()};
 
-  for (auto i{0}; i < vulkanCommandBuffers.commandBuffers.size(); i++) {
+  for (auto i{0U}; i < vulkanCommandBuffers.commandBuffers.size(); i++) {
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     throwOnError(
@@ -707,8 +707,8 @@ static void run(const std::string &vertexShaderCodePath,
         vulkanPhysicalDevice, vulkanSurface.surface, glfwWindow.window);
 
     std::array<VkClearValue, 2> clearValues{};
-    clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-    clearValues[1].depthStencil = {1.0f, 0};
+    clearValues[0].color = {{0.0F, 0.0F, 0.0F, 1.0F}};
+    clearValues[1].depthStencil = {1.0F, 0};
     renderPassInfo.clearValueCount = clearValues.size();
     renderPassInfo.pClearValues = clearValues.data();
 
@@ -716,8 +716,8 @@ static void run(const std::string &vertexShaderCodePath,
                          &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
     vkCmdBindPipeline(vulkanCommandBuffers.commandBuffers[i],
                       VK_PIPELINE_BIND_POINT_GRAPHICS, vulkanPipeline.pipeline);
-    std::vector<int> objectToTextureMapping{7, 5, 2, 3, 1, 6, 4, 0};
-    for (auto j{0}; j < vulkanDrawables.size(); ++j) {
+    std::vector<unsigned> objectToTextureMapping{7, 5, 2, 3, 1, 6, 4, 0};
+    for (auto j{0U}; j < vulkanDrawables.size(); ++j) {
       std::array<VkBuffer, 1> vertexBuffers = {
           vulkanDrawables.at(j).vertexBufferWithMemory.buffer.buffer};
       std::array<VkDeviceSize, 1> offsets = {0};
