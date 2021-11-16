@@ -287,8 +287,8 @@ static void generateMipmaps(VkDevice device, VkPhysicalDevice physicalDevice,
   vkGetPhysicalDeviceFormatProperties(physicalDevice, imageFormat,
                                       &formatProperties);
 
-  if (!(formatProperties.optimalTilingFeatures &
-        VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) {
+  if ((formatProperties.optimalTilingFeatures &
+       VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) == 0U) {
     throw std::runtime_error(
         "texture image format does not support linear blitting!");
   }
