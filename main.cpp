@@ -679,7 +679,7 @@ static void run(const std::string &vertexShaderCodePath,
                  });
 
   const vulkan_wrappers::Sampler vulkanTextureSampler{vulkanDevice.device,
-                                                      vulkanPhysicalDevice, 1};
+                                                      vulkanPhysicalDevice, 13};
 
   const auto modelObjects{readObjects(objectPath)};
   std::vector<VulkanDrawable> vulkanDrawables;
