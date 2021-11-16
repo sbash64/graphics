@@ -636,7 +636,7 @@ static void run(const std::string &vertexShaderCodePath,
   const glfw_wrappers::Init glfwInitialization;
 
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-  const glfw_wrappers::Window glfwWindow{800, 600};
+  const glfw_wrappers::Window glfwWindow{1280, 720};
   auto framebufferResized{false};
   glfwSetWindowUserPointer(glfwWindow.window, &framebufferResized);
   glfwSetFramebufferSizeCallback(glfwWindow.window, framebufferResizeCallback);
