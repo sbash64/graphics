@@ -418,10 +418,8 @@ static void updateUniformBuffer(
        sizeof(ubo));
 }
 
-static void
-present(bool &framebufferResized, bool &recreatingSwapChain,
-        const glfw_wrappers::Window &glfwWindow,
-        const vulkan_wrappers::Device &vulkanDevice, VkQueue graphicsQueue,
+static auto
+present(const vulkan_wrappers::Device &vulkanDevice, VkQueue graphicsQueue,
         VkQueue presentQueue,
         const std::vector<vulkan_wrappers::Semaphore>
             &vulkanImageAvailableSemaphores,
@@ -430,7 +428,7 @@ present(bool &framebufferResized, bool &recreatingSwapChain,
         const std::vector<vulkan_wrappers::Fence> &vulkanInFlightFences,
         const vulkan_wrappers::Swapchain &vulkanSwapchain,
         const vulkan_wrappers::CommandBuffers &vulkanCommandBuffers,
-        uint32_t imageIndex, int currentFrame) {
+        uint32_t imageIndex, int currentFrame) -> VkResult {
   VkSubmitInfo submitInfo{};
   submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
@@ -471,14 +469,7 @@ present(bool &framebufferResized, bool &recreatingSwapChain,
 
   presentInfo.pImageIndices = &imageIndex;
 
-  const auto result{vkQueuePresentKHR(presentQueue, &presentInfo)};
-  if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR ||
-      framebufferResized) {
-    framebufferResized = false;
-    prepareForSwapChainRecreation(vulkanDevice.device, glfwWindow.window);
-    recreatingSwapChain = true;
-  } else if (result != VK_SUCCESS)
-    throw std::runtime_error("failed to present swap chain image!");
+  return vkQueuePresentKHR(presentQueue, &presentInfo);
 }
 
 struct VulkanImage {
@@ -507,42 +498,42 @@ static auto textureImage(VkDevice device, VkPhysicalDevice physicalDevice,
   return VulkanImage{std::move(image), std::move(view), std::move(memory)};
 }
 
-struct VulkanBuffer {
+struct VulkanBufferWithMemory {
   vulkan_wrappers::Buffer buffer;
   vulkan_wrappers::DeviceMemory memory;
 };
 
 struct VulkanDrawable {
-  VulkanBuffer vertexBuffer;
-  VulkanBuffer indexBuffer;
+  VulkanBufferWithMemory vertexBufferWithMemory;
+  VulkanBufferWithMemory indexBufferWithMemory;
 };
 
-static auto vulkanBuffer(VkDevice device, VkPhysicalDevice physicalDevice,
-                         VkCommandPool commandPool, VkQueue graphicsQueue,
-                         VkBufferUsageFlags usageFlags, const void *source,
-                         size_t size) -> VulkanBuffer {
+static auto bufferWithMemory(VkDevice device, VkPhysicalDevice physicalDevice,
+                             VkCommandPool commandPool, VkQueue graphicsQueue,
+                             VkBufferUsageFlags usageFlags, const void *source,
+                             size_t size) -> VulkanBufferWithMemory {
   vulkan_wrappers::Buffer buffer{device, usageFlags, size};
   auto memory{bufferMemory(device, physicalDevice, buffer.buffer,
                            VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
   copy(device, physicalDevice, commandPool, graphicsQueue, buffer.buffer,
        source, size);
-  return VulkanBuffer{std::move(buffer), std::move(memory)};
+  return VulkanBufferWithMemory{std::move(buffer), std::move(memory)};
 }
 
 static auto drawable(VkDevice device, VkPhysicalDevice physicalDevice,
                      VkCommandPool commandPool, VkQueue graphicsQueue,
                      const Object &object) -> VulkanDrawable {
   return VulkanDrawable{
-      vulkanBuffer(device, physicalDevice, commandPool, graphicsQueue,
-                   VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-                       VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                   object.vertices.data(),
-                   sizeof(object.vertices[0]) * object.vertices.size()),
-      vulkanBuffer(device, physicalDevice, commandPool, graphicsQueue,
-                   VK_BUFFER_USAGE_TRANSFER_DST_BIT |
-                       VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                   object.indices.data(),
-                   sizeof(object.indices[0]) * object.indices.size())};
+      bufferWithMemory(device, physicalDevice, commandPool, graphicsQueue,
+                       VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                           VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                       object.vertices.data(),
+                       sizeof(object.vertices[0]) * object.vertices.size()),
+      bufferWithMemory(device, physicalDevice, commandPool, graphicsQueue,
+                       VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                           VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                       object.indices.data(),
+                       sizeof(object.indices[0]) * object.indices.size())};
 }
 
 static void run(const std::string &vertexShaderCodePath,
@@ -624,204 +615,205 @@ static void run(const std::string &vertexShaderCodePath,
       vulkanDevice.device};
 
   auto currentFrame{0};
-  auto playing{true};
-  while (playing) {
-    const vulkan_wrappers::Swapchain vulkanSwapchain{
-        vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface,
-        glfwWindow.window};
-    const auto swapChainImages{graphics::swapChainImages(
-        vulkanDevice.device, vulkanSwapchain.swapChain)};
-    const auto swapChainImageViews{
-        graphics::swapChainImageViews(vulkanDevice.device, vulkanPhysicalDevice,
-                                      vulkanSurface.surface, swapChainImages)};
+  const vulkan_wrappers::Swapchain vulkanSwapchain{
+      vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface,
+      glfwWindow.window};
+  const auto swapChainImages{graphics::swapChainImages(
+      vulkanDevice.device, vulkanSwapchain.swapChain)};
+  const auto swapChainImageViews{
+      graphics::swapChainImageViews(vulkanDevice.device, vulkanPhysicalDevice,
+                                    vulkanSurface.surface, swapChainImages)};
 
-    const vulkan_wrappers::RenderPass vulkanRenderPass{
-        vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface};
+  const vulkan_wrappers::RenderPass vulkanRenderPass{
+      vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface};
 
-    const vulkan_wrappers::PipelineLayout vulkanPipelineLayout{
-        vulkanDevice.device, vulkanDescriptorSetLayout.descriptorSetLayout};
+  const vulkan_wrappers::PipelineLayout vulkanPipelineLayout{
+      vulkanDevice.device, vulkanDescriptorSetLayout.descriptorSetLayout};
 
-    const vulkan_wrappers::Pipeline vulkanPipeline{
-        vulkanDevice.device,         vulkanPhysicalDevice,
-        vulkanSurface.surface,       vulkanPipelineLayout.pipelineLayout,
-        vulkanRenderPass.renderPass, vertexShaderCodePath,
-        fragmentShaderCodePath,      glfwWindow.window};
+  const vulkan_wrappers::Pipeline vulkanPipeline{
+      vulkanDevice.device,         vulkanPhysicalDevice,
+      vulkanSurface.surface,       vulkanPipelineLayout.pipelineLayout,
+      vulkanRenderPass.renderPass, vertexShaderCodePath,
+      fragmentShaderCodePath,      glfwWindow.window};
 
-    const auto swapChainExtent{swapExtent(
-        vulkanPhysicalDevice, vulkanSurface.surface, glfwWindow.window)};
-    const auto depthFormat{findDepthFormat(vulkanPhysicalDevice)};
-    const vulkan_wrappers::Image vulkanDepthImage{
-        vulkanDevice.device,
-        swapChainExtent.width,
-        swapChainExtent.height,
-        depthFormat,
-        VK_IMAGE_TILING_OPTIMAL,
-        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
-            VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT};
-    const auto vulkanDepthImageMemory{imageMemory(
-        vulkanDevice.device, vulkanPhysicalDevice, vulkanDepthImage.image,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
-    const vulkan_wrappers::ImageView vulkanDepthImageView{
-        vulkanDevice.device, vulkanDepthImage.image, depthFormat,
-        VK_IMAGE_ASPECT_DEPTH_BIT};
+  const auto swapChainExtent{swapExtent(
+      vulkanPhysicalDevice, vulkanSurface.surface, glfwWindow.window)};
+  const auto depthFormat{findDepthFormat(vulkanPhysicalDevice)};
+  const vulkan_wrappers::Image vulkanDepthImage{
+      vulkanDevice.device,
+      swapChainExtent.width,
+      swapChainExtent.height,
+      depthFormat,
+      VK_IMAGE_TILING_OPTIMAL,
+      VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
+          VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT};
+  const auto vulkanDepthImageMemory{
+      imageMemory(vulkanDevice.device, vulkanPhysicalDevice,
+                  vulkanDepthImage.image, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
+  const vulkan_wrappers::ImageView vulkanDepthImageView{
+      vulkanDevice.device, vulkanDepthImage.image, depthFormat,
+      VK_IMAGE_ASPECT_DEPTH_BIT};
 
-    std::vector<vulkan_wrappers::Framebuffer> vulkanFrameBuffers;
-    std::transform(swapChainImageViews.begin(), swapChainImageViews.end(),
-                   std::back_inserter(vulkanFrameBuffers),
-                   [&vulkanDevice, vulkanPhysicalDevice, &vulkanSurface,
-                    &vulkanRenderPass, &vulkanDepthImageView,
-                    &glfwWindow](const vulkan_wrappers::ImageView &imageView) {
-                     return vulkan_wrappers::Framebuffer{
-                         vulkanDevice.device,
-                         vulkanPhysicalDevice,
-                         vulkanSurface.surface,
-                         vulkanRenderPass.renderPass,
-                         {imageView.view, vulkanDepthImageView.view},
-                         glfwWindow.window};
-                   });
+  std::vector<vulkan_wrappers::Framebuffer> vulkanFrameBuffers;
+  std::transform(swapChainImageViews.begin(), swapChainImageViews.end(),
+                 std::back_inserter(vulkanFrameBuffers),
+                 [&vulkanDevice, vulkanPhysicalDevice, &vulkanSurface,
+                  &vulkanRenderPass, &vulkanDepthImageView,
+                  &glfwWindow](const vulkan_wrappers::ImageView &imageView) {
+                   return vulkan_wrappers::Framebuffer{
+                       vulkanDevice.device,
+                       vulkanPhysicalDevice,
+                       vulkanSurface.surface,
+                       vulkanRenderPass.renderPass,
+                       {imageView.view, vulkanDepthImageView.view},
+                       glfwWindow.window};
+                 });
 
-    std::vector<vulkan_wrappers::Buffer> vulkanUniformBuffers;
-    std::vector<vulkan_wrappers::DeviceMemory> vulkanUniformBuffersMemory;
+  std::vector<vulkan_wrappers::Buffer> vulkanUniformBuffers;
+  std::vector<vulkan_wrappers::DeviceMemory> vulkanUniformBuffersMemory;
 
-    for (size_t i{0}; i < swapChainImages.size(); i++) {
-      VkDeviceSize bufferSize{sizeof(UniformBufferObject)};
-      vulkanUniformBuffers.emplace_back(
-          vulkanDevice.device, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, bufferSize);
-      vulkanUniformBuffersMemory.push_back(
-          bufferMemory(vulkanDevice.device, vulkanPhysicalDevice,
-                       vulkanUniformBuffers.back().buffer,
-                       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                           VK_MEMORY_PROPERTY_HOST_COHERENT_BIT));
-    }
-
-    std::vector<VulkanDescriptor> vulkanTextureImageDescriptors;
-    std::transform(
-        textureImages.begin(), textureImages.end(),
-        std::back_inserter(vulkanTextureImageDescriptors),
-        [&vulkanDevice, &vulkanTextureSampler, &vulkanDescriptorSetLayout,
-         &swapChainImages, &vulkanUniformBuffers](const VulkanImage &image) {
-          return graphics::descriptor(
-              vulkanDevice, image.view, vulkanTextureSampler,
-              vulkanDescriptorSetLayout, swapChainImages, vulkanUniformBuffers);
-        });
-
-    const vulkan_wrappers::CommandBuffers vulkanCommandBuffers{
-        vulkanDevice.device, vulkanCommandPool.commandPool,
-        vulkanFrameBuffers.size()};
-
-    for (auto i{0}; i < vulkanCommandBuffers.commandBuffers.size(); i++) {
-      VkCommandBufferBeginInfo beginInfo{};
-      beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-      throwOnError(
-          [&]() {
-            return vkBeginCommandBuffer(vulkanCommandBuffers.commandBuffers[i],
-                                        &beginInfo);
-          },
-          "failed to begin recording command buffer!");
-
-      VkRenderPassBeginInfo renderPassInfo{};
-      renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-      renderPassInfo.renderPass = vulkanRenderPass.renderPass;
-      renderPassInfo.framebuffer = vulkanFrameBuffers.at(i).framebuffer;
-      renderPassInfo.renderArea.offset = {0, 0};
-      renderPassInfo.renderArea.extent = swapExtent(
-          vulkanPhysicalDevice, vulkanSurface.surface, glfwWindow.window);
-
-      std::array<VkClearValue, 2> clearValues{};
-      clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-      clearValues[1].depthStencil = {1.0f, 0};
-      renderPassInfo.clearValueCount = clearValues.size();
-      renderPassInfo.pClearValues = clearValues.data();
-
-      vkCmdBeginRenderPass(vulkanCommandBuffers.commandBuffers[i],
-                           &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-      vkCmdBindPipeline(vulkanCommandBuffers.commandBuffers[i],
-                        VK_PIPELINE_BIND_POINT_GRAPHICS,
-                        vulkanPipeline.pipeline);
-      std::vector<int> objectToTextureMapping{7, 5, 2, 3, 1, 6, 4, 0};
-      for (auto j{0}; j < vulkanDrawables.size(); ++j) {
-        std::array<VkBuffer, 1> vertexBuffers = {
-            vulkanDrawables.at(j).vertexBuffer.buffer.buffer};
-        std::array<VkDeviceSize, 1> offsets = {0};
-        vkCmdBindVertexBuffers(vulkanCommandBuffers.commandBuffers[i], 0, 1,
-                               vertexBuffers.data(), offsets.data());
-        vkCmdBindIndexBuffer(vulkanCommandBuffers.commandBuffers[i],
-                             vulkanDrawables.at(j).indexBuffer.buffer.buffer, 0,
-                             VK_INDEX_TYPE_UINT32);
-        vkCmdBindDescriptorSets(
-            vulkanCommandBuffers.commandBuffers[i],
-            VK_PIPELINE_BIND_POINT_GRAPHICS,
-            vulkanPipelineLayout.pipelineLayout, 0, 1,
-            &vulkanTextureImageDescriptors.at(objectToTextureMapping.at(j))
-                 .sets[i],
-            0, nullptr);
-        vkCmdDrawIndexed(
-            vulkanCommandBuffers.commandBuffers[i],
-            static_cast<uint32_t>(modelObjects.at(j).indices.size()), 1, 0, 0,
-            0);
-      }
-
-      vkCmdEndRenderPass(vulkanCommandBuffers.commandBuffers[i]);
-      throwOnError(
-          [&]() {
-            return vkEndCommandBuffer(vulkanCommandBuffers.commandBuffers[i]);
-          },
-          "failed to record command buffer!");
-    }
-
-    imagesInFlight.resize(swapChainImages.size(), VK_NULL_HANDLE);
-    auto recreatingSwapChain{false};
-    auto rotationAngleCentidegrees{0};
-    while (!recreatingSwapChain) {
-      if (glfwWindowShouldClose(glfwWindow.window) != 0) {
-        playing = false;
-        break;
-      }
-
-      glfwPollEvents();
-      vkWaitForFences(vulkanDevice.device, 1,
-                      &vulkanInFlightFences[currentFrame].fence, VK_TRUE,
-                      UINT64_MAX);
-
-      uint32_t imageIndex{0};
-      {
-        const auto result{vkAcquireNextImageKHR(
-            vulkanDevice.device, vulkanSwapchain.swapChain, UINT64_MAX,
-            vulkanImageAvailableSemaphores[currentFrame].semaphore,
-            VK_NULL_HANDLE, &imageIndex)};
-
-        if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-          prepareForSwapChainRecreation(vulkanDevice.device, glfwWindow.window);
-          recreatingSwapChain = true;
-          continue;
-        }
-        if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
-          throw std::runtime_error("failed to acquire swap chain image!");
-      }
-
-      updateUniformBuffer(vulkanDevice, vulkanUniformBuffersMemory[imageIndex],
-                          swapChainExtent, rotationAngleCentidegrees);
-
-      if ((rotationAngleCentidegrees += 9) == 36000)
-        rotationAngleCentidegrees = 0;
-
-      if (imagesInFlight[imageIndex] != VK_NULL_HANDLE)
-        vkWaitForFences(vulkanDevice.device, 1, &imagesInFlight[imageIndex],
-                        VK_TRUE, UINT64_MAX);
-
-      imagesInFlight[imageIndex] = vulkanInFlightFences[currentFrame].fence;
-
-      present(framebufferResized, recreatingSwapChain, glfwWindow, vulkanDevice,
-              graphicsQueue, presentQueue, vulkanImageAvailableSemaphores,
-              vulkanRenderFinishedSemaphores, vulkanInFlightFences,
-              vulkanSwapchain, vulkanCommandBuffers, imageIndex, currentFrame);
-
-      if (++currentFrame == maxFramesInFlight)
-        currentFrame = 0;
-    }
-    vkDeviceWaitIdle(vulkanDevice.device);
+  for (size_t i{0}; i < swapChainImages.size(); i++) {
+    VkDeviceSize bufferSize{sizeof(UniformBufferObject)};
+    vulkanUniformBuffers.emplace_back(
+        vulkanDevice.device, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, bufferSize);
+    vulkanUniformBuffersMemory.push_back(
+        bufferMemory(vulkanDevice.device, vulkanPhysicalDevice,
+                     vulkanUniformBuffers.back().buffer,
+                     VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                         VK_MEMORY_PROPERTY_HOST_COHERENT_BIT));
   }
 
+  std::vector<VulkanDescriptor> vulkanTextureImageDescriptors;
+  std::transform(
+      textureImages.begin(), textureImages.end(),
+      std::back_inserter(vulkanTextureImageDescriptors),
+      [&vulkanDevice, &vulkanTextureSampler, &vulkanDescriptorSetLayout,
+       &swapChainImages, &vulkanUniformBuffers](const VulkanImage &image) {
+        return graphics::descriptor(
+            vulkanDevice, image.view, vulkanTextureSampler,
+            vulkanDescriptorSetLayout, swapChainImages, vulkanUniformBuffers);
+      });
+
+  const vulkan_wrappers::CommandBuffers vulkanCommandBuffers{
+      vulkanDevice.device, vulkanCommandPool.commandPool,
+      vulkanFrameBuffers.size()};
+
+  for (auto i{0}; i < vulkanCommandBuffers.commandBuffers.size(); i++) {
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    throwOnError(
+        [&]() {
+          return vkBeginCommandBuffer(vulkanCommandBuffers.commandBuffers[i],
+                                      &beginInfo);
+        },
+        "failed to begin recording command buffer!");
+
+    VkRenderPassBeginInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassInfo.renderPass = vulkanRenderPass.renderPass;
+    renderPassInfo.framebuffer = vulkanFrameBuffers.at(i).framebuffer;
+    renderPassInfo.renderArea.offset = {0, 0};
+    renderPassInfo.renderArea.extent = swapExtent(
+        vulkanPhysicalDevice, vulkanSurface.surface, glfwWindow.window);
+
+    std::array<VkClearValue, 2> clearValues{};
+    clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+    clearValues[1].depthStencil = {1.0f, 0};
+    renderPassInfo.clearValueCount = clearValues.size();
+    renderPassInfo.pClearValues = clearValues.data();
+
+    vkCmdBeginRenderPass(vulkanCommandBuffers.commandBuffers[i],
+                         &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBindPipeline(vulkanCommandBuffers.commandBuffers[i],
+                      VK_PIPELINE_BIND_POINT_GRAPHICS, vulkanPipeline.pipeline);
+    std::vector<int> objectToTextureMapping{7, 5, 2, 3, 1, 6, 4, 0};
+    for (auto j{0}; j < vulkanDrawables.size(); ++j) {
+      std::array<VkBuffer, 1> vertexBuffers = {
+          vulkanDrawables.at(j).vertexBufferWithMemory.buffer.buffer};
+      std::array<VkDeviceSize, 1> offsets = {0};
+      vkCmdBindVertexBuffers(vulkanCommandBuffers.commandBuffers[i], 0, 1,
+                             vertexBuffers.data(), offsets.data());
+      vkCmdBindIndexBuffer(
+          vulkanCommandBuffers.commandBuffers[i],
+          vulkanDrawables.at(j).indexBufferWithMemory.buffer.buffer, 0,
+          VK_INDEX_TYPE_UINT32);
+      vkCmdBindDescriptorSets(
+          vulkanCommandBuffers.commandBuffers[i],
+          VK_PIPELINE_BIND_POINT_GRAPHICS, vulkanPipelineLayout.pipelineLayout,
+          0, 1,
+          &vulkanTextureImageDescriptors.at(objectToTextureMapping.at(j))
+               .sets[i],
+          0, nullptr);
+      vkCmdDrawIndexed(vulkanCommandBuffers.commandBuffers[i],
+                       static_cast<uint32_t>(modelObjects.at(j).indices.size()),
+                       1, 0, 0, 0);
+    }
+
+    vkCmdEndRenderPass(vulkanCommandBuffers.commandBuffers[i]);
+    throwOnError(
+        [&]() {
+          return vkEndCommandBuffer(vulkanCommandBuffers.commandBuffers[i]);
+        },
+        "failed to record command buffer!");
+  }
+
+  imagesInFlight.resize(swapChainImages.size(), VK_NULL_HANDLE);
+  auto recreatingSwapChain{false};
+  auto rotationAngleCentidegrees{0};
+  while (!recreatingSwapChain) {
+    if (glfwWindowShouldClose(glfwWindow.window) != 0) {
+      break;
+    }
+
+    glfwPollEvents();
+    vkWaitForFences(vulkanDevice.device, 1,
+                    &vulkanInFlightFences[currentFrame].fence, VK_TRUE,
+                    UINT64_MAX);
+
+    uint32_t imageIndex{0};
+    {
+      const auto result{vkAcquireNextImageKHR(
+          vulkanDevice.device, vulkanSwapchain.swapChain, UINT64_MAX,
+          vulkanImageAvailableSemaphores[currentFrame].semaphore,
+          VK_NULL_HANDLE, &imageIndex)};
+
+      if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+        prepareForSwapChainRecreation(vulkanDevice.device, glfwWindow.window);
+        recreatingSwapChain = true;
+        continue;
+      }
+      if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
+        throw std::runtime_error("failed to acquire swap chain image!");
+    }
+
+    updateUniformBuffer(vulkanDevice, vulkanUniformBuffersMemory[imageIndex],
+                        swapChainExtent, rotationAngleCentidegrees);
+
+    if ((rotationAngleCentidegrees += 9) == 36000)
+      rotationAngleCentidegrees = 0;
+
+    if (imagesInFlight[imageIndex] != VK_NULL_HANDLE)
+      vkWaitForFences(vulkanDevice.device, 1, &imagesInFlight[imageIndex],
+                      VK_TRUE, UINT64_MAX);
+
+    imagesInFlight[imageIndex] = vulkanInFlightFences[currentFrame].fence;
+    {
+      const auto result{present(
+          vulkanDevice, graphicsQueue, presentQueue,
+          vulkanImageAvailableSemaphores, vulkanRenderFinishedSemaphores,
+          vulkanInFlightFences, vulkanSwapchain, vulkanCommandBuffers,
+          imageIndex, currentFrame)};
+      if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR ||
+          framebufferResized) {
+        framebufferResized = false;
+        prepareForSwapChainRecreation(vulkanDevice.device, glfwWindow.window);
+        recreatingSwapChain = true;
+      } else if (result != VK_SUCCESS)
+        throw std::runtime_error("failed to present swap chain image!");
+    }
+    if (++currentFrame == maxFramesInFlight)
+      currentFrame = 0;
+  }
   vkDeviceWaitIdle(vulkanDevice.device);
 }
 } // namespace sbash64::graphics
