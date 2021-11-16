@@ -482,28 +482,6 @@ static auto descriptor(
                           std::move(descriptorSets)};
 }
 
-static void updateUniformBuffer(
-    const vulkan_wrappers::Device &vulkanDevice,
-    const vulkan_wrappers::DeviceMemory &vulkanUniformBuffersMemory,
-    VkExtent2D swapChainExtent, int rotationAngleCentidegrees) {
-  UniformBufferObject ubo{};
-  ubo.model = glm::rotate(
-      glm::mat4(1.0F),
-      glm::radians(static_cast<float>(rotationAngleCentidegrees) / 100),
-      glm::vec3(0.0F, 1.0F, 0.0F));
-  ubo.view =
-      glm::lookAt(glm::vec3(8.0F, 8.0F, 8.0F), glm::vec3(4.0F, 5.0F, 4.0F),
-                  glm::vec3(0.0F, 1.0F, 1.0F));
-  ubo.projection =
-      glm::perspective(glm::radians(45.0F),
-                       static_cast<float>(swapChainExtent.width) /
-                           static_cast<float>(swapChainExtent.height),
-                       0.1F, 20.0F);
-  ubo.projection[1][1] *= -1;
-  copy(vulkanDevice.device, vulkanUniformBuffersMemory.memory, &ubo,
-       sizeof(ubo));
-}
-
 static auto present(VkQueue presentQueue,
                     const vulkan_wrappers::Swapchain &swapchain,
                     uint32_t imageIndex, VkSemaphore signalSemaphore)
@@ -623,6 +601,96 @@ static auto drawable(VkDevice device, VkPhysicalDevice physicalDevice,
                        sizeof(object.indices[0]) * object.indices.size())};
 }
 
+struct Mouse {
+  glm::vec2 position;
+  bool pressed;
+};
+
+struct Camera {
+  glm::mat4 perspective;
+  glm::mat4 view;
+  glm::vec3 rotation;
+  glm::vec3 position;
+};
+
+struct GlfwCallback {
+  Mouse mouse;
+  Camera camera;
+  bool frameBufferResized;
+};
+
+static void cursor_position_callback(GLFWwindow *window, double xpos,
+                                     double ypos) {
+  auto *const glfwCallback =
+      static_cast<GlfwCallback *>(glfwGetWindowUserPointer(window));
+  int32_t dx = static_cast<int32_t>(glfwCallback->mouse.position.x) -
+               static_cast<int32_t>(xpos);
+  int32_t dy = static_cast<int32_t>(glfwCallback->mouse.position.y) -
+               static_cast<int32_t>(ypos);
+
+  if (glfwCallback->mouse.pressed) {
+    float rotation_speed = 1.0F;
+    glfwCallback->camera.rotation +=
+        glm::vec3(dy * rotation_speed, -dx * rotation_speed, 0.0f);
+    glm::mat4 rotation_matrix = glm::mat4(1.0f);
+    glm::mat4 transformation_matrix;
+
+    rotation_matrix = glm::rotate(rotation_matrix,
+                                  glm::radians(glfwCallback->camera.rotation.x),
+                                  glm::vec3(1.0f, 0.0f, 0.0f));
+    rotation_matrix = glm::rotate(rotation_matrix,
+                                  glm::radians(glfwCallback->camera.rotation.y),
+                                  glm::vec3(0.0f, 1.0f, 0.0f));
+    rotation_matrix = glm::rotate(rotation_matrix,
+                                  glm::radians(glfwCallback->camera.rotation.z),
+                                  glm::vec3(0.0f, 0.0f, 1.0f));
+
+    transformation_matrix =
+        glm::translate(glm::mat4(1.0f), glfwCallback->camera.position);
+
+    glfwCallback->camera.view = transformation_matrix * rotation_matrix;
+  }
+  // if (mouse_buttons.right) {
+  //   zoom += dy * .005f * zoom_speed;
+  //   camera.translate(glm::vec3(-0.0f, 0.0f, dy * .005f * zoom_speed));
+  //   view_updated = true;
+  // }
+  // if (mouse_buttons.middle) {
+  //   camera_pos.x -= dx * 0.01f;
+  //   camera_pos.y -= dy * 0.01f;
+  //   camera.translate(glm::vec3(-dx * 0.01f, -dy * 0.01f, 0.0f));
+  //   view_updated = true;
+  // }
+  glfwCallback->mouse.position =
+      glm::vec2(static_cast<float>(xpos), static_cast<float>(ypos));
+}
+
+static void mouse_button_callback(GLFWwindow *window, int button, int action,
+                                  int /*mods*/) {
+  auto *const glfwCallback =
+      static_cast<GlfwCallback *>(glfwGetWindowUserPointer(window));
+  if (action == GLFW_PRESS) {
+    glfwCallback->mouse.pressed = true;
+  } else if (action == GLFW_RELEASE) {
+    glfwCallback->mouse.pressed = false;
+  }
+}
+
+static void updateUniformBuffer(
+    const vulkan_wrappers::Device &vulkanDevice,
+    const vulkan_wrappers::DeviceMemory &vulkanUniformBuffersMemory,
+    Camera camera) {
+  UniformBufferObject ubo{};
+  ubo.model =
+      glm::rotate(glm::mat4(1.0F), glm::radians(static_cast<float>(0) / 100),
+                  glm::vec3(0.0F, 1.0F, 0.0F));
+  ubo.view = camera.view;
+  ubo.projection = camera.perspective;
+  ubo.projection[1][1] *= -1;
+  copy(vulkanDevice.device, vulkanUniformBuffersMemory.memory, &ubo,
+       sizeof(ubo));
+}
+
 static void run(const std::string &vertexShaderCodePath,
                 const std::string &fragmentShaderCodePath,
                 const std::string &objectPath,
@@ -631,9 +699,11 @@ static void run(const std::string &vertexShaderCodePath,
 
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
   const glfw_wrappers::Window glfwWindow{1280, 720};
-  auto framebufferResized{false};
-  glfwSetWindowUserPointer(glfwWindow.window, &framebufferResized);
+  GlfwCallback glfwCallback{};
+  glfwSetWindowUserPointer(glfwWindow.window, &glfwCallback);
   glfwSetFramebufferSizeCallback(glfwWindow.window, framebufferResizeCallback);
+  glfwSetCursorPosCallback(glfwWindow.window, cursor_position_callback);
+  glfwSetMouseButtonCallback(glfwWindow.window, mouse_button_callback);
 
   const vulkan_wrappers::Instance vulkanInstance;
   const vulkan_wrappers::Surface vulkanSurface{vulkanInstance.instance,
@@ -724,6 +794,17 @@ static void run(const std::string &vertexShaderCodePath,
 
   const auto swapChainExtent{swapExtent(
       vulkanPhysicalDevice, vulkanSurface.surface, glfwWindow.window)};
+
+  glfwCallback.camera.view =
+      glm::lookAt(glm::vec3(8.0F, 8.0F, 8.0F), glm::vec3(4.0F, 5.0F, 4.0F),
+                  glm::vec3(0.0F, 1.0F, 1.0F));
+  glfwCallback.camera.perspective =
+      glm::perspective(glm::radians(45.0F),
+                       static_cast<float>(swapChainExtent.width) /
+                           static_cast<float>(swapChainExtent.height),
+                       0.1F, 20.0F);
+  glfwCallback.camera.position = glm::vec3(1.0F, 1.0F, 1.0F);
+
   const auto colorFormat{
       swapSurfaceFormat(vulkanPhysicalDevice, vulkanSurface.surface).format};
   const vulkan_wrappers::Image vulkanColorImage{
@@ -867,7 +948,6 @@ static void run(const std::string &vertexShaderCodePath,
 
   imagesInFlight.resize(swapChainImages.size(), VK_NULL_HANDLE);
   auto recreatingSwapChain{false};
-  auto rotationAngleCentidegrees{0};
   auto currentFrame{0U};
   while (!recreatingSwapChain) {
     if (glfwWindowShouldClose(glfwWindow.window) != 0) {
@@ -896,10 +976,7 @@ static void run(const std::string &vertexShaderCodePath,
     }
 
     updateUniformBuffer(vulkanDevice, vulkanUniformBuffersMemory[imageIndex],
-                        swapChainExtent, rotationAngleCentidegrees);
-
-    if ((rotationAngleCentidegrees += 9) == 36000)
-      rotationAngleCentidegrees = 0;
+                        glfwCallback.camera);
 
     if (imagesInFlight[imageIndex] != VK_NULL_HANDLE)
       vkWaitForFences(vulkanDevice.device, 1, &imagesInFlight[imageIndex],
@@ -916,8 +993,8 @@ static void run(const std::string &vertexShaderCodePath,
           present(presentQueue, vulkanSwapchain, imageIndex,
                   vulkanRenderFinishedSemaphores[currentFrame].semaphore)};
       if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR ||
-          framebufferResized) {
-        framebufferResized = false;
+          glfwCallback.frameBufferResized) {
+        glfwCallback.frameBufferResized = false;
         prepareForSwapChainRecreation(vulkanDevice.device, glfwWindow.window);
         recreatingSwapChain = true;
       } else if (result != VK_SUCCESS)
