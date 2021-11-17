@@ -617,17 +617,16 @@ struct GlfwCallback {
 };
 
 static auto viewMatrix(const Camera &camera) -> glm::mat4 {
-  glm::mat4 rotation_matrix = glm::mat4(1.0F);
-  rotation_matrix = glm::rotate(rotation_matrix,
-                                glm::radians(camera.rotationAnglesDegrees[0]),
-                                glm::vec3(1.0F, 0.0F, 0.0F));
-  rotation_matrix = glm::rotate(rotation_matrix,
-                                glm::radians(camera.rotationAnglesDegrees[1]),
-                                glm::vec3(0.0F, 1.0F, 0.0F));
-  rotation_matrix = glm::rotate(rotation_matrix,
-                                glm::radians(camera.rotationAnglesDegrees[2]),
-                                glm::vec3(0.0F, 0.0F, 1.0F));
-  return glm::translate(glm::mat4(1.0F), camera.position) * rotation_matrix;
+  return glm::translate(glm::mat4{1.0F}, camera.position) *
+         glm::rotate(
+             glm::rotate(
+                 glm::rotate(glm::mat4{1.0F},
+                             glm::radians(camera.rotationAnglesDegrees[0]),
+                             glm::vec3{1.0F, 0.0F, 0.0F}),
+                 glm::radians(camera.rotationAnglesDegrees[1]),
+                 glm::vec3{0.0F, 1.0F, 0.0F}),
+             glm::radians(camera.rotationAnglesDegrees[2]),
+             glm::vec3{0.0F, 0.0F, 1.0F});
 }
 
 static void onCursorPositionChanged(GLFWwindow *window, double x, double y) {
