@@ -113,8 +113,8 @@ static auto swapChainImages(VkDevice device, VkSwapchainKHR swapChain)
   return swapChainImages;
 }
 
-static void framebufferResizeCallback(GLFWwindow *window, int /*width*/,
-                                      int /*height*/) {
+static void onFramebufferResize(GLFWwindow *window, int /*width*/,
+                                int /*height*/) {
   auto *const framebufferResized =
       static_cast<bool *>(glfwGetWindowUserPointer(window));
   *framebufferResized = true;
@@ -600,8 +600,13 @@ static auto drawable(VkDevice device, VkPhysicalDevice physicalDevice,
                        sizeof(object.indices[0]) * object.indices.size())};
 }
 
+struct ScreenPoint {
+  float x;
+  float y;
+};
+
 struct Mouse {
-  std::vector<float> position;
+  ScreenPoint position;
   bool pressed;
 };
 
@@ -611,37 +616,39 @@ struct Camera {
 };
 
 struct GlfwCallback {
-  Mouse mouse;
+  Mouse mouse{};
   Camera camera;
   bool frameBufferResized{};
 };
 
 static auto viewMatrix(const Camera &camera) -> glm::mat4 {
-  return glm::translate(glm::mat4{1.0F}, camera.position) *
+  return glm::translate(glm::mat4{1.F}, camera.position) *
          glm::rotate(
              glm::rotate(
-                 glm::rotate(glm::mat4{1.0F},
+                 glm::rotate(glm::mat4{1.F},
                              glm::radians(camera.rotationAnglesDegrees[0]),
-                             glm::vec3{1.0F, 0.0F, 0.0F}),
+                             glm::vec3{1.F, 0.F, 0.F}),
                  glm::radians(camera.rotationAnglesDegrees[1]),
-                 glm::vec3{0.0F, 1.0F, 0.0F}),
+                 glm::vec3{0.F, 1.F, 0.F}),
              glm::radians(camera.rotationAnglesDegrees[2]),
-             glm::vec3{0.0F, 0.0F, 1.0F});
+             glm::vec3{0.F, 0.F, 1.F});
+}
+
+static void updateCameraAndMouse(GlfwCallback *callback, float x, float y) {
+  if (callback->mouse.pressed) {
+    const auto rotationSpeed{1.F};
+    callback->camera.rotationAnglesDegrees[0] +=
+        (callback->mouse.position.y - y) * rotationSpeed;
+    callback->camera.rotationAnglesDegrees[1] +=
+        (-callback->mouse.position.x + x) * rotationSpeed;
+  }
+  callback->mouse.position = {x, y};
 }
 
 static void onCursorPositionChanged(GLFWwindow *window, double x, double y) {
-  auto *const glfwCallback =
-      static_cast<GlfwCallback *>(glfwGetWindowUserPointer(window));
-  const auto x_{static_cast<float>(x)};
-  const auto y_{static_cast<float>(y)};
-  if (glfwCallback->mouse.pressed) {
-    const auto rotationSpeed{1.F};
-    glfwCallback->camera.rotationAnglesDegrees[0] +=
-        (glfwCallback->mouse.position[1] - y_) * rotationSpeed;
-    glfwCallback->camera.rotationAnglesDegrees[1] +=
-        (-glfwCallback->mouse.position[0] + x_) * rotationSpeed;
-  }
-  glfwCallback->mouse.position = {x_, y_};
+  updateCameraAndMouse(
+      static_cast<GlfwCallback *>(glfwGetWindowUserPointer(window)),
+      static_cast<float>(x), static_cast<float>(y));
 }
 
 static void onMouseButton(GLFWwindow *window, int button, int action,
@@ -661,7 +668,7 @@ static void updateUniformBuffer(
   UniformBufferObject ubo{};
   perspective[1][1] *= -1;
   ubo.mvp = perspective * viewMatrix(camera) *
-            glm::translate(glm::mat4(1.0F), modelOrigin);
+            glm::translate(glm::mat4(1.F), modelOrigin);
   copy(vulkanDevice.device, vulkanUniformBuffersMemory.memory, &ubo,
        sizeof(ubo));
 }
@@ -676,7 +683,7 @@ static void run(const std::string &vertexShaderCodePath,
   const glfw_wrappers::Window glfwWindow{1280, 720};
   GlfwCallback glfwCallback{};
   glfwSetWindowUserPointer(glfwWindow.window, &glfwCallback);
-  glfwSetFramebufferSizeCallback(glfwWindow.window, framebufferResizeCallback);
+  glfwSetFramebufferSizeCallback(glfwWindow.window, onFramebufferResize);
   glfwSetCursorPosCallback(glfwWindow.window, onCursorPositionChanged);
   glfwSetMouseButtonCallback(glfwWindow.window, onMouseButton);
 
@@ -770,8 +777,8 @@ static void run(const std::string &vertexShaderCodePath,
   const auto swapChainExtent{swapExtent(
       vulkanPhysicalDevice, vulkanSurface.surface, glfwWindow.window)};
 
-  glfwCallback.camera.rotationAnglesDegrees = {0.0F, 0.0F, 0.0F};
-  glfwCallback.camera.position = glm::vec3(0.0F, 0.0F, -12.0F);
+  glfwCallback.camera.rotationAnglesDegrees = {0.F, 0.F, 0.F};
+  glfwCallback.camera.position = glm::vec3{0.F, 0.F, -12.F};
 
   const auto colorFormat{
       swapSurfaceFormat(vulkanPhysicalDevice, vulkanSurface.surface).format};
@@ -874,8 +881,8 @@ static void run(const std::string &vertexShaderCodePath,
         vulkanPhysicalDevice, vulkanSurface.surface, glfwWindow.window);
 
     std::array<VkClearValue, 2> clearValues{};
-    clearValues[0].color = {{0.0F, 0.0F, 0.0F, 1.0F}};
-    clearValues[1].depthStencil = {1.0F, 0};
+    clearValues[0].color = {{0.F, 0.F, 0.F, 1.F}};
+    clearValues[1].depthStencil = {1.F, 0};
     renderPassInfo.clearValueCount = clearValues.size();
     renderPassInfo.pClearValues = clearValues.data();
 
@@ -946,11 +953,11 @@ static void run(const std::string &vertexShaderCodePath,
     updateUniformBuffer(
         vulkanDevice, vulkanUniformBuffersMemory[imageIndex],
         glfwCallback.camera,
-        glm::perspective(glm::radians(45.0F),
+        glm::perspective(glm::radians(45.F),
                          static_cast<float>(swapChainExtent.width) /
                              static_cast<float>(swapChainExtent.height),
-                         0.1F, 20.0F),
-        glm::vec3(0.F, -3.F, 0.F));
+                         0.1F, 20.F),
+        glm::vec3{0.F, -3.F, 0.F});
 
     if (imagesInFlight[imageIndex] != VK_NULL_HANDLE)
       vkWaitForFences(vulkanDevice.device, 1, &imagesInFlight[imageIndex],
