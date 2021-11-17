@@ -26,9 +26,7 @@
 
 namespace sbash64::graphics {
 struct UniformBufferObject {
-  alignas(16) glm::mat4 model;
-  alignas(16) glm::mat4 view;
-  alignas(16) glm::mat4 projection;
+  alignas(16) glm::mat4 mvp;
 };
 
 static auto suitable(VkPhysicalDevice device, VkSurfaceKHR surface) -> bool {
@@ -662,10 +660,9 @@ static void updateUniformBuffer(
     const vulkan_wrappers::DeviceMemory &vulkanUniformBuffersMemory,
     const Camera &camera, glm::mat4 perspective, glm::vec3 modelOrigin) {
   UniformBufferObject ubo{};
-  ubo.model = glm::translate(glm::mat4(1.0F), modelOrigin);
-  ubo.view = viewMatrix(camera);
-  ubo.projection = perspective;
-  ubo.projection[1][1] *= -1;
+  perspective[1][1] *= -1;
+  ubo.mvp = perspective * viewMatrix(camera) *
+            glm::translate(glm::mat4(1.0F), modelOrigin);
   copy(vulkanDevice.device, vulkanUniformBuffersMemory.memory, &ubo,
        sizeof(ubo));
 }
