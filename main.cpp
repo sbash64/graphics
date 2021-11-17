@@ -621,14 +621,14 @@ struct GlfwCallback {
 };
 
 static auto viewMatrix(glm::vec3 rotation, glm::vec3 position) -> glm::mat4 {
-  glm::mat4 rotation_matrix = glm::mat4(1.0f);
+  glm::mat4 rotation_matrix = glm::mat4(1.0F);
   rotation_matrix = glm::rotate(rotation_matrix, glm::radians(rotation.x),
-                                glm::vec3(1.0f, 0.0f, 0.0f));
+                                glm::vec3(1.0F, 0.0F, 0.0F));
   rotation_matrix = glm::rotate(rotation_matrix, glm::radians(rotation.y),
-                                glm::vec3(0.0f, 1.0f, 0.0f));
+                                glm::vec3(0.0F, 1.0F, 0.0F));
   rotation_matrix = glm::rotate(rotation_matrix, glm::radians(rotation.z),
-                                glm::vec3(0.0f, 0.0f, 1.0f));
-  return glm::translate(glm::mat4(1.0f), position) * rotation_matrix;
+                                glm::vec3(0.0F, 0.0F, 1.0F));
+  return glm::translate(glm::mat4(1.0F), position) * rotation_matrix;
 }
 
 static void cursor_position_callback(GLFWwindow *window, double xpos,
@@ -643,7 +643,7 @@ static void cursor_position_callback(GLFWwindow *window, double xpos,
   if (glfwCallback->mouse.pressed) {
     float rotation_speed = 1.0F;
     glfwCallback->camera.rotation +=
-        glm::vec3(dy * rotation_speed, -dx * rotation_speed, 0.0f);
+        glm::vec3(dy * rotation_speed, -dx * rotation_speed, 0.0F);
     glfwCallback->camera.view = viewMatrix(glfwCallback->camera.rotation,
                                            glfwCallback->camera.position);
   }
@@ -678,7 +678,7 @@ static void updateUniformBuffer(
     const vulkan_wrappers::DeviceMemory &vulkanUniformBuffersMemory,
     Camera camera) {
   UniformBufferObject ubo{};
-  ubo.model = glm::mat4(1.0F);
+  ubo.model = glm::translate(glm::mat4(1.0F), glm::vec3(0.f, -3.f, 0.f));
   ubo.view = camera.view;
   ubo.projection = camera.perspective;
   ubo.projection[1][1] *= -1;
@@ -796,7 +796,7 @@ static void run(const std::string &vertexShaderCodePath,
                            static_cast<float>(swapChainExtent.height),
                        0.1F, 20.0F);
   glfwCallback.camera.rotation = glm::vec3(0.0F, 0.0F, 0.0F);
-  glfwCallback.camera.position = glm::vec3(0.0F, -3.0F, -8.0F);
+  glfwCallback.camera.position = glm::vec3(0.0F, 0.0F, -12.0F);
   glfwCallback.camera.view =
       viewMatrix(glfwCallback.camera.rotation, glfwCallback.camera.position);
 
