@@ -890,7 +890,6 @@ static void run(const std::string &vertexShaderCodePath,
                          &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
     vkCmdBindPipeline(vulkanCommandBuffers.commandBuffers[i],
                       VK_PIPELINE_BIND_POINT_GRAPHICS, vulkanPipeline.pipeline);
-    std::vector<unsigned> objectToTextureMapping{7, 5, 2, 3, 1, 6, 4, 0};
     for (auto j{0U}; j < vulkanDrawables.size(); ++j) {
       std::array<VkBuffer, 1> vertexBuffers = {
           vulkanDrawables.at(j).vertexBufferWithMemory.buffer.buffer};
@@ -904,10 +903,7 @@ static void run(const std::string &vertexShaderCodePath,
       vkCmdBindDescriptorSets(
           vulkanCommandBuffers.commandBuffers[i],
           VK_PIPELINE_BIND_POINT_GRAPHICS, vulkanPipelineLayout.pipelineLayout,
-          0, 1,
-          &vulkanTextureImageDescriptors.at(objectToTextureMapping.at(j))
-               .sets[i],
-          0, nullptr);
+          0, 1, &vulkanTextureImageDescriptors.at(j).sets[i], 0, nullptr);
       vkCmdDrawIndexed(vulkanCommandBuffers.commandBuffers[i],
                        static_cast<uint32_t>(modelObjects.at(j).indices.size()),
                        1, 0, 0, 0);
@@ -994,9 +990,11 @@ int main(int argc, char *argv[]) {
   if (arguments.size() < 5)
     return EXIT_FAILURE;
   try {
-    std::vector<std::string> texturePaths;
+    std::vector<std::string> texturePaths(8);
+    std::vector<unsigned> textureOrder{7, 4, 2, 3, 6, 1, 5, 0};
+    auto count{0U};
     for (const auto &entry : std::filesystem::directory_iterator{arguments[4]})
-      texturePaths.push_back(entry.path());
+      texturePaths[textureOrder[count++]] = entry.path();
     sbash64::graphics::run(arguments[1], arguments[2], arguments[3],
                            texturePaths);
   } catch (const std::exception &e) {
