@@ -694,6 +694,31 @@ static auto vulkanImage(VkDevice device, VkPhysicalDevice physicalDevice,
   return VulkanImage{std::move(image), std::move(view), std::move(memory)};
 }
 
+void draw(const std::vector<Object> &playerObjects,
+          std::vector<VulkanDrawable> &playerDrawables,
+          const vulkan_wrappers::PipelineLayout &vulkanPipelineLayout,
+          std::vector<VulkanDescriptor> &playerTextureImageDescriptors,
+          const vulkan_wrappers::CommandBuffers &vulkanCommandBuffers,
+          unsigned int &i) {
+  for (auto j{0U}; j < playerDrawables.size(); ++j) {
+    std::array<VkBuffer, 1> vertexBuffers = {
+        playerDrawables.at(j).vertexBufferWithMemory.buffer.buffer};
+    std::array<VkDeviceSize, 1> offsets = {0};
+    vkCmdBindVertexBuffers(vulkanCommandBuffers.commandBuffers[i], 0, 1,
+                           vertexBuffers.data(), offsets.data());
+    vkCmdBindIndexBuffer(
+        vulkanCommandBuffers.commandBuffers[i],
+        playerDrawables.at(j).indexBufferWithMemory.buffer.buffer, 0,
+        VK_INDEX_TYPE_UINT32);
+    vkCmdBindDescriptorSets(
+        vulkanCommandBuffers.commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS,
+        vulkanPipelineLayout.pipelineLayout, 0, 1,
+        &playerTextureImageDescriptors.at(j).sets[i], 0, nullptr);
+    vkCmdDrawIndexed(vulkanCommandBuffers.commandBuffers[i],
+                     static_cast<uint32_t>(playerObjects.at(j).indices.size()),
+                     1, 0, 0, 0);
+  }
+}
 static void run(const std::string &vertexShaderCodePath,
                 const std::string &fragmentShaderCodePath,
                 const std::string &playerObjectPath,
@@ -933,43 +958,10 @@ static void run(const std::string &vertexShaderCodePath,
                          &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
     vkCmdBindPipeline(vulkanCommandBuffers.commandBuffers[i],
                       VK_PIPELINE_BIND_POINT_GRAPHICS, vulkanPipeline.pipeline);
-    for (auto j{0U}; j < playerDrawables.size(); ++j) {
-      std::array<VkBuffer, 1> vertexBuffers = {
-          playerDrawables.at(j).vertexBufferWithMemory.buffer.buffer};
-      std::array<VkDeviceSize, 1> offsets = {0};
-      vkCmdBindVertexBuffers(vulkanCommandBuffers.commandBuffers[i], 0, 1,
-                             vertexBuffers.data(), offsets.data());
-      vkCmdBindIndexBuffer(
-          vulkanCommandBuffers.commandBuffers[i],
-          playerDrawables.at(j).indexBufferWithMemory.buffer.buffer, 0,
-          VK_INDEX_TYPE_UINT32);
-      vkCmdBindDescriptorSets(
-          vulkanCommandBuffers.commandBuffers[i],
-          VK_PIPELINE_BIND_POINT_GRAPHICS, vulkanPipelineLayout.pipelineLayout,
-          0, 1, &playerTextureImageDescriptors.at(j).sets[i], 0, nullptr);
-      vkCmdDrawIndexed(
-          vulkanCommandBuffers.commandBuffers[i],
-          static_cast<uint32_t>(playerObjects.at(j).indices.size()), 1, 0, 0,
-          0);
-    }
-    for (auto j{0U}; j < worldDrawables.size(); ++j) {
-      std::array<VkBuffer, 1> vertexBuffers = {
-          worldDrawables.at(j).vertexBufferWithMemory.buffer.buffer};
-      std::array<VkDeviceSize, 1> offsets = {0};
-      vkCmdBindVertexBuffers(vulkanCommandBuffers.commandBuffers[i], 0, 1,
-                             vertexBuffers.data(), offsets.data());
-      vkCmdBindIndexBuffer(
-          vulkanCommandBuffers.commandBuffers[i],
-          worldDrawables.at(j).indexBufferWithMemory.buffer.buffer, 0,
-          VK_INDEX_TYPE_UINT32);
-      vkCmdBindDescriptorSets(
-          vulkanCommandBuffers.commandBuffers[i],
-          VK_PIPELINE_BIND_POINT_GRAPHICS, vulkanPipelineLayout.pipelineLayout,
-          0, 1, &worldTextureImageDescriptors.at(j).sets[i], 0, nullptr);
-      vkCmdDrawIndexed(vulkanCommandBuffers.commandBuffers[i],
-                       static_cast<uint32_t>(worldObjects.at(j).indices.size()),
-                       1, 0, 0, 0);
-    }
+    draw(playerObjects, playerDrawables, vulkanPipelineLayout,
+         playerTextureImageDescriptors, vulkanCommandBuffers, i);
+    draw(worldObjects, worldDrawables, vulkanPipelineLayout,
+         worldTextureImageDescriptors, vulkanCommandBuffers, i);
 
     vkCmdEndRenderPass(vulkanCommandBuffers.commandBuffers[i]);
     throwOnError(
