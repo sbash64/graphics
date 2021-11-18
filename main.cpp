@@ -675,8 +675,10 @@ static void updateUniformBuffer(
 
 static void run(const std::string &vertexShaderCodePath,
                 const std::string &fragmentShaderCodePath,
-                const std::string &objectPath,
-                const std::vector<std::string> &textureImagePaths) {
+                const std::string &playerObjectPath,
+                const std::vector<std::string> &playerTextureImagePaths,
+                const std::string &worldObjectPath,
+                const std::vector<std::string> &worldTextureImagePaths) {
   const glfw_wrappers::Init glfwInitialization;
 
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -714,9 +716,19 @@ static void run(const std::string &vertexShaderCodePath,
   const vulkan_wrappers::CommandPool vulkanCommandPool{vulkanDevice.device,
                                                        vulkanPhysicalDevice};
 
-  std::vector<VulkanImage> textureImages;
-  std::transform(textureImagePaths.begin(), textureImagePaths.end(),
-                 std::back_inserter(textureImages),
+  std::vector<VulkanImage> playerTextureImages;
+  std::transform(playerTextureImagePaths.begin(), playerTextureImagePaths.end(),
+                 std::back_inserter(playerTextureImages),
+                 [&vulkanDevice, vulkanPhysicalDevice, &vulkanCommandPool,
+                  graphicsQueue](const std::string &path) {
+                   return textureImage(
+                       vulkanDevice.device, vulkanPhysicalDevice,
+                       vulkanCommandPool.commandPool, graphicsQueue, path);
+                 });
+
+  std::vector<VulkanImage> worldTextureImages;
+  std::transform(worldTextureImagePaths.begin(), worldTextureImagePaths.end(),
+                 std::back_inserter(worldTextureImages),
                  [&vulkanDevice, vulkanPhysicalDevice, &vulkanCommandPool,
                   graphicsQueue](const std::string &path) {
                    return textureImage(
@@ -727,10 +739,21 @@ static void run(const std::string &vertexShaderCodePath,
   const vulkan_wrappers::Sampler vulkanTextureSampler{vulkanDevice.device,
                                                       vulkanPhysicalDevice, 13};
 
-  const auto modelObjects{readObjects(objectPath)};
-  std::vector<VulkanDrawable> vulkanDrawables;
-  std::transform(modelObjects.begin(), modelObjects.end(),
-                 std::back_inserter(vulkanDrawables),
+  const auto playerObjects{readObjects(playerObjectPath)};
+  std::vector<VulkanDrawable> playerDrawables;
+  std::transform(playerObjects.begin(), playerObjects.end(),
+                 std::back_inserter(playerDrawables),
+                 [&vulkanDevice, vulkanPhysicalDevice, &vulkanCommandPool,
+                  graphicsQueue](const Object &object) {
+                   return drawable(vulkanDevice.device, vulkanPhysicalDevice,
+                                   vulkanCommandPool.commandPool, graphicsQueue,
+                                   object);
+                 });
+
+  const auto worldObjects{readObjects(worldObjectPath)};
+  std::vector<VulkanDrawable> worldDrawables;
+  std::transform(worldObjects.begin(), worldObjects.end(),
+                 std::back_inserter(worldDrawables),
                  [&vulkanDevice, vulkanPhysicalDevice, &vulkanCommandPool,
                   graphicsQueue](const Object &object) {
                    return drawable(vulkanDevice.device, vulkanPhysicalDevice,
@@ -847,10 +870,21 @@ static void run(const std::string &vertexShaderCodePath,
                          VK_MEMORY_PROPERTY_HOST_COHERENT_BIT));
   }
 
-  std::vector<VulkanDescriptor> vulkanTextureImageDescriptors;
+  std::vector<VulkanDescriptor> playerTextureImageDescriptors;
   std::transform(
-      textureImages.begin(), textureImages.end(),
-      std::back_inserter(vulkanTextureImageDescriptors),
+      playerTextureImages.begin(), playerTextureImages.end(),
+      std::back_inserter(playerTextureImageDescriptors),
+      [&vulkanDevice, &vulkanTextureSampler, &vulkanDescriptorSetLayout,
+       &swapChainImages, &vulkanUniformBuffers](const VulkanImage &image) {
+        return graphics::descriptor(
+            vulkanDevice, image.view, vulkanTextureSampler,
+            vulkanDescriptorSetLayout, swapChainImages, vulkanUniformBuffers);
+      });
+
+  std::vector<VulkanDescriptor> worldTextureImageDescriptors;
+  std::transform(
+      worldTextureImages.begin(), worldTextureImages.end(),
+      std::back_inserter(worldTextureImageDescriptors),
       [&vulkanDevice, &vulkanTextureSampler, &vulkanDescriptorSetLayout,
        &swapChainImages, &vulkanUniformBuffers](const VulkanImage &image) {
         return graphics::descriptor(
@@ -890,22 +924,41 @@ static void run(const std::string &vertexShaderCodePath,
                          &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
     vkCmdBindPipeline(vulkanCommandBuffers.commandBuffers[i],
                       VK_PIPELINE_BIND_POINT_GRAPHICS, vulkanPipeline.pipeline);
-    for (auto j{0U}; j < vulkanDrawables.size(); ++j) {
+    for (auto j{0U}; j < playerDrawables.size(); ++j) {
       std::array<VkBuffer, 1> vertexBuffers = {
-          vulkanDrawables.at(j).vertexBufferWithMemory.buffer.buffer};
+          playerDrawables.at(j).vertexBufferWithMemory.buffer.buffer};
       std::array<VkDeviceSize, 1> offsets = {0};
       vkCmdBindVertexBuffers(vulkanCommandBuffers.commandBuffers[i], 0, 1,
                              vertexBuffers.data(), offsets.data());
       vkCmdBindIndexBuffer(
           vulkanCommandBuffers.commandBuffers[i],
-          vulkanDrawables.at(j).indexBufferWithMemory.buffer.buffer, 0,
+          playerDrawables.at(j).indexBufferWithMemory.buffer.buffer, 0,
           VK_INDEX_TYPE_UINT32);
       vkCmdBindDescriptorSets(
           vulkanCommandBuffers.commandBuffers[i],
           VK_PIPELINE_BIND_POINT_GRAPHICS, vulkanPipelineLayout.pipelineLayout,
-          0, 1, &vulkanTextureImageDescriptors.at(j).sets[i], 0, nullptr);
+          0, 1, &playerTextureImageDescriptors.at(j).sets[i], 0, nullptr);
+      vkCmdDrawIndexed(
+          vulkanCommandBuffers.commandBuffers[i],
+          static_cast<uint32_t>(playerObjects.at(j).indices.size()), 1, 0, 0,
+          0);
+    }
+    for (auto j{0U}; j < worldDrawables.size(); ++j) {
+      std::array<VkBuffer, 1> vertexBuffers = {
+          worldDrawables.at(j).vertexBufferWithMemory.buffer.buffer};
+      std::array<VkDeviceSize, 1> offsets = {0};
+      vkCmdBindVertexBuffers(vulkanCommandBuffers.commandBuffers[i], 0, 1,
+                             vertexBuffers.data(), offsets.data());
+      vkCmdBindIndexBuffer(
+          vulkanCommandBuffers.commandBuffers[i],
+          worldDrawables.at(j).indexBufferWithMemory.buffer.buffer, 0,
+          VK_INDEX_TYPE_UINT32);
+      vkCmdBindDescriptorSets(
+          vulkanCommandBuffers.commandBuffers[i],
+          VK_PIPELINE_BIND_POINT_GRAPHICS, vulkanPipelineLayout.pipelineLayout,
+          0, 1, &worldTextureImageDescriptors.at(j).sets[i], 0, nullptr);
       vkCmdDrawIndexed(vulkanCommandBuffers.commandBuffers[i],
-                       static_cast<uint32_t>(modelObjects.at(j).indices.size()),
+                       static_cast<uint32_t>(worldObjects.at(j).indices.size()),
                        1, 0, 0, 0);
     }
 
@@ -987,7 +1040,7 @@ static void run(const std::string &vertexShaderCodePath,
 int main(int argc, char *argv[]) {
   const std::span<char *> arguments{
       argv, static_cast<std::span<char *>::size_type>(argc)};
-  if (arguments.size() < 5)
+  if (arguments.size() < 7)
     return EXIT_FAILURE;
   try {
     std::vector<std::string> texturePaths(8);
@@ -996,7 +1049,7 @@ int main(int argc, char *argv[]) {
     for (const auto &entry : std::filesystem::directory_iterator{arguments[4]})
       texturePaths[textureOrder[count++]] = entry.path();
     sbash64::graphics::run(arguments[1], arguments[2], arguments[3],
-                           texturePaths);
+                           texturePaths, arguments[5], {arguments[6]});
   } catch (const std::exception &e) {
     std::cerr << e.what() << '\n';
     return EXIT_FAILURE;
