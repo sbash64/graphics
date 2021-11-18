@@ -1,4 +1,3 @@
-#include "glm/fwd.hpp"
 #include <sbash64/graphics/glfw-wrappers.hpp>
 #include <sbash64/graphics/load-object.hpp>
 #include <sbash64/graphics/stbi-wrappers.hpp>
@@ -282,16 +281,14 @@ static void generateMipmaps(VkDevice device, VkPhysicalDevice physicalDevice,
                             VkImage image, VkFormat imageFormat,
                             int32_t texWidth, int32_t texHeight,
                             uint32_t mipLevels) {
-  // Check if image format supports linear blitting
   VkFormatProperties formatProperties;
   vkGetPhysicalDeviceFormatProperties(physicalDevice, imageFormat,
                                       &formatProperties);
 
   if ((formatProperties.optimalTilingFeatures &
-       VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) == 0U) {
+       VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) == 0U)
     throw std::runtime_error(
         "texture image format does not support linear blitting!");
-  }
 
   vulkan_wrappers::CommandBuffers vulkanCommandBuffers{device, commandPool, 1};
   begin(vulkanCommandBuffers.commandBuffers[0]);
@@ -306,10 +303,10 @@ static void generateMipmaps(VkDevice device, VkPhysicalDevice physicalDevice,
   barrier.subresourceRange.layerCount = 1;
   barrier.subresourceRange.levelCount = 1;
 
-  int32_t mipWidth = texWidth;
-  int32_t mipHeight = texHeight;
+  auto mipWidth{texWidth};
+  auto mipHeight{texHeight};
 
-  for (uint32_t i = 1; i < mipLevels; i++) {
+  for (auto i{1U}; i < mipLevels; i++) {
     barrier.subresourceRange.baseMipLevel = i - 1;
     barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
@@ -443,15 +440,15 @@ static auto descriptor(
   allocInfo.descriptorSetCount = static_cast<uint32_t>(swapChainImages.size());
   allocInfo.pSetLayouts = layouts.data();
 
-  // no deallocate needed here per tutorial
   throwOnError(
       [&]() {
+        // no deallocate needed here per tutorial
         return vkAllocateDescriptorSets(vulkanDevice.device, &allocInfo,
                                         descriptorSets.data());
       },
       "failed to allocate descriptor sets!");
 
-  for (size_t i{0}; i < swapChainImages.size(); i++) {
+  for (auto i{0U}; i < swapChainImages.size(); i++) {
     VkDescriptorBufferInfo bufferInfo{};
     bufferInfo.buffer = vulkanUniformBuffers[i].buffer.buffer;
     bufferInfo.offset = 0;
@@ -678,6 +675,25 @@ static void updateUniformBuffer(
        sizeof(ubo));
 }
 
+static auto vulkanImage(VkDevice device, VkPhysicalDevice physicalDevice,
+                        VkSurfaceKHR surface, GLFWwindow *window,
+                        VkFormat format, VkImageUsageFlags usageFlags,
+                        VkImageAspectFlags aspectFlags) -> VulkanImage {
+  const auto swapChainExtent{swapExtent(physicalDevice, surface, window)};
+  vulkan_wrappers::Image image{device,
+                               swapChainExtent.width,
+                               swapChainExtent.height,
+                               format,
+                               VK_IMAGE_TILING_OPTIMAL,
+                               usageFlags,
+                               1,
+                               maxUsableSampleCount(physicalDevice)};
+  auto memory{imageMemory(device, physicalDevice, image.image,
+                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
+  vulkan_wrappers::ImageView view{device, image.image, format, aspectFlags, 1};
+  return VulkanImage{std::move(image), std::move(view), std::move(memory)};
+}
+
 static void run(const std::string &vertexShaderCodePath,
                 const std::string &fragmentShaderCodePath,
                 const std::string &playerObjectPath,
@@ -802,61 +818,34 @@ static void run(const std::string &vertexShaderCodePath,
       vulkanRenderPass.renderPass, vertexShaderCodePath,
       fragmentShaderCodePath,      glfwWindow.window};
 
-  const auto swapChainExtent{swapExtent(
-      vulkanPhysicalDevice, vulkanSurface.surface, glfwWindow.window)};
-
   glfwCallback.camera.rotationAnglesDegrees = {0.F, 0.F, 0.F};
   glfwCallback.camera.position = glm::vec3{0.F, 0.F, -12.F};
 
-  const auto colorFormat{
-      swapSurfaceFormat(vulkanPhysicalDevice, vulkanSurface.surface).format};
-  const vulkan_wrappers::Image vulkanColorImage{
-      vulkanDevice.device,
-      swapChainExtent.width,
-      swapChainExtent.height,
-      colorFormat,
-      VK_IMAGE_TILING_OPTIMAL,
+  const auto vulkanColorImage{vulkanImage(
+      vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface,
+      glfwWindow.window,
+      swapSurfaceFormat(vulkanPhysicalDevice, vulkanSurface.surface).format,
       VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
           VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT,
-      1,
-      maxUsableSampleCount(vulkanPhysicalDevice)};
-  const auto vulkanColorImageMemory{
-      imageMemory(vulkanDevice.device, vulkanPhysicalDevice,
-                  vulkanColorImage.image, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
-  const vulkan_wrappers::ImageView vulkanColorImageView{
-      vulkanDevice.device, vulkanColorImage.image, colorFormat,
-      VK_IMAGE_ASPECT_COLOR_BIT, 1};
+      VK_IMAGE_ASPECT_COLOR_BIT)};
 
-  const auto depthFormat{findDepthFormat(vulkanPhysicalDevice)};
-  const vulkan_wrappers::Image vulkanDepthImage{
-      vulkanDevice.device,
-      swapChainExtent.width,
-      swapChainExtent.height,
-      depthFormat,
-      VK_IMAGE_TILING_OPTIMAL,
-      VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-      1,
-      maxUsableSampleCount(vulkanPhysicalDevice)};
-  const auto vulkanDepthImageMemory{
-      imageMemory(vulkanDevice.device, vulkanPhysicalDevice,
-                  vulkanDepthImage.image, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
-  const vulkan_wrappers::ImageView vulkanDepthImageView{
-      vulkanDevice.device, vulkanDepthImage.image, depthFormat,
-      VK_IMAGE_ASPECT_DEPTH_BIT, 1};
+  const auto vulkanDepthImage{vulkanImage(
+      vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface,
+      glfwWindow.window, findDepthFormat(vulkanPhysicalDevice),
+      VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_ASPECT_DEPTH_BIT)};
 
   std::vector<vulkan_wrappers::Framebuffer> vulkanFrameBuffers;
   std::transform(swapChainImageViews.begin(), swapChainImageViews.end(),
                  std::back_inserter(vulkanFrameBuffers),
                  [&vulkanDevice, vulkanPhysicalDevice, &vulkanSurface,
-                  &vulkanRenderPass, &vulkanColorImageView,
-                  &vulkanDepthImageView,
+                  &vulkanRenderPass, &vulkanColorImage, &vulkanDepthImage,
                   &glfwWindow](const vulkan_wrappers::ImageView &imageView) {
                    return vulkan_wrappers::Framebuffer{
                        vulkanDevice.device,
                        vulkanPhysicalDevice,
                        vulkanSurface.surface,
                        vulkanRenderPass.renderPass,
-                       {vulkanColorImageView.view, vulkanDepthImageView.view,
+                       {vulkanColorImage.view.view, vulkanDepthImage.view.view,
                         imageView.view},
                        glfwWindow.window};
                  });
@@ -991,6 +980,8 @@ static void run(const std::string &vertexShaderCodePath,
   }
 
   imagesInFlight.resize(swapChainImages.size(), VK_NULL_HANDLE);
+  const auto swapChainExtent{swapExtent(
+      vulkanPhysicalDevice, vulkanSurface.surface, glfwWindow.window)};
   auto recreatingSwapChain{false};
   auto currentFrame{0U};
   while (!recreatingSwapChain) {
