@@ -675,10 +675,10 @@ static void updateUniformBuffer(
        sizeof(ubo));
 }
 
-static auto vulkanImage(VkDevice device, VkPhysicalDevice physicalDevice,
-                        VkSurfaceKHR surface, GLFWwindow *window,
-                        VkFormat format, VkImageUsageFlags usageFlags,
-                        VkImageAspectFlags aspectFlags) -> VulkanImage {
+static auto frameImage(VkDevice device, VkPhysicalDevice physicalDevice,
+                       VkSurfaceKHR surface, GLFWwindow *window,
+                       VkFormat format, VkImageUsageFlags usageFlags,
+                       VkImageAspectFlags aspectFlags) -> VulkanImage {
   const auto swapChainExtent{swapExtent(physicalDevice, surface, window)};
   vulkan_wrappers::Image image{device,
                                swapChainExtent.width,
@@ -695,9 +695,9 @@ static auto vulkanImage(VkDevice device, VkPhysicalDevice physicalDevice,
 }
 
 static void draw(const std::vector<Object> &objects,
-                 std::vector<VulkanDrawable> &drawables,
+                 const std::vector<VulkanDrawable> &drawables,
                  const vulkan_wrappers::PipelineLayout &pipelineLayout,
-                 std::vector<VulkanDescriptor> &descriptors,
+                 const std::vector<VulkanDescriptor> &descriptors,
                  VkCommandBuffer commandBuffer, unsigned int i) {
   for (auto j{0U}; j < drawables.size(); ++j) {
     std::array<VkBuffer, 1> vertexBuffers = {
@@ -864,7 +864,7 @@ static void run(const std::string &vertexShaderCodePath,
   glfwCallback.camera.rotationAnglesDegrees = {0.F, 0.F, 0.F};
   glfwCallback.camera.position = glm::vec3{0.F, 0.F, -12.F};
 
-  const auto vulkanColorImage{vulkanImage(
+  const auto vulkanColorImage{frameImage(
       vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface,
       glfwWindow.window,
       swapSurfaceFormat(vulkanPhysicalDevice, vulkanSurface.surface).format,
@@ -872,7 +872,7 @@ static void run(const std::string &vertexShaderCodePath,
           VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT,
       VK_IMAGE_ASPECT_COLOR_BIT)};
 
-  const auto vulkanDepthImage{vulkanImage(
+  const auto vulkanDepthImage{frameImage(
       vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface,
       glfwWindow.window, findDepthFormat(vulkanPhysicalDevice),
       VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_ASPECT_DEPTH_BIT)};
@@ -1009,7 +1009,7 @@ static void run(const std::string &vertexShaderCodePath,
         throw std::runtime_error("failed to acquire swap chain image!");
     }
 
-    auto projection =
+    const auto projection =
         glm::perspective(glm::radians(45.F),
                          static_cast<float>(swapChainExtent.width) /
                              static_cast<float>(swapChainExtent.height),
