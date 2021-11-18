@@ -822,11 +822,20 @@ static void run(const std::string &vertexShaderCodePath,
   std::vector<vulkan_wrappers::Semaphore> vulkanImageAvailableSemaphores;
   std::vector<vulkan_wrappers::Semaphore> vulkanRenderFinishedSemaphores;
   std::vector<vulkan_wrappers::Fence> vulkanInFlightFences;
-  for (auto i{0}; i < maxFramesInFlight; ++i) {
-    vulkanImageAvailableSemaphores.emplace_back(vulkanDevice.device);
-    vulkanRenderFinishedSemaphores.emplace_back(vulkanDevice.device);
-    vulkanInFlightFences.emplace_back(vulkanDevice.device);
-  }
+
+  std::generate_n(std::back_inserter(vulkanImageAvailableSemaphores),
+                  maxFramesInFlight, [&vulkanDevice]() {
+                    return vulkan_wrappers::Semaphore{vulkanDevice.device};
+                  });
+  std::generate_n(std::back_inserter(vulkanRenderFinishedSemaphores),
+                  maxFramesInFlight, [&vulkanDevice]() {
+                    return vulkan_wrappers::Semaphore{vulkanDevice.device};
+                  });
+  std::generate_n(std::back_inserter(vulkanInFlightFences), maxFramesInFlight,
+                  [&vulkanDevice]() {
+                    return vulkan_wrappers::Fence{vulkanDevice.device};
+                  });
+
   std::vector<VkFence> imagesInFlight;
 
   const vulkan_wrappers::DescriptorSetLayout vulkanDescriptorSetLayout{
@@ -888,12 +897,18 @@ static void run(const std::string &vertexShaderCodePath,
   std::vector<VulkanBufferWithMemory> playerUniformBuffersWithMemory;
   std::vector<VulkanBufferWithMemory> worldUniformBuffersWithMemory;
 
-  for (auto i{0U}; i < swapChainImages.size(); i++) {
-    playerUniformBuffersWithMemory.push_back(
-        uniformBufferWithMemory(vulkanDevice.device, vulkanPhysicalDevice));
-    worldUniformBuffersWithMemory.push_back(
-        uniformBufferWithMemory(vulkanDevice.device, vulkanPhysicalDevice));
-  }
+  std::generate_n(std::back_inserter(playerUniformBuffersWithMemory),
+                  swapChainImages.size(),
+                  [&vulkanDevice, vulkanPhysicalDevice]() {
+                    return uniformBufferWithMemory(vulkanDevice.device,
+                                                   vulkanPhysicalDevice);
+                  });
+  std::generate_n(std::back_inserter(worldUniformBuffersWithMemory),
+                  swapChainImages.size(),
+                  [&vulkanDevice, vulkanPhysicalDevice]() {
+                    return uniformBufferWithMemory(vulkanDevice.device,
+                                                   vulkanPhysicalDevice);
+                  });
 
   std::vector<VulkanDescriptor> playerTextureImageDescriptors;
   std::transform(playerTextureImages.begin(), playerTextureImages.end(),
