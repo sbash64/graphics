@@ -39,14 +39,14 @@ static auto suitable(VkPhysicalDevice device, VkSurfaceKHR surface) -> bool {
   vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionPropertyCount,
                                        extensionProperties.data());
   std::vector<std::string> extensionNames(extensionProperties.size());
-  std::transform(extensionProperties.begin(), extensionProperties.end(),
-                 extensionNames.begin(),
-                 [](const VkExtensionProperties &properties) {
-                   return static_cast<const char *>(properties.extensionName);
-                 });
+  transform(extensionProperties.begin(), extensionProperties.end(),
+            extensionNames.begin(),
+            [](const VkExtensionProperties &properties) {
+              return static_cast<const char *>(properties.extensionName);
+            });
 
-  if (!std::includes(extensionNames.begin(), extensionNames.end(),
-                     deviceExtensions.begin(), deviceExtensions.end()))
+  if (!includes(extensionNames.begin(), extensionNames.end(),
+                deviceExtensions.begin(), deviceExtensions.end()))
     return false;
 
   if (vulkanCountFromPhysicalDevice(
@@ -401,12 +401,12 @@ static auto swapChainImageViews(VkDevice device,
     -> std::vector<vulkan_wrappers::ImageView> {
   const auto format{swapSurfaceFormat(physicalDevice, surface).format};
   std::vector<vulkan_wrappers::ImageView> swapChainImageViews;
-  std::transform(swapChainImages.begin(), swapChainImages.end(),
-                 std::back_inserter(swapChainImageViews),
-                 [device, format](VkImage image) {
-                   return vulkan_wrappers::ImageView{
-                       device, image, format, VK_IMAGE_ASPECT_COLOR_BIT, 1};
-                 });
+  transform(swapChainImages.begin(), swapChainImages.end(),
+            back_inserter(swapChainImageViews),
+            [device, format](VkImage image) {
+              return vulkan_wrappers::ImageView{device, image, format,
+                                                VK_IMAGE_ASPECT_COLOR_BIT, 1};
+            });
   return swapChainImageViews;
 }
 
@@ -773,49 +773,48 @@ static void run(const std::string &vertexShaderCodePath,
                                                        vulkanPhysicalDevice};
 
   std::vector<VulkanImage> playerTextureImages;
-  std::transform(playerTextureImagePaths.begin(), playerTextureImagePaths.end(),
-                 std::back_inserter(playerTextureImages),
-                 [&vulkanDevice, vulkanPhysicalDevice, &vulkanCommandPool,
-                  graphicsQueue](const std::string &path) {
-                   return textureImage(
-                       vulkanDevice.device, vulkanPhysicalDevice,
-                       vulkanCommandPool.commandPool, graphicsQueue, path);
-                 });
+  transform(playerTextureImagePaths.begin(), playerTextureImagePaths.end(),
+            back_inserter(playerTextureImages),
+            [&vulkanDevice, vulkanPhysicalDevice, &vulkanCommandPool,
+             graphicsQueue](const std::string &path) {
+              return textureImage(vulkanDevice.device, vulkanPhysicalDevice,
+                                  vulkanCommandPool.commandPool, graphicsQueue,
+                                  path);
+            });
 
   std::vector<VulkanImage> worldTextureImages;
-  std::transform(worldTextureImagePaths.begin(), worldTextureImagePaths.end(),
-                 std::back_inserter(worldTextureImages),
-                 [&vulkanDevice, vulkanPhysicalDevice, &vulkanCommandPool,
-                  graphicsQueue](const std::string &path) {
-                   return textureImage(
-                       vulkanDevice.device, vulkanPhysicalDevice,
-                       vulkanCommandPool.commandPool, graphicsQueue, path);
-                 });
+  transform(worldTextureImagePaths.begin(), worldTextureImagePaths.end(),
+            back_inserter(worldTextureImages),
+            [&vulkanDevice, vulkanPhysicalDevice, &vulkanCommandPool,
+             graphicsQueue](const std::string &path) {
+              return textureImage(vulkanDevice.device, vulkanPhysicalDevice,
+                                  vulkanCommandPool.commandPool, graphicsQueue,
+                                  path);
+            });
 
   const vulkan_wrappers::Sampler vulkanTextureSampler{vulkanDevice.device,
                                                       vulkanPhysicalDevice, 13};
 
   const auto playerObjects{readObjects(playerObjectPath)};
   std::vector<VulkanDrawable> playerDrawables;
-  std::transform(playerObjects.begin(), playerObjects.end(),
-                 std::back_inserter(playerDrawables),
-                 [&vulkanDevice, vulkanPhysicalDevice, &vulkanCommandPool,
-                  graphicsQueue](const Object &object) {
-                   return drawable(vulkanDevice.device, vulkanPhysicalDevice,
-                                   vulkanCommandPool.commandPool, graphicsQueue,
-                                   object);
-                 });
+  transform(playerObjects.begin(), playerObjects.end(),
+            back_inserter(playerDrawables),
+            [&vulkanDevice, vulkanPhysicalDevice, &vulkanCommandPool,
+             graphicsQueue](const Object &object) {
+              return drawable(vulkanDevice.device, vulkanPhysicalDevice,
+                              vulkanCommandPool.commandPool, graphicsQueue,
+                              object);
+            });
 
   const auto worldObjects{readObjects(worldObjectPath)};
   std::vector<VulkanDrawable> worldDrawables;
-  std::transform(worldObjects.begin(), worldObjects.end(),
-                 std::back_inserter(worldDrawables),
-                 [&vulkanDevice, vulkanPhysicalDevice, &vulkanCommandPool,
-                  graphicsQueue](const Object &object) {
-                   return drawable(vulkanDevice.device, vulkanPhysicalDevice,
-                                   vulkanCommandPool.commandPool, graphicsQueue,
-                                   object);
-                 });
+  transform(
+      worldObjects.begin(), worldObjects.end(), back_inserter(worldDrawables),
+      [&vulkanDevice, vulkanPhysicalDevice, &vulkanCommandPool,
+       graphicsQueue](const Object &object) {
+        return drawable(vulkanDevice.device, vulkanPhysicalDevice,
+                        vulkanCommandPool.commandPool, graphicsQueue, object);
+      });
 
   const auto maxFramesInFlight{2};
 
@@ -823,18 +822,18 @@ static void run(const std::string &vertexShaderCodePath,
   std::vector<vulkan_wrappers::Semaphore> vulkanRenderFinishedSemaphores;
   std::vector<vulkan_wrappers::Fence> vulkanInFlightFences;
 
-  std::generate_n(std::back_inserter(vulkanImageAvailableSemaphores),
-                  maxFramesInFlight, [&vulkanDevice]() {
-                    return vulkan_wrappers::Semaphore{vulkanDevice.device};
-                  });
-  std::generate_n(std::back_inserter(vulkanRenderFinishedSemaphores),
-                  maxFramesInFlight, [&vulkanDevice]() {
-                    return vulkan_wrappers::Semaphore{vulkanDevice.device};
-                  });
-  std::generate_n(std::back_inserter(vulkanInFlightFences), maxFramesInFlight,
-                  [&vulkanDevice]() {
-                    return vulkan_wrappers::Fence{vulkanDevice.device};
-                  });
+  generate_n(back_inserter(vulkanImageAvailableSemaphores), maxFramesInFlight,
+             [&vulkanDevice]() {
+               return vulkan_wrappers::Semaphore{vulkanDevice.device};
+             });
+  generate_n(back_inserter(vulkanRenderFinishedSemaphores), maxFramesInFlight,
+             [&vulkanDevice]() {
+               return vulkan_wrappers::Semaphore{vulkanDevice.device};
+             });
+  generate_n(back_inserter(vulkanInFlightFences), maxFramesInFlight,
+             [&vulkanDevice]() {
+               return vulkan_wrappers::Fence{vulkanDevice.device};
+             });
 
   std::vector<VkFence> imagesInFlight;
 
@@ -879,60 +878,58 @@ static void run(const std::string &vertexShaderCodePath,
       VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_ASPECT_DEPTH_BIT)};
 
   std::vector<vulkan_wrappers::Framebuffer> vulkanFrameBuffers;
-  std::transform(swapChainImageViews.begin(), swapChainImageViews.end(),
-                 std::back_inserter(vulkanFrameBuffers),
-                 [&vulkanDevice, vulkanPhysicalDevice, &vulkanSurface,
-                  &vulkanRenderPass, &vulkanColorImage, &vulkanDepthImage,
-                  &glfwWindow](const vulkan_wrappers::ImageView &imageView) {
-                   return vulkan_wrappers::Framebuffer{
-                       vulkanDevice.device,
-                       vulkanPhysicalDevice,
-                       vulkanSurface.surface,
-                       vulkanRenderPass.renderPass,
-                       {vulkanColorImage.view.view, vulkanDepthImage.view.view,
-                        imageView.view},
-                       glfwWindow.window};
-                 });
+  transform(swapChainImageViews.begin(), swapChainImageViews.end(),
+            back_inserter(vulkanFrameBuffers),
+            [&vulkanDevice, vulkanPhysicalDevice, &vulkanSurface,
+             &vulkanRenderPass, &vulkanColorImage, &vulkanDepthImage,
+             &glfwWindow](const vulkan_wrappers::ImageView &imageView) {
+              return vulkan_wrappers::Framebuffer{vulkanDevice.device,
+                                                  vulkanPhysicalDevice,
+                                                  vulkanSurface.surface,
+                                                  vulkanRenderPass.renderPass,
+                                                  {vulkanColorImage.view.view,
+                                                   vulkanDepthImage.view.view,
+                                                   imageView.view},
+                                                  glfwWindow.window};
+            });
 
   std::vector<VulkanBufferWithMemory> playerUniformBuffersWithMemory;
   std::vector<VulkanBufferWithMemory> worldUniformBuffersWithMemory;
 
-  std::generate_n(std::back_inserter(playerUniformBuffersWithMemory),
-                  swapChainImages.size(),
-                  [&vulkanDevice, vulkanPhysicalDevice]() {
-                    return uniformBufferWithMemory(vulkanDevice.device,
-                                                   vulkanPhysicalDevice);
-                  });
-  std::generate_n(std::back_inserter(worldUniformBuffersWithMemory),
-                  swapChainImages.size(),
-                  [&vulkanDevice, vulkanPhysicalDevice]() {
-                    return uniformBufferWithMemory(vulkanDevice.device,
-                                                   vulkanPhysicalDevice);
-                  });
+  generate_n(back_inserter(playerUniformBuffersWithMemory),
+             swapChainImages.size(), [&vulkanDevice, vulkanPhysicalDevice]() {
+               return uniformBufferWithMemory(vulkanDevice.device,
+                                              vulkanPhysicalDevice);
+             });
+  generate_n(back_inserter(worldUniformBuffersWithMemory),
+             swapChainImages.size(), [&vulkanDevice, vulkanPhysicalDevice]() {
+               return uniformBufferWithMemory(vulkanDevice.device,
+                                              vulkanPhysicalDevice);
+             });
 
   std::vector<VulkanDescriptor> playerTextureImageDescriptors;
-  std::transform(playerTextureImages.begin(), playerTextureImages.end(),
-                 std::back_inserter(playerTextureImageDescriptors),
-                 [&vulkanDevice, &vulkanTextureSampler,
-                  &vulkanDescriptorSetLayout, &swapChainImages,
-                  &playerUniformBuffersWithMemory](const VulkanImage &image) {
-                   return graphics::descriptor(
-                       vulkanDevice, image.view, vulkanTextureSampler,
-                       vulkanDescriptorSetLayout, swapChainImages,
-                       playerUniformBuffersWithMemory);
-                 });
+  transform(playerTextureImages.begin(), playerTextureImages.end(),
+            back_inserter(playerTextureImageDescriptors),
+            [&vulkanDevice, &vulkanTextureSampler, &vulkanDescriptorSetLayout,
+             &swapChainImages,
+             &playerUniformBuffersWithMemory](const VulkanImage &image) {
+              return graphics::descriptor(
+                  vulkanDevice, image.view, vulkanTextureSampler,
+                  vulkanDescriptorSetLayout, swapChainImages,
+                  playerUniformBuffersWithMemory);
+            });
 
   std::vector<VulkanDescriptor> worldTextureImageDescriptors;
-  std::transform(worldTextureImages.begin(), worldTextureImages.end(),
-                 std::back_inserter(worldTextureImageDescriptors),
-                 [&vulkanDevice, &vulkanTextureSampler,
-                  &vulkanDescriptorSetLayout, &swapChainImages,
-                  &worldUniformBuffersWithMemory](const VulkanImage &image) {
-                   return graphics::descriptor(
-                       vulkanDevice, image.view, vulkanTextureSampler,
-                       vulkanDescriptorSetLayout, swapChainImages,
-                       worldUniformBuffersWithMemory);
-                 });
+  transform(worldTextureImages.begin(), worldTextureImages.end(),
+            back_inserter(worldTextureImageDescriptors),
+            [&vulkanDevice, &vulkanTextureSampler, &vulkanDescriptorSetLayout,
+             &swapChainImages,
+             &worldUniformBuffersWithMemory](const VulkanImage &image) {
+              return graphics::descriptor(
+                  vulkanDevice, image.view, vulkanTextureSampler,
+                  vulkanDescriptorSetLayout, swapChainImages,
+                  worldUniformBuffersWithMemory);
+            });
 
   const vulkan_wrappers::CommandBuffers vulkanCommandBuffers{
       vulkanDevice.device, vulkanCommandPool.commandPool,
