@@ -8,6 +8,7 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/transform.hpp>
 
 #include <algorithm>
 #include <array>
@@ -664,11 +665,13 @@ static void onMouseButton(GLFWwindow *window, int button, int action,
 static void updateUniformBuffer(
     const vulkan_wrappers::Device &vulkanDevice,
     const vulkan_wrappers::DeviceMemory &vulkanUniformBuffersMemory,
-    const Camera &camera, glm::mat4 perspective, glm::vec3 modelOrigin) {
+    const Camera &camera, glm::mat4 perspective, glm::vec3 modelOrigin,
+    float scale = 1) {
   UniformBufferObject ubo{};
   perspective[1][1] *= -1;
-  ubo.mvp = perspective * viewMatrix(camera) *
-            glm::translate(glm::mat4(1.F), modelOrigin);
+  ubo.mvp =
+      perspective * viewMatrix(camera) *
+      glm::translate(glm::scale(glm::vec3{scale, scale, scale}), modelOrigin);
   copy(vulkanDevice.device, vulkanUniformBuffersMemory.memory, &ubo,
        sizeof(ubo));
 }
@@ -1029,8 +1032,8 @@ static void run(const std::string &vertexShaderCodePath,
         glm::perspective(glm::radians(45.F),
                          static_cast<float>(swapChainExtent.width) /
                              static_cast<float>(swapChainExtent.height),
-                         0.1F, 20.F),
-        glm::vec3{0.F, -3.F, -5.F});
+                         0.1F, 50.F),
+        glm::vec3{0.F, -0.F, -1.F}, 15.F);
 
     if (imagesInFlight[imageIndex] != VK_NULL_HANDLE)
       vkWaitForFences(vulkanDevice.device, 1, &imagesInFlight[imageIndex],
