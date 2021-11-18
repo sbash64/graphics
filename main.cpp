@@ -716,6 +716,19 @@ static void draw(const std::vector<Object> &objects,
                      0, 0);
   }
 }
+
+static auto uniformBufferWithMemory(VkDevice device,
+                                    VkPhysicalDevice physicalDevice)
+    -> VulkanBufferWithMemory {
+  VkDeviceSize bufferSize{sizeof(UniformBufferObject)};
+  vulkan_wrappers::Buffer buffer{device, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                 bufferSize};
+  auto memory{bufferMemory(device, physicalDevice, buffer.buffer,
+                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                               VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
+  return VulkanBufferWithMemory{std::move(buffer), std::move(memory)};
+}
+
 static void run(const std::string &vertexShaderCodePath,
                 const std::string &fragmentShaderCodePath,
                 const std::string &playerObjectPath,
@@ -875,28 +888,11 @@ static void run(const std::string &vertexShaderCodePath,
   std::vector<VulkanBufferWithMemory> playerUniformBuffersWithMemory;
   std::vector<VulkanBufferWithMemory> worldUniformBuffersWithMemory;
 
-  for (size_t i{0}; i < swapChainImages.size(); i++) {
-    VkDeviceSize bufferSize{sizeof(UniformBufferObject)};
-    vulkan_wrappers::Buffer buffer{
-        vulkanDevice.device, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, bufferSize};
-    auto memory{bufferMemory(vulkanDevice.device, vulkanPhysicalDevice,
-                             buffer.buffer,
-                             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                 VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
+  for (auto i{0U}; i < swapChainImages.size(); i++) {
     playerUniformBuffersWithMemory.push_back(
-        VulkanBufferWithMemory{std::move(buffer), std::move(memory)});
-  }
-
-  for (size_t i{0}; i < swapChainImages.size(); i++) {
-    VkDeviceSize bufferSize{sizeof(UniformBufferObject)};
-    vulkan_wrappers::Buffer buffer{
-        vulkanDevice.device, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, bufferSize};
-    auto memory{bufferMemory(vulkanDevice.device, vulkanPhysicalDevice,
-                             buffer.buffer,
-                             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                 VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
+        uniformBufferWithMemory(vulkanDevice.device, vulkanPhysicalDevice));
     worldUniformBuffersWithMemory.push_back(
-        VulkanBufferWithMemory{std::move(buffer), std::move(memory)});
+        uniformBufferWithMemory(vulkanDevice.device, vulkanPhysicalDevice));
   }
 
   std::vector<VulkanDescriptor> playerTextureImageDescriptors;
