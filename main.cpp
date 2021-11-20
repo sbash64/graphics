@@ -613,10 +613,15 @@ struct Camera {
   glm::vec3 position;
 };
 
+struct FixedPointVector3D {
+  int x;
+  int y;
+  int z;
+};
+
 struct GlfwCallback {
   Mouse mouse{};
   Camera camera;
-  glm::vec3 playerPosition;
   bool frameBufferResized{};
 };
 
@@ -730,12 +735,12 @@ static auto uniformBufferWithMemory(VkDevice device,
   return VulkanBufferWithMemory{std::move(buffer), std::move(memory)};
 }
 
-static void key_callback(GLFWwindow *window, int key, int scancode, int action,
-                         int mods) {
-  auto *const glfwCallback =
-      static_cast<GlfwCallback *>(glfwGetWindowUserPointer(window));
-  if (key == GLFW_KEY_RIGHT && action == GLFW_PRESS)
-    glfwCallback->playerPosition += glm::vec3{0.1F, 0.F, 0.F};
+constexpr auto clamp(int velocity, int limit) -> int {
+  return std::clamp(velocity, -limit, limit);
+}
+
+constexpr auto withFriction(int velocity, int friction) -> int {
+  return (velocity < 0 ? -1 : 1) * std::max(0, std::abs(velocity) - friction);
 }
 
 static void run(const std::string &vertexShaderCodePath,
@@ -753,7 +758,6 @@ static void run(const std::string &vertexShaderCodePath,
   glfwSetFramebufferSizeCallback(glfwWindow.window, onFramebufferResize);
   glfwSetCursorPosCallback(glfwWindow.window, onCursorPositionChanged);
   glfwSetMouseButtonCallback(glfwWindow.window, onMouseButton);
-  glfwSetKeyCallback(glfwWindow.window, key_callback);
 
   const vulkan_wrappers::Instance vulkanInstance;
   const vulkan_wrappers::Surface vulkanSurface{vulkanInstance.instance,
@@ -873,7 +877,7 @@ static void run(const std::string &vertexShaderCodePath,
 
   glfwCallback.camera.rotationAnglesDegrees = {0.F, 0.F, 0.F};
   glfwCallback.camera.position = glm::vec3{0.F, 0.F, -12.F};
-  glfwCallback.playerPosition = glm::vec3{0.F, -3.F, 0.F};
+  FixedPointVector3D playerDisplacement{0, -30, 0};
 
   const auto vulkanColorImage{frameImage(
       vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface,
@@ -994,12 +998,36 @@ static void run(const std::string &vertexShaderCodePath,
       vulkanPhysicalDevice, vulkanSurface.surface, glfwWindow.window)};
   auto recreatingSwapChain{false};
   auto currentFrame{0U};
+  FixedPointVector3D playerVelocity{};
   while (!recreatingSwapChain) {
     if (glfwWindowShouldClose(glfwWindow.window) != 0) {
       break;
     }
 
     glfwPollEvents();
+    {
+      constexpr auto playerRunAcceleration{2};
+      if (glfwGetKey(glfwWindow.window, GLFW_KEY_A) == GLFW_PRESS) {
+        playerVelocity.x += playerRunAcceleration;
+      }
+      if (glfwGetKey(glfwWindow.window, GLFW_KEY_D) == GLFW_PRESS) {
+        playerVelocity.x -= playerRunAcceleration;
+      }
+      if (glfwGetKey(glfwWindow.window, GLFW_KEY_W) == GLFW_PRESS) {
+        playerVelocity.z += playerRunAcceleration;
+      }
+      if (glfwGetKey(glfwWindow.window, GLFW_KEY_S) == GLFW_PRESS) {
+        playerVelocity.z -= playerRunAcceleration;
+      }
+      constexpr auto playerMaxGroundSpeed{4};
+      constexpr auto groundFriction{1};
+      playerVelocity.x = withFriction(
+          clamp(playerVelocity.x, playerMaxGroundSpeed), groundFriction);
+      playerVelocity.z = withFriction(
+          clamp(playerVelocity.z, playerMaxGroundSpeed), groundFriction);
+      playerDisplacement.x += playerVelocity.x;
+      playerDisplacement.z += playerVelocity.z;
+    }
     vkWaitForFences(vulkanDevice.device, 1,
                     &vulkanInFlightFences[currentFrame].fence, VK_TRUE,
                     UINT64_MAX);
@@ -1025,9 +1053,12 @@ static void run(const std::string &vertexShaderCodePath,
                          static_cast<float>(swapChainExtent.width) /
                              static_cast<float>(swapChainExtent.height),
                          0.1F, 40.F);
-    updateUniformBuffer(
-        vulkanDevice, playerUniformBuffersWithMemory[imageIndex].memory,
-        glfwCallback.camera, projection, glfwCallback.playerPosition);
+    const glm::vec3 playerPosition{playerDisplacement.x / 10.F,
+                                   playerDisplacement.y / 10.F,
+                                   playerDisplacement.z / 10.F};
+    updateUniformBuffer(vulkanDevice,
+                        playerUniformBuffersWithMemory[imageIndex].memory,
+                        glfwCallback.camera, projection, playerPosition);
 
     updateUniformBuffer(vulkanDevice,
                         worldUniformBuffersWithMemory[imageIndex].memory,
