@@ -616,6 +616,7 @@ struct Camera {
 struct GlfwCallback {
   Mouse mouse{};
   Camera camera;
+  glm::vec3 playerPosition;
   bool frameBufferResized{};
 };
 
@@ -729,6 +730,14 @@ static auto uniformBufferWithMemory(VkDevice device,
   return VulkanBufferWithMemory{std::move(buffer), std::move(memory)};
 }
 
+static void key_callback(GLFWwindow *window, int key, int scancode, int action,
+                         int mods) {
+  auto *const glfwCallback =
+      static_cast<GlfwCallback *>(glfwGetWindowUserPointer(window));
+  if (key == GLFW_KEY_RIGHT && action == GLFW_PRESS)
+    glfwCallback->playerPosition += glm::vec3{0.1F, 0.F, 0.F};
+}
+
 static void run(const std::string &vertexShaderCodePath,
                 const std::string &fragmentShaderCodePath,
                 const std::string &playerObjectPath,
@@ -744,6 +753,7 @@ static void run(const std::string &vertexShaderCodePath,
   glfwSetFramebufferSizeCallback(glfwWindow.window, onFramebufferResize);
   glfwSetCursorPosCallback(glfwWindow.window, onCursorPositionChanged);
   glfwSetMouseButtonCallback(glfwWindow.window, onMouseButton);
+  glfwSetKeyCallback(glfwWindow.window, key_callback);
 
   const vulkan_wrappers::Instance vulkanInstance;
   const vulkan_wrappers::Surface vulkanSurface{vulkanInstance.instance,
@@ -863,6 +873,7 @@ static void run(const std::string &vertexShaderCodePath,
 
   glfwCallback.camera.rotationAnglesDegrees = {0.F, 0.F, 0.F};
   glfwCallback.camera.position = glm::vec3{0.F, 0.F, -12.F};
+  glfwCallback.playerPosition = glm::vec3{0.F, -3.F, 0.F};
 
   const auto vulkanColorImage{frameImage(
       vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface,
@@ -1016,7 +1027,7 @@ static void run(const std::string &vertexShaderCodePath,
                          0.1F, 40.F);
     updateUniformBuffer(
         vulkanDevice, playerUniformBuffersWithMemory[imageIndex].memory,
-        glfwCallback.camera, projection, glm::vec3{0.F, -3.F, 0.F});
+        glfwCallback.camera, projection, glfwCallback.playerPosition);
 
     updateUniformBuffer(vulkanDevice,
                         worldUniformBuffersWithMemory[imageIndex].memory,
