@@ -821,6 +821,14 @@ static auto drawables(VkDevice device, VkPhysicalDevice physicalDevice,
   return drawables;
 }
 
+static auto semaphores(VkDevice device, int n)
+    -> std::vector<vulkan_wrappers::Semaphore> {
+  std::vector<vulkan_wrappers::Semaphore> semaphores;
+  generate_n(back_inserter(semaphores), n,
+             [device]() { return vulkan_wrappers::Semaphore{device}; });
+  return semaphores;
+}
+
 static void run(const std::string &vertexShaderCodePath,
                 const std::string &fragmentShaderCodePath,
                 const std::string &playerObjectPath,
@@ -887,18 +895,12 @@ static void run(const std::string &vertexShaderCodePath,
 
   const auto maxFramesInFlight{2};
 
-  std::vector<vulkan_wrappers::Semaphore> vulkanImageAvailableSemaphores;
-  std::vector<vulkan_wrappers::Semaphore> vulkanRenderFinishedSemaphores;
-  std::vector<vulkan_wrappers::Fence> vulkanInFlightFences;
+  const auto vulkanImageAvailableSemaphores{
+      semaphores(vulkanDevice.device, maxFramesInFlight)};
+  const auto vulkanRenderFinishedSemaphores{
+      semaphores(vulkanDevice.device, maxFramesInFlight)};
 
-  generate_n(back_inserter(vulkanImageAvailableSemaphores), maxFramesInFlight,
-             [&vulkanDevice]() {
-               return vulkan_wrappers::Semaphore{vulkanDevice.device};
-             });
-  generate_n(back_inserter(vulkanRenderFinishedSemaphores), maxFramesInFlight,
-             [&vulkanDevice]() {
-               return vulkan_wrappers::Semaphore{vulkanDevice.device};
-             });
+  std::vector<vulkan_wrappers::Fence> vulkanInFlightFences;
   generate_n(back_inserter(vulkanInFlightFences), maxFramesInFlight,
              [&vulkanDevice]() {
                return vulkan_wrappers::Fence{vulkanDevice.device};
