@@ -921,69 +921,22 @@ static void run(const std::string &vertexShaderCodePath,
               << "\"\n";
   }
 
-  VkQueue graphicsQueue{nullptr};
-  vkGetDeviceQueue(vulkanDevice.device,
-                   graphicsSupportingQueueFamilyIndex(vulkanPhysicalDevice), 0,
-                   &graphicsQueue);
-  VkQueue presentQueue{nullptr};
-  vkGetDeviceQueue(vulkanDevice.device,
-                   presentSupportingQueueFamilyIndex(vulkanPhysicalDevice,
-                                                     vulkanSurface.surface),
-                   0, &presentQueue);
-
-  const vulkan_wrappers::CommandPool vulkanCommandPool{vulkanDevice.device,
-                                                       vulkanPhysicalDevice};
-
-  const auto playerTextureImages{textureImages(
-      vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
-      graphicsQueue, playerTextureImagePaths)};
-
-  const auto worldTextureImages{textureImages(
-      vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
-      graphicsQueue, worldTextureImagePaths)};
-
-  const vulkan_wrappers::Sampler vulkanTextureSampler{vulkanDevice.device,
-                                                      vulkanPhysicalDevice, 13};
-
-  const auto playerObjects{readObjects(playerObjectPath)};
-  const auto playerDrawables{
-      drawables(vulkanDevice.device, vulkanPhysicalDevice,
-                vulkanCommandPool.commandPool, graphicsQueue, playerObjects)};
-
-  const auto worldObjects{readObjects(worldObjectPath)};
-  const auto worldDrawables{drawables(vulkanDevice.device, vulkanPhysicalDevice,
-                                      vulkanCommandPool.commandPool,
-                                      graphicsQueue, worldObjects)};
-
-  const auto maxFramesInFlight{2};
-
-  const auto vulkanImageAvailableSemaphores{
-      semaphores(vulkanDevice.device, maxFramesInFlight)};
-  const auto vulkanRenderFinishedSemaphores{
-      semaphores(vulkanDevice.device, maxFramesInFlight)};
-
-  std::vector<vulkan_wrappers::Fence> vulkanInFlightFences;
-  generate_n(back_inserter(vulkanInFlightFences), maxFramesInFlight,
-             [&vulkanDevice]() {
-               return vulkan_wrappers::Fence{vulkanDevice.device};
-             });
-
-  std::vector<VkFence> imagesInFlight;
-
-  const vulkan_wrappers::DescriptorSetLayout vulkanDescriptorSetLayout{
-      vulkanDevice.device};
-
   const vulkan_wrappers::Swapchain vulkanSwapchain{
       vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface,
       glfwWindow.window};
+
   const auto swapChainImages{graphics::swapChainImages(
       vulkanDevice.device, vulkanSwapchain.swapChain)};
+
   const auto swapChainImageViews{
       graphics::swapChainImageViews(vulkanDevice.device, vulkanPhysicalDevice,
                                     vulkanSurface.surface, swapChainImages)};
 
   const vulkan_wrappers::RenderPass vulkanRenderPass{
       vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface};
+
+  const vulkan_wrappers::DescriptorSetLayout vulkanDescriptorSetLayout{
+      vulkanDevice.device};
 
   const vulkan_wrappers::PipelineLayout vulkanPipelineLayout{
       vulkanDevice.device, vulkanDescriptorSetLayout.descriptorSetLayout};
@@ -1032,10 +985,27 @@ static void run(const std::string &vertexShaderCodePath,
   const auto worldUniformBuffersWithMemory{uniformBuffersWithMemory(
       vulkanDevice.device, vulkanPhysicalDevice, swapChainImages)};
 
+  const vulkan_wrappers::Sampler vulkanTextureSampler{vulkanDevice.device,
+                                                      vulkanPhysicalDevice, 13};
+
+  VkQueue graphicsQueue{nullptr};
+  vkGetDeviceQueue(vulkanDevice.device,
+                   graphicsSupportingQueueFamilyIndex(vulkanPhysicalDevice), 0,
+                   &graphicsQueue);
+
+  const vulkan_wrappers::CommandPool vulkanCommandPool{vulkanDevice.device,
+                                                       vulkanPhysicalDevice};
+
+  const auto playerTextureImages{textureImages(
+      vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
+      graphicsQueue, playerTextureImagePaths)};
   const auto playerTextureImageDescriptors{descriptors(
       vulkanDevice, vulkanTextureSampler, vulkanDescriptorSetLayout,
       swapChainImages, playerUniformBuffersWithMemory, playerTextureImages)};
 
+  const auto worldTextureImages{textureImages(
+      vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
+      graphicsQueue, worldTextureImagePaths)};
   const auto worldTextureImageDescriptors{descriptors(
       vulkanDevice, vulkanTextureSampler, vulkanDescriptorSetLayout,
       swapChainImages, worldUniformBuffersWithMemory, worldTextureImages)};
@@ -1043,6 +1013,16 @@ static void run(const std::string &vertexShaderCodePath,
   const vulkan_wrappers::CommandBuffers vulkanCommandBuffers{
       vulkanDevice.device, vulkanCommandPool.commandPool,
       vulkanFrameBuffers.size()};
+
+  const auto playerObjects{readObjects(playerObjectPath)};
+  const auto playerDrawables{
+      drawables(vulkanDevice.device, vulkanPhysicalDevice,
+                vulkanCommandPool.commandPool, graphicsQueue, playerObjects)};
+
+  const auto worldObjects{readObjects(worldObjectPath)};
+  const auto worldDrawables{drawables(vulkanDevice.device, vulkanPhysicalDevice,
+                                      vulkanCommandPool.commandPool,
+                                      graphicsQueue, worldObjects)};
 
   for (auto i{0U}; i < vulkanCommandBuffers.commandBuffers.size(); i++) {
     beginWithThrow(vulkanCommandBuffers.commandBuffers[i]);
@@ -1066,9 +1046,30 @@ static void run(const std::string &vertexShaderCodePath,
         "failed to record command buffer!");
   }
 
-  imagesInFlight.resize(swapChainImages.size(), VK_NULL_HANDLE);
+  VkQueue presentQueue{nullptr};
+  vkGetDeviceQueue(vulkanDevice.device,
+                   presentSupportingQueueFamilyIndex(vulkanPhysicalDevice,
+                                                     vulkanSurface.surface),
+                   0, &presentQueue);
+
+  const auto maxFramesInFlight{2};
+  std::vector<vulkan_wrappers::Fence> vulkanInFlightFences;
+  generate_n(back_inserter(vulkanInFlightFences), maxFramesInFlight,
+             [&vulkanDevice]() {
+               return vulkan_wrappers::Fence{vulkanDevice.device};
+             });
+
+  const auto vulkanImageAvailableSemaphores{
+      semaphores(vulkanDevice.device, maxFramesInFlight)};
+
+  const auto vulkanRenderFinishedSemaphores{
+      semaphores(vulkanDevice.device, maxFramesInFlight)};
+
+  std::vector<VkFence> imagesInFlight(swapChainImages.size(), VK_NULL_HANDLE);
+
   const auto swapChainExtent{swapExtent(
       vulkanPhysicalDevice, vulkanSurface.surface, glfwWindow.window)};
+
   auto recreatingSwapChain{false};
   auto currentFrame{0U};
   FixedPointVector3D playerVelocity{};
