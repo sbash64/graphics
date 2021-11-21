@@ -921,6 +921,10 @@ static void run(const std::string &vertexShaderCodePath,
               << "\"\n";
   }
 
+  glfwCallback.camera.rotationAnglesDegrees = {0.F, 0.F, 0.F};
+  glfwCallback.camera.position = glm::vec3{0.F, 0.F, -12.F};
+  FixedPointVector3D playerDisplacement{0, -30, 0};
+
   const vulkan_wrappers::Swapchain vulkanSwapchain{
       vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface,
       glfwWindow.window};
@@ -931,25 +935,6 @@ static void run(const std::string &vertexShaderCodePath,
   const auto swapChainImageViews{
       graphics::swapChainImageViews(vulkanDevice.device, vulkanPhysicalDevice,
                                     vulkanSurface.surface, swapChainImages)};
-
-  const vulkan_wrappers::RenderPass vulkanRenderPass{
-      vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface};
-
-  const vulkan_wrappers::DescriptorSetLayout vulkanDescriptorSetLayout{
-      vulkanDevice.device};
-
-  const vulkan_wrappers::PipelineLayout vulkanPipelineLayout{
-      vulkanDevice.device, vulkanDescriptorSetLayout.descriptorSetLayout};
-
-  const vulkan_wrappers::Pipeline vulkanPipeline{
-      vulkanDevice.device,         vulkanPhysicalDevice,
-      vulkanSurface.surface,       vulkanPipelineLayout.pipelineLayout,
-      vulkanRenderPass.renderPass, vertexShaderCodePath,
-      fragmentShaderCodePath,      glfwWindow.window};
-
-  glfwCallback.camera.rotationAnglesDegrees = {0.F, 0.F, 0.F};
-  glfwCallback.camera.position = glm::vec3{0.F, 0.F, -12.F};
-  FixedPointVector3D playerDisplacement{0, -30, 0};
 
   const auto vulkanColorImage{frameImage(
       vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface,
@@ -963,6 +948,9 @@ static void run(const std::string &vertexShaderCodePath,
       vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface,
       glfwWindow.window, findDepthFormat(vulkanPhysicalDevice),
       VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_ASPECT_DEPTH_BIT)};
+
+  const vulkan_wrappers::RenderPass vulkanRenderPass{
+      vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface};
 
   std::vector<vulkan_wrappers::Framebuffer> vulkanFrameBuffers;
   transform(swapChainImageViews.begin(), swapChainImageViews.end(),
@@ -996,6 +984,9 @@ static void run(const std::string &vertexShaderCodePath,
   const vulkan_wrappers::CommandPool vulkanCommandPool{vulkanDevice.device,
                                                        vulkanPhysicalDevice};
 
+  const vulkan_wrappers::DescriptorSetLayout vulkanDescriptorSetLayout{
+      vulkanDevice.device};
+
   const auto playerTextureImages{textureImages(
       vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
       graphicsQueue, playerTextureImagePaths)};
@@ -1013,6 +1004,15 @@ static void run(const std::string &vertexShaderCodePath,
   const vulkan_wrappers::CommandBuffers vulkanCommandBuffers{
       vulkanDevice.device, vulkanCommandPool.commandPool,
       vulkanFrameBuffers.size()};
+
+  const vulkan_wrappers::PipelineLayout vulkanPipelineLayout{
+      vulkanDevice.device, vulkanDescriptorSetLayout.descriptorSetLayout};
+
+  const vulkan_wrappers::Pipeline vulkanPipeline{
+      vulkanDevice.device,         vulkanPhysicalDevice,
+      vulkanSurface.surface,       vulkanPipelineLayout.pipelineLayout,
+      vulkanRenderPass.renderPass, vertexShaderCodePath,
+      fragmentShaderCodePath,      glfwWindow.window};
 
   const auto playerObjects{readObjects(playerObjectPath)};
   const auto playerDrawables{
