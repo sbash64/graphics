@@ -807,6 +807,20 @@ static auto textureImages(VkDevice device, VkPhysicalDevice physicalDevice,
   return textureImages;
 }
 
+static auto drawables(VkDevice device, VkPhysicalDevice physicalDevice,
+                      VkCommandPool commandPool, VkQueue graphicsQueue,
+                      const std::vector<Object> &objects)
+    -> std::vector<VulkanDrawable> {
+  std::vector<VulkanDrawable> drawables;
+  transform(objects.begin(), objects.end(), back_inserter(drawables),
+            [device, physicalDevice, commandPool,
+             graphicsQueue](const Object &object) {
+              return drawable(device, physicalDevice, commandPool,
+                              graphicsQueue, object);
+            });
+  return drawables;
+}
+
 static void run(const std::string &vertexShaderCodePath,
                 const std::string &fragmentShaderCodePath,
                 const std::string &playerObjectPath,
@@ -862,25 +876,14 @@ static void run(const std::string &vertexShaderCodePath,
                                                       vulkanPhysicalDevice, 13};
 
   const auto playerObjects{readObjects(playerObjectPath)};
-  std::vector<VulkanDrawable> playerDrawables;
-  transform(playerObjects.begin(), playerObjects.end(),
-            back_inserter(playerDrawables),
-            [&vulkanDevice, vulkanPhysicalDevice, &vulkanCommandPool,
-             graphicsQueue](const Object &object) {
-              return drawable(vulkanDevice.device, vulkanPhysicalDevice,
-                              vulkanCommandPool.commandPool, graphicsQueue,
-                              object);
-            });
+  const auto playerDrawables{
+      drawables(vulkanDevice.device, vulkanPhysicalDevice,
+                vulkanCommandPool.commandPool, graphicsQueue, playerObjects)};
 
   const auto worldObjects{readObjects(worldObjectPath)};
-  std::vector<VulkanDrawable> worldDrawables;
-  transform(
-      worldObjects.begin(), worldObjects.end(), back_inserter(worldDrawables),
-      [&vulkanDevice, vulkanPhysicalDevice, &vulkanCommandPool,
-       graphicsQueue](const Object &object) {
-        return drawable(vulkanDevice.device, vulkanPhysicalDevice,
-                        vulkanCommandPool.commandPool, graphicsQueue, object);
-      });
+  const auto worldDrawables{drawables(vulkanDevice.device, vulkanPhysicalDevice,
+                                      vulkanCommandPool.commandPool,
+                                      graphicsQueue, worldObjects)};
 
   const auto maxFramesInFlight{2};
 
