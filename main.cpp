@@ -841,6 +841,27 @@ uniformBuffersWithMemory(VkDevice device, VkPhysicalDevice physicalDevice,
   return uniformBuffersWithMemory;
 }
 
+static auto descriptors(
+    const vulkan_wrappers::Device &vulkanDevice,
+    const vulkan_wrappers::Sampler &vulkanTextureSampler,
+    const vulkan_wrappers::DescriptorSetLayout &vulkanDescriptorSetLayout,
+    const std::vector<VkImage> &swapChainImages,
+    const std::vector<VulkanBufferWithMemory> &vulkanUniformBuffers,
+    const std::vector<VulkanImage> &playerTextureImages)
+    -> std::vector<VulkanDescriptor> {
+  std::vector<VulkanDescriptor> descriptors;
+  transform(
+      playerTextureImages.begin(), playerTextureImages.end(),
+      back_inserter(descriptors),
+      [&vulkanDevice, &vulkanTextureSampler, &vulkanDescriptorSetLayout,
+       &swapChainImages, &vulkanUniformBuffers](const VulkanImage &image) {
+        return graphics::descriptor(
+            vulkanDevice, image.view, vulkanTextureSampler,
+            vulkanDescriptorSetLayout, swapChainImages, vulkanUniformBuffers);
+      });
+  return descriptors;
+}
+
 static void run(const std::string &vertexShaderCodePath,
                 const std::string &fragmentShaderCodePath,
                 const std::string &playerObjectPath,
@@ -982,29 +1003,13 @@ static void run(const std::string &vertexShaderCodePath,
   const auto worldUniformBuffersWithMemory{uniformBuffersWithMemory(
       vulkanDevice.device, vulkanPhysicalDevice, swapChainImages)};
 
-  std::vector<VulkanDescriptor> playerTextureImageDescriptors;
-  transform(playerTextureImages.begin(), playerTextureImages.end(),
-            back_inserter(playerTextureImageDescriptors),
-            [&vulkanDevice, &vulkanTextureSampler, &vulkanDescriptorSetLayout,
-             &swapChainImages,
-             &playerUniformBuffersWithMemory](const VulkanImage &image) {
-              return graphics::descriptor(
-                  vulkanDevice, image.view, vulkanTextureSampler,
-                  vulkanDescriptorSetLayout, swapChainImages,
-                  playerUniformBuffersWithMemory);
-            });
+  const auto playerTextureImageDescriptors{descriptors(
+      vulkanDevice, vulkanTextureSampler, vulkanDescriptorSetLayout,
+      swapChainImages, playerUniformBuffersWithMemory, playerTextureImages)};
 
-  std::vector<VulkanDescriptor> worldTextureImageDescriptors;
-  transform(worldTextureImages.begin(), worldTextureImages.end(),
-            back_inserter(worldTextureImageDescriptors),
-            [&vulkanDevice, &vulkanTextureSampler, &vulkanDescriptorSetLayout,
-             &swapChainImages,
-             &worldUniformBuffersWithMemory](const VulkanImage &image) {
-              return graphics::descriptor(
-                  vulkanDevice, image.view, vulkanTextureSampler,
-                  vulkanDescriptorSetLayout, swapChainImages,
-                  worldUniformBuffersWithMemory);
-            });
+  const auto worldTextureImageDescriptors{descriptors(
+      vulkanDevice, vulkanTextureSampler, vulkanDescriptorSetLayout,
+      swapChainImages, worldUniformBuffersWithMemory, worldTextureImages)};
 
   const vulkan_wrappers::CommandBuffers vulkanCommandBuffers{
       vulkanDevice.device, vulkanCommandPool.commandPool,
