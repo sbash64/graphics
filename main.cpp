@@ -745,6 +745,53 @@ constexpr auto withFriction(int velocity, int friction) -> int {
 
 enum class JumpState { grounded, started, released };
 
+struct RationalNumber {
+  int numerator;
+  int denominator;
+};
+
+constexpr auto operator+=(RationalNumber &a, RationalNumber b)
+    -> RationalNumber & {
+  const auto smallerDenominator{std::min(a.denominator, b.denominator)};
+  const auto largerDenominator{std::max(a.denominator, b.denominator)};
+  auto commonDenominator{smallerDenominator};
+  auto candidateDenominator{largerDenominator};
+  while (true) {
+    while (commonDenominator <
+           std::min(std::numeric_limits<int>::max() - smallerDenominator,
+                    candidateDenominator))
+      commonDenominator += smallerDenominator;
+    if (commonDenominator != candidateDenominator) {
+      if (candidateDenominator <
+          std::numeric_limits<int>::max() - largerDenominator)
+        candidateDenominator += largerDenominator;
+      else
+        return a;
+    } else {
+      a.numerator = a.numerator * commonDenominator / a.denominator +
+                    b.numerator * commonDenominator / b.denominator;
+      a.denominator = commonDenominator;
+      return a;
+    }
+  }
+}
+
+constexpr auto operator+=(RationalNumber &a, int b) -> RationalNumber {
+  a.numerator += a.denominator * b;
+  return a;
+}
+
+constexpr auto absoluteValue(int a) -> int { return a < 0 ? -a : a; }
+
+constexpr auto round(RationalNumber a) -> int {
+  const auto division{a.numerator / a.denominator};
+  if (absoluteValue(a.numerator) % a.denominator <
+      (absoluteValue(a.denominator) + 1) / 2)
+    return division;
+  return ((a.numerator < 0) ^ (a.denominator < 0)) != 0 ? division - 1
+                                                        : division + 1;
+}
+
 static void run(const std::string &vertexShaderCodePath,
                 const std::string &fragmentShaderCodePath,
                 const std::string &playerObjectPath,
@@ -1001,6 +1048,7 @@ static void run(const std::string &vertexShaderCodePath,
   auto recreatingSwapChain{false};
   auto currentFrame{0U};
   FixedPointVector3D playerVelocity{};
+  RationalNumber verticalVelocity{0, 1};
   auto jumpState{JumpState::grounded};
   while (!recreatingSwapChain) {
     if (glfwWindowShouldClose(glfwWindow.window) != 0) {
@@ -1010,8 +1058,8 @@ static void run(const std::string &vertexShaderCodePath,
     glfwPollEvents();
     {
       constexpr auto playerRunAcceleration{2};
-      constexpr auto playerJumpAcceleration{10};
-      constexpr auto gravity{-1};
+      constexpr auto playerJumpAcceleration{6};
+      const RationalNumber gravity{-1, 4};
       if (glfwGetKey(glfwWindow.window, GLFW_KEY_A) == GLFW_PRESS) {
         playerVelocity.x += playerRunAcceleration;
       }
@@ -1027,14 +1075,14 @@ static void run(const std::string &vertexShaderCodePath,
       if (glfwGetKey(glfwWindow.window, GLFW_KEY_SPACE) == GLFW_PRESS &&
           jumpState == JumpState::grounded) {
         jumpState = JumpState::started;
-        playerVelocity.y += playerJumpAcceleration;
+        verticalVelocity += playerJumpAcceleration;
       }
-      playerVelocity.y += gravity;
+      verticalVelocity += gravity;
       if (glfwGetKey(glfwWindow.window, GLFW_KEY_SPACE) != GLFW_PRESS &&
           jumpState == JumpState::started) {
         jumpState = JumpState::released;
-        if (playerVelocity.y > 0)
-          playerVelocity.y = 0;
+        if (verticalVelocity.numerator > 0)
+          verticalVelocity = {0, 1};
       }
       constexpr auto playerMaxGroundSpeed{4};
       constexpr auto groundFriction{1};
@@ -1044,11 +1092,11 @@ static void run(const std::string &vertexShaderCodePath,
           clamp(playerVelocity.z, playerMaxGroundSpeed), groundFriction);
       playerDisplacement.x += playerVelocity.x;
       playerDisplacement.z += playerVelocity.z;
-      playerDisplacement.y += playerVelocity.y;
+      playerDisplacement.y += round(verticalVelocity);
       if (playerDisplacement.y < -30) {
         jumpState = JumpState::grounded;
         playerDisplacement.y = -30;
-        playerVelocity.y = 0;
+        verticalVelocity = {0, 1};
       }
     }
     vkWaitForFences(vulkanDevice.device, 1,
