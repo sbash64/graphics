@@ -862,6 +862,35 @@ static auto descriptors(
   return descriptors;
 }
 
+static void begin(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface,
+                  VkFramebuffer framebuffer, VkCommandBuffer commandBuffer,
+                  GLFWwindow *window, VkRenderPass renderPass) {
+  VkRenderPassBeginInfo renderPassInfo{};
+  renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+  renderPassInfo.renderPass = renderPass;
+  renderPassInfo.framebuffer = framebuffer;
+  renderPassInfo.renderArea.offset = {0, 0};
+  renderPassInfo.renderArea.extent =
+      swapExtent(physicalDevice, surface, window);
+
+  std::array<VkClearValue, 2> clearValues{};
+  clearValues[0].color = {{0.F, 0.F, 0.F, 1.F}};
+  clearValues[1].depthStencil = {1.F, 0};
+  renderPassInfo.clearValueCount = clearValues.size();
+  renderPassInfo.pClearValues = clearValues.data();
+
+  vkCmdBeginRenderPass(commandBuffer, &renderPassInfo,
+                       VK_SUBPASS_CONTENTS_INLINE);
+}
+
+static void beginWithThrow(VkCommandBuffer commandBuffer) {
+  VkCommandBufferBeginInfo beginInfo{};
+  beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+  throwOnError(
+      [&]() { return vkBeginCommandBuffer(commandBuffer, &beginInfo); },
+      "failed to begin recording command buffer!");
+}
+
 static void run(const std::string &vertexShaderCodePath,
                 const std::string &fragmentShaderCodePath,
                 const std::string &playerObjectPath,
@@ -1016,31 +1045,11 @@ static void run(const std::string &vertexShaderCodePath,
       vulkanFrameBuffers.size()};
 
   for (auto i{0U}; i < vulkanCommandBuffers.commandBuffers.size(); i++) {
-    VkCommandBufferBeginInfo beginInfo{};
-    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    throwOnError(
-        [&]() {
-          return vkBeginCommandBuffer(vulkanCommandBuffers.commandBuffers[i],
-                                      &beginInfo);
-        },
-        "failed to begin recording command buffer!");
-
-    VkRenderPassBeginInfo renderPassInfo{};
-    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    renderPassInfo.renderPass = vulkanRenderPass.renderPass;
-    renderPassInfo.framebuffer = vulkanFrameBuffers.at(i).framebuffer;
-    renderPassInfo.renderArea.offset = {0, 0};
-    renderPassInfo.renderArea.extent = swapExtent(
-        vulkanPhysicalDevice, vulkanSurface.surface, glfwWindow.window);
-
-    std::array<VkClearValue, 2> clearValues{};
-    clearValues[0].color = {{0.F, 0.F, 0.F, 1.F}};
-    clearValues[1].depthStencil = {1.F, 0};
-    renderPassInfo.clearValueCount = clearValues.size();
-    renderPassInfo.pClearValues = clearValues.data();
-
-    vkCmdBeginRenderPass(vulkanCommandBuffers.commandBuffers[i],
-                         &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+    beginWithThrow(vulkanCommandBuffers.commandBuffers[i]);
+    begin(vulkanPhysicalDevice, vulkanSurface.surface,
+          vulkanFrameBuffers.at(i).framebuffer,
+          vulkanCommandBuffers.commandBuffers[i], glfwWindow.window,
+          vulkanRenderPass.renderPass);
     vkCmdBindPipeline(vulkanCommandBuffers.commandBuffers[i],
                       VK_PIPELINE_BIND_POINT_GRAPHICS, vulkanPipeline.pipeline);
     draw(playerObjects, playerDrawables, vulkanPipelineLayout,
@@ -1049,7 +1058,6 @@ static void run(const std::string &vertexShaderCodePath,
     draw(worldObjects, worldDrawables, vulkanPipelineLayout,
          worldTextureImageDescriptors, vulkanCommandBuffers.commandBuffers[i],
          i);
-
     vkCmdEndRenderPass(vulkanCommandBuffers.commandBuffers[i]);
     throwOnError(
         [&]() {
