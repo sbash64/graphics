@@ -829,6 +829,18 @@ static auto semaphores(VkDevice device, int n)
   return semaphores;
 }
 
+static auto
+uniformBuffersWithMemory(VkDevice device, VkPhysicalDevice physicalDevice,
+                         const std::vector<VkImage> &swapChainImages)
+    -> std::vector<VulkanBufferWithMemory> {
+  std::vector<VulkanBufferWithMemory> uniformBuffersWithMemory;
+  generate_n(back_inserter(uniformBuffersWithMemory), swapChainImages.size(),
+             [device, physicalDevice]() {
+               return uniformBufferWithMemory(device, physicalDevice);
+             });
+  return uniformBuffersWithMemory;
+}
+
 static void run(const std::string &vertexShaderCodePath,
                 const std::string &fragmentShaderCodePath,
                 const std::string &playerObjectPath,
@@ -965,19 +977,10 @@ static void run(const std::string &vertexShaderCodePath,
                                                   glfwWindow.window};
             });
 
-  std::vector<VulkanBufferWithMemory> playerUniformBuffersWithMemory;
-  std::vector<VulkanBufferWithMemory> worldUniformBuffersWithMemory;
-
-  generate_n(back_inserter(playerUniformBuffersWithMemory),
-             swapChainImages.size(), [&vulkanDevice, vulkanPhysicalDevice]() {
-               return uniformBufferWithMemory(vulkanDevice.device,
-                                              vulkanPhysicalDevice);
-             });
-  generate_n(back_inserter(worldUniformBuffersWithMemory),
-             swapChainImages.size(), [&vulkanDevice, vulkanPhysicalDevice]() {
-               return uniformBufferWithMemory(vulkanDevice.device,
-                                              vulkanPhysicalDevice);
-             });
+  const auto playerUniformBuffersWithMemory{uniformBuffersWithMemory(
+      vulkanDevice.device, vulkanPhysicalDevice, swapChainImages)};
+  const auto worldUniformBuffersWithMemory{uniformBuffersWithMemory(
+      vulkanDevice.device, vulkanPhysicalDevice, swapChainImages)};
 
   std::vector<VulkanDescriptor> playerTextureImageDescriptors;
   transform(playerTextureImages.begin(), playerTextureImages.end(),
