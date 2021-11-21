@@ -792,6 +792,21 @@ constexpr auto round(RationalNumber a) -> int {
                                                         : division + 1;
 }
 
+static auto textureImages(VkDevice device, VkPhysicalDevice physicalDevice,
+                          VkCommandPool commandPool, VkQueue graphicsQueue,
+                          const std::vector<std::string> &textureImagePaths)
+    -> std::vector<VulkanImage> {
+  std::vector<VulkanImage> textureImages;
+  transform(textureImagePaths.begin(), textureImagePaths.end(),
+            back_inserter(textureImages),
+            [device, physicalDevice, commandPool,
+             graphicsQueue](const std::string &path) {
+              return textureImage(device, physicalDevice, commandPool,
+                                  graphicsQueue, path);
+            });
+  return textureImages;
+}
+
 static void run(const std::string &vertexShaderCodePath,
                 const std::string &fragmentShaderCodePath,
                 const std::string &playerObjectPath,
@@ -835,25 +850,13 @@ static void run(const std::string &vertexShaderCodePath,
   const vulkan_wrappers::CommandPool vulkanCommandPool{vulkanDevice.device,
                                                        vulkanPhysicalDevice};
 
-  std::vector<VulkanImage> playerTextureImages;
-  transform(playerTextureImagePaths.begin(), playerTextureImagePaths.end(),
-            back_inserter(playerTextureImages),
-            [&vulkanDevice, vulkanPhysicalDevice, &vulkanCommandPool,
-             graphicsQueue](const std::string &path) {
-              return textureImage(vulkanDevice.device, vulkanPhysicalDevice,
-                                  vulkanCommandPool.commandPool, graphicsQueue,
-                                  path);
-            });
+  const auto playerTextureImages{textureImages(
+      vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
+      graphicsQueue, playerTextureImagePaths)};
 
-  std::vector<VulkanImage> worldTextureImages;
-  transform(worldTextureImagePaths.begin(), worldTextureImagePaths.end(),
-            back_inserter(worldTextureImages),
-            [&vulkanDevice, vulkanPhysicalDevice, &vulkanCommandPool,
-             graphicsQueue](const std::string &path) {
-              return textureImage(vulkanDevice.device, vulkanPhysicalDevice,
-                                  vulkanCommandPool.commandPool, graphicsQueue,
-                                  path);
-            });
+  const auto worldTextureImages{textureImages(
+      vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
+      graphicsQueue, worldTextureImagePaths)};
 
   const vulkan_wrappers::Sampler vulkanTextureSampler{vulkanDevice.device,
                                                       vulkanPhysicalDevice, 13};
