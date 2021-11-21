@@ -743,6 +743,8 @@ constexpr auto withFriction(int velocity, int friction) -> int {
   return (velocity < 0 ? -1 : 1) * std::max(0, std::abs(velocity) - friction);
 }
 
+enum class JumpState { grounded, started, released };
+
 static void run(const std::string &vertexShaderCodePath,
                 const std::string &fragmentShaderCodePath,
                 const std::string &playerObjectPath,
@@ -999,6 +1001,7 @@ static void run(const std::string &vertexShaderCodePath,
   auto recreatingSwapChain{false};
   auto currentFrame{0U};
   FixedPointVector3D playerVelocity{};
+  auto jumpState{JumpState::grounded};
   while (!recreatingSwapChain) {
     if (glfwWindowShouldClose(glfwWindow.window) != 0) {
       break;
@@ -1007,6 +1010,8 @@ static void run(const std::string &vertexShaderCodePath,
     glfwPollEvents();
     {
       constexpr auto playerRunAcceleration{2};
+      constexpr auto playerJumpAcceleration{10};
+      constexpr auto gravity{-1};
       if (glfwGetKey(glfwWindow.window, GLFW_KEY_A) == GLFW_PRESS) {
         playerVelocity.x += playerRunAcceleration;
       }
@@ -1019,6 +1024,18 @@ static void run(const std::string &vertexShaderCodePath,
       if (glfwGetKey(glfwWindow.window, GLFW_KEY_S) == GLFW_PRESS) {
         playerVelocity.z -= playerRunAcceleration;
       }
+      if (glfwGetKey(glfwWindow.window, GLFW_KEY_SPACE) == GLFW_PRESS &&
+          jumpState == JumpState::grounded) {
+        jumpState = JumpState::started;
+        playerVelocity.y += playerJumpAcceleration;
+      }
+      playerVelocity.y += gravity;
+      if (glfwGetKey(glfwWindow.window, GLFW_KEY_SPACE) != GLFW_PRESS &&
+          jumpState == JumpState::started) {
+        jumpState = JumpState::released;
+        if (playerVelocity.y > 0)
+          playerVelocity.y = 0;
+      }
       constexpr auto playerMaxGroundSpeed{4};
       constexpr auto groundFriction{1};
       playerVelocity.x = withFriction(
@@ -1027,6 +1044,11 @@ static void run(const std::string &vertexShaderCodePath,
           clamp(playerVelocity.z, playerMaxGroundSpeed), groundFriction);
       playerDisplacement.x += playerVelocity.x;
       playerDisplacement.z += playerVelocity.z;
+      playerDisplacement.y += playerVelocity.y;
+      if (playerDisplacement.y < -30) {
+        jumpState = JumpState::grounded;
+        playerDisplacement.y = -30;
+      }
     }
     vkWaitForFences(vulkanDevice.device, 1,
                     &vulkanInFlightFences[currentFrame].fence, VK_TRUE,
