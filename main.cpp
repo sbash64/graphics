@@ -1048,6 +1048,7 @@ static void run(const std::string &vertexShaderCodePath,
       if (playerDisplacement.y < -30) {
         jumpState = JumpState::grounded;
         playerDisplacement.y = -30;
+        playerVelocity.y = 0;
       }
     }
     vkWaitForFences(vulkanDevice.device, 1,
