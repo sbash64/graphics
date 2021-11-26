@@ -605,7 +605,9 @@ struct ScreenPoint {
 
 struct Mouse {
   ScreenPoint position;
-  bool pressed;
+  bool leftPressed;
+  bool rightPressed;
+  bool middlePressed;
 };
 
 struct Camera {
@@ -639,12 +641,19 @@ static auto viewMatrix(const Camera &camera) -> glm::mat4 {
 }
 
 static void updateCameraAndMouse(GlfwCallback *callback, float x, float y) {
-  if (callback->mouse.pressed) {
+  const auto dy{callback->mouse.position.y - y};
+  const auto dx{callback->mouse.position.x - x};
+  if (callback->mouse.leftPressed) {
     const auto rotationSpeed{1.F};
-    callback->camera.rotationAnglesDegrees[0] +=
-        (callback->mouse.position.y - y) * rotationSpeed;
-    callback->camera.rotationAnglesDegrees[1] +=
-        (-callback->mouse.position.x + x) * rotationSpeed;
+    callback->camera.rotationAnglesDegrees[0] += dy * rotationSpeed;
+    callback->camera.rotationAnglesDegrees[1] -= dx * rotationSpeed;
+  }
+  if (callback->mouse.rightPressed) {
+    callback->camera.position += glm::vec3(-dx * .01F, -dy * .01F, .0F);
+  }
+  if (callback->mouse.middlePressed) {
+    const auto zoomSpeed{1.F};
+    callback->camera.position += glm::vec3(0.F, 0.F, dy * .005F * zoomSpeed);
   }
   callback->mouse.position = {x, y};
 }
@@ -659,26 +668,37 @@ static void onMouseButton(GLFWwindow *window, int button, int action,
                           int /*mods*/) {
   auto *const glfwCallback =
       static_cast<GlfwCallback *>(glfwGetWindowUserPointer(window));
-  if (action == GLFW_PRESS)
-    glfwCallback->mouse.pressed = true;
-  else if (action == GLFW_RELEASE)
-    glfwCallback->mouse.pressed = false;
+  if (button == GLFW_MOUSE_BUTTON_LEFT) {
+    if (action == GLFW_PRESS)
+      glfwCallback->mouse.leftPressed = true;
+    else if (action == GLFW_RELEASE)
+      glfwCallback->mouse.leftPressed = false;
+  } else if (button == GLFW_MOUSE_BUTTON_RIGHT) {
+    if (action == GLFW_PRESS)
+      glfwCallback->mouse.rightPressed = true;
+    else if (action == GLFW_RELEASE)
+      glfwCallback->mouse.rightPressed = false;
+  } else if (button == GLFW_MOUSE_BUTTON_MIDDLE) {
+    if (action == GLFW_PRESS)
+      glfwCallback->mouse.middlePressed = true;
+    else if (action == GLFW_RELEASE)
+      glfwCallback->mouse.middlePressed = false;
+  }
 }
 
-static void updateUniformBuffer(
-    const vulkan_wrappers::Device &vulkanDevice,
-    const vulkan_wrappers::DeviceMemory &vulkanUniformBuffersMemory,
-    const Camera &camera, glm::mat4 perspective, glm::vec3 modelOrigin,
-    float scale = 1, float rotationAngleDegrees = 0) {
+static void updateUniformBuffer(const vulkan_wrappers::Device &device,
+                                const vulkan_wrappers::DeviceMemory &memory,
+                                const Camera &camera, glm::mat4 perspective,
+                                glm::vec3 translation, float scale = 1,
+                                float rotationAngleDegrees = 0) {
   UniformBufferObject ubo{};
   perspective[1][1] *= -1;
   ubo.mvp = perspective * viewMatrix(camera) *
-            glm::translate(glm::mat4{1.F}, modelOrigin) *
+            glm::translate(glm::mat4{1.F}, translation) *
             glm::rotate(glm::mat4{1.F}, glm::radians(rotationAngleDegrees),
                         glm::vec3{1.F, 0.F, 0.F}) *
             glm::scale(glm::vec3{scale, scale, scale});
-  copy(vulkanDevice.device, vulkanUniformBuffersMemory.memory, &ubo,
-       sizeof(ubo));
+  copy(device.device, memory.memory, &ubo, sizeof(ubo));
 }
 
 static auto frameImage(VkDevice device, VkPhysicalDevice physicalDevice,
@@ -940,8 +960,8 @@ static void run(const std::string &vertexShaderCodePath,
   }
 
   glfwCallback.camera.rotationAnglesDegrees = {0.F, 0.F, 0.F};
-  glfwCallback.camera.position = glm::vec3{0.F, 0.F, -40.F};
-  FixedPointVector3D playerDisplacement{0, 0, 0};
+  glfwCallback.camera.position = glm::vec3{0.F, -10.F, -10.F};
+  FixedPointVector3D playerDisplacement{-400, 0, 0};
 
   const vulkan_wrappers::Swapchain vulkanSwapchain{
       vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface,
@@ -1093,6 +1113,7 @@ static void run(const std::string &vertexShaderCodePath,
   FixedPointVector3D playerVelocity{};
   RationalNumber verticalVelocity{0, 1};
   auto jumpState{JumpState::grounded};
+  auto worldOrigin = glm::vec3{30.F, 0.F, 0.F};
   while (!recreatingSwapChain) {
     if (glfwWindowShouldClose(glfwWindow.window) != 0) {
       break;
@@ -1103,6 +1124,24 @@ static void run(const std::string &vertexShaderCodePath,
       constexpr auto playerRunAcceleration{2};
       constexpr auto playerJumpAcceleration{6};
       const RationalNumber gravity{-1, 4};
+      if (glfwGetKey(glfwWindow.window, GLFW_KEY_Z) == GLFW_PRESS) {
+        worldOrigin += glm::vec3{1.F, 0.F, 0.F};
+      }
+      if (glfwGetKey(glfwWindow.window, GLFW_KEY_X) == GLFW_PRESS) {
+        worldOrigin += glm::vec3{0.F, 1.F, 0.F};
+      }
+      if (glfwGetKey(glfwWindow.window, GLFW_KEY_C) == GLFW_PRESS) {
+        worldOrigin += glm::vec3{0.F, 0.F, 1.F};
+      }
+      if (glfwGetKey(glfwWindow.window, GLFW_KEY_E) == GLFW_PRESS) {
+        worldOrigin -= glm::vec3{1.F, 0.F, 0.F};
+      }
+      if (glfwGetKey(glfwWindow.window, GLFW_KEY_R) == GLFW_PRESS) {
+        worldOrigin -= glm::vec3{0.F, 1.F, 0.F};
+      }
+      if (glfwGetKey(glfwWindow.window, GLFW_KEY_T) == GLFW_PRESS) {
+        worldOrigin -= glm::vec3{0.F, 0.F, 1.F};
+      }
       if (glfwGetKey(glfwWindow.window, GLFW_KEY_A) == GLFW_PRESS) {
         playerVelocity.x += playerRunAcceleration;
       }
@@ -1173,10 +1212,9 @@ static void run(const std::string &vertexShaderCodePath,
     updateUniformBuffer(vulkanDevice,
                         playerUniformBuffersWithMemory[imageIndex].memory,
                         glfwCallback.camera, projection, playerPosition);
-
-    updateUniformBuffer(
-        vulkanDevice, worldUniformBuffersWithMemory[imageIndex].memory,
-        glfwCallback.camera, projection, glm::vec3{0.F, 0.F, 0.F}, 20.F);
+    updateUniformBuffer(vulkanDevice,
+                        worldUniformBuffersWithMemory[imageIndex].memory,
+                        glfwCallback.camera, projection, worldOrigin, 40.F);
 
     if (imagesInFlight[imageIndex] != VK_NULL_HANDLE)
       vkWaitForFences(vulkanDevice.device, 1, &imagesInFlight[imageIndex],
