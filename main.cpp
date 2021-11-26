@@ -25,6 +25,63 @@
 #include <vector>
 
 namespace sbash64::graphics {
+constexpr auto clamp(int velocity, int limit) -> int {
+  return std::clamp(velocity, -limit, limit);
+}
+
+constexpr auto withFriction(int velocity, int friction) -> int {
+  return (velocity < 0 ? -1 : 1) * std::max(0, std::abs(velocity) - friction);
+}
+
+enum class JumpState { grounded, started, released };
+
+struct RationalNumber {
+  int numerator;
+  int denominator;
+};
+
+constexpr auto operator+=(RationalNumber &a, RationalNumber b)
+    -> RationalNumber & {
+  const auto smallerDenominator{std::min(a.denominator, b.denominator)};
+  const auto largerDenominator{std::max(a.denominator, b.denominator)};
+  auto commonDenominator{smallerDenominator};
+  auto candidateDenominator{largerDenominator};
+  while (true) {
+    while (commonDenominator <
+           std::min(std::numeric_limits<int>::max() - smallerDenominator,
+                    candidateDenominator))
+      commonDenominator += smallerDenominator;
+    if (commonDenominator != candidateDenominator) {
+      if (candidateDenominator <
+          std::numeric_limits<int>::max() - largerDenominator)
+        candidateDenominator += largerDenominator;
+      else
+        return a;
+    } else {
+      a.numerator = a.numerator * commonDenominator / a.denominator +
+                    b.numerator * commonDenominator / b.denominator;
+      a.denominator = commonDenominator;
+      return a;
+    }
+  }
+}
+
+constexpr auto operator+=(RationalNumber &a, int b) -> RationalNumber {
+  a.numerator += a.denominator * b;
+  return a;
+}
+
+constexpr auto absoluteValue(int a) -> int { return a < 0 ? -a : a; }
+
+constexpr auto round(RationalNumber a) -> int {
+  const auto division{a.numerator / a.denominator};
+  if (absoluteValue(a.numerator) % a.denominator <
+      (absoluteValue(a.denominator) + 1) / 2)
+    return division;
+  return ((a.numerator < 0) ^ (a.denominator < 0)) != 0 ? division - 1
+                                                        : division + 1;
+}
+
 struct UniformBufferObject {
   alignas(16) glm::mat4 mvp;
 };
@@ -86,14 +143,6 @@ static auto suitable(VkPhysicalDevice device, VkSurfaceKHR surface) -> bool {
   return false;
 }
 
-static auto suitableDevice(const std::vector<VkPhysicalDevice> &devices,
-                           VkSurfaceKHR surface) -> VkPhysicalDevice {
-  for (auto *const device : devices)
-    if (suitable(device, surface))
-      return device;
-  throw std::runtime_error("failed to find a suitable GPU!");
-}
-
 static auto vulkanDevices(VkInstance instance)
     -> std::vector<VkPhysicalDevice> {
   uint32_t deviceCount{0};
@@ -101,6 +150,14 @@ static auto vulkanDevices(VkInstance instance)
   std::vector<VkPhysicalDevice> devices(deviceCount);
   vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
   return devices;
+}
+
+static auto suitableDevice(VkInstance instance, VkSurfaceKHR surface)
+    -> VkPhysicalDevice {
+  for (auto *const device : vulkanDevices(instance))
+    if (suitable(device, surface))
+      return device;
+  throw std::runtime_error("failed to find a suitable GPU!");
 }
 
 static auto swapChainImages(VkDevice device, VkSwapchainKHR swapChain)
@@ -696,7 +753,7 @@ static void updateUniformBuffer(const vulkan_wrappers::Device &device,
   ubo.mvp = perspective * viewMatrix(camera) *
             glm::translate(glm::mat4{1.F}, translation) *
             glm::rotate(glm::mat4{1.F}, glm::radians(rotationAngleDegrees),
-                        glm::vec3{1.F, 0.F, 0.F}) *
+                        glm::vec3{0.F, 1.F, 0.F}) *
             glm::scale(glm::vec3{scale, scale, scale});
   copy(device.device, memory.memory, &ubo, sizeof(ubo));
 }
@@ -753,63 +810,6 @@ static auto uniformBufferWithMemory(VkDevice device,
                            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                                VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
   return VulkanBufferWithMemory{std::move(buffer), std::move(memory)};
-}
-
-constexpr auto clamp(int velocity, int limit) -> int {
-  return std::clamp(velocity, -limit, limit);
-}
-
-constexpr auto withFriction(int velocity, int friction) -> int {
-  return (velocity < 0 ? -1 : 1) * std::max(0, std::abs(velocity) - friction);
-}
-
-enum class JumpState { grounded, started, released };
-
-struct RationalNumber {
-  int numerator;
-  int denominator;
-};
-
-constexpr auto operator+=(RationalNumber &a, RationalNumber b)
-    -> RationalNumber & {
-  const auto smallerDenominator{std::min(a.denominator, b.denominator)};
-  const auto largerDenominator{std::max(a.denominator, b.denominator)};
-  auto commonDenominator{smallerDenominator};
-  auto candidateDenominator{largerDenominator};
-  while (true) {
-    while (commonDenominator <
-           std::min(std::numeric_limits<int>::max() - smallerDenominator,
-                    candidateDenominator))
-      commonDenominator += smallerDenominator;
-    if (commonDenominator != candidateDenominator) {
-      if (candidateDenominator <
-          std::numeric_limits<int>::max() - largerDenominator)
-        candidateDenominator += largerDenominator;
-      else
-        return a;
-    } else {
-      a.numerator = a.numerator * commonDenominator / a.denominator +
-                    b.numerator * commonDenominator / b.denominator;
-      a.denominator = commonDenominator;
-      return a;
-    }
-  }
-}
-
-constexpr auto operator+=(RationalNumber &a, int b) -> RationalNumber {
-  a.numerator += a.denominator * b;
-  return a;
-}
-
-constexpr auto absoluteValue(int a) -> int { return a < 0 ? -a : a; }
-
-constexpr auto round(RationalNumber a) -> int {
-  const auto division{a.numerator / a.denominator};
-  if (absoluteValue(a.numerator) % a.denominator <
-      (absoluteValue(a.denominator) + 1) / 2)
-    return division;
-  return ((a.numerator < 0) ^ (a.denominator < 0)) != 0 ? division - 1
-                                                        : division + 1;
 }
 
 static auto textureImages(VkDevice device, VkPhysicalDevice physicalDevice,
@@ -931,12 +931,15 @@ static auto readTexturedObjects(const std::string &path)
   return objects;
 }
 
+static auto pressing(GLFWwindow *window, int key) -> bool {
+  return glfwGetKey(window, key) == GLFW_PRESS;
+}
+
 static void run(const std::string &vertexShaderCodePath,
                 const std::string &fragmentShaderCodePath,
                 const std::string &playerObjectPath,
                 const std::string &worldObjectPath) {
   const glfw_wrappers::Init glfwInitialization;
-
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
   const glfw_wrappers::Window glfwWindow{1280, 720};
   GlfwCallback glfwCallback{};
@@ -944,36 +947,21 @@ static void run(const std::string &vertexShaderCodePath,
   glfwSetFramebufferSizeCallback(glfwWindow.window, onFramebufferResize);
   glfwSetCursorPosCallback(glfwWindow.window, onCursorPositionChanged);
   glfwSetMouseButtonCallback(glfwWindow.window, onMouseButton);
-
   const vulkan_wrappers::Instance vulkanInstance;
   const vulkan_wrappers::Surface vulkanSurface{vulkanInstance.instance,
                                                glfwWindow.window};
-  auto *vulkanPhysicalDevice{suitableDevice(
-      vulkanDevices(vulkanInstance.instance), vulkanSurface.surface)};
+  auto *const vulkanPhysicalDevice{
+      suitableDevice(vulkanInstance.instance, vulkanSurface.surface)};
   const vulkan_wrappers::Device vulkanDevice{vulkanPhysicalDevice,
                                              vulkanSurface.surface};
-  {
-    VkPhysicalDeviceProperties deviceProperties;
-    vkGetPhysicalDeviceProperties(vulkanPhysicalDevice, &deviceProperties);
-    std::cout << "selected physical device \"" << deviceProperties.deviceName
-              << "\"\n";
-  }
-
-  glfwCallback.camera.rotationAnglesDegrees = {0.F, 0.F, 0.F};
-  glfwCallback.camera.position = glm::vec3{0.F, -10.F, -10.F};
-  FixedPointVector3D playerDisplacement{-400, 0, 0};
-
   const vulkan_wrappers::Swapchain vulkanSwapchain{
       vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface,
       glfwWindow.window};
-
   const auto swapChainImages{graphics::swapChainImages(
       vulkanDevice.device, vulkanSwapchain.swapChain)};
-
   const auto swapChainImageViews{
       graphics::swapChainImageViews(vulkanDevice.device, vulkanPhysicalDevice,
                                     vulkanSurface.surface, swapChainImages)};
-
   const auto vulkanColorImage{frameImage(
       vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface,
       glfwWindow.window,
@@ -981,15 +969,12 @@ static void run(const std::string &vertexShaderCodePath,
       VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
           VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT,
       VK_IMAGE_ASPECT_COLOR_BIT)};
-
   const auto vulkanDepthImage{frameImage(
       vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface,
       glfwWindow.window, findDepthFormat(vulkanPhysicalDevice),
       VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_ASPECT_DEPTH_BIT)};
-
   const vulkan_wrappers::RenderPass vulkanRenderPass{
       vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface};
-
   std::vector<vulkan_wrappers::Framebuffer> vulkanFrameBuffers;
   transform(swapChainImageViews.begin(), swapChainImageViews.end(),
             back_inserter(vulkanFrameBuffers),
@@ -1005,23 +990,18 @@ static void run(const std::string &vertexShaderCodePath,
                                                    imageView.view},
                                                   glfwWindow.window};
             });
-
   const auto playerUniformBuffersWithMemory{uniformBuffersWithMemory(
       vulkanDevice.device, vulkanPhysicalDevice, swapChainImages)};
   const auto worldUniformBuffersWithMemory{uniformBuffersWithMemory(
       vulkanDevice.device, vulkanPhysicalDevice, swapChainImages)};
-
   const vulkan_wrappers::Sampler vulkanTextureSampler{vulkanDevice.device,
                                                       vulkanPhysicalDevice, 13};
-
   VkQueue graphicsQueue{nullptr};
   vkGetDeviceQueue(vulkanDevice.device,
                    graphicsSupportingQueueFamilyIndex(vulkanPhysicalDevice), 0,
                    &graphicsQueue);
-
   const vulkan_wrappers::CommandPool vulkanCommandPool{vulkanDevice.device,
                                                        vulkanPhysicalDevice};
-
   const vulkan_wrappers::DescriptorSetLayout vulkanDescriptorSetLayout{
       vulkanDevice.device};
 
@@ -1044,10 +1024,8 @@ static void run(const std::string &vertexShaderCodePath,
   const vulkan_wrappers::CommandBuffers vulkanCommandBuffers{
       vulkanDevice.device, vulkanCommandPool.commandPool,
       vulkanFrameBuffers.size()};
-
   const vulkan_wrappers::PipelineLayout vulkanPipelineLayout{
       vulkanDevice.device, vulkanDescriptorSetLayout.descriptorSetLayout};
-
   const vulkan_wrappers::Pipeline vulkanPipeline{
       vulkanDevice.device,         vulkanPhysicalDevice,
       vulkanSurface.surface,       vulkanPipelineLayout.pipelineLayout,
@@ -1089,22 +1067,17 @@ static void run(const std::string &vertexShaderCodePath,
                    presentSupportingQueueFamilyIndex(vulkanPhysicalDevice,
                                                      vulkanSurface.surface),
                    0, &presentQueue);
-
   const auto maxFramesInFlight{2};
   std::vector<vulkan_wrappers::Fence> vulkanInFlightFences;
   generate_n(back_inserter(vulkanInFlightFences), maxFramesInFlight,
              [&vulkanDevice]() {
                return vulkan_wrappers::Fence{vulkanDevice.device};
              });
-
   const auto vulkanImageAvailableSemaphores{
       semaphores(vulkanDevice.device, maxFramesInFlight)};
-
   const auto vulkanRenderFinishedSemaphores{
       semaphores(vulkanDevice.device, maxFramesInFlight)};
-
   std::vector<VkFence> imagesInFlight(swapChainImages.size(), VK_NULL_HANDLE);
-
   const auto swapChainExtent{swapExtent(
       vulkanPhysicalDevice, vulkanSurface.surface, glfwWindow.window)};
 
@@ -1114,6 +1087,9 @@ static void run(const std::string &vertexShaderCodePath,
   RationalNumber verticalVelocity{0, 1};
   auto jumpState{JumpState::grounded};
   auto worldOrigin = glm::vec3{30.F, 0.F, 0.F};
+  glfwCallback.camera.rotationAnglesDegrees = {0.F, 0.F, 0.F};
+  glfwCallback.camera.position = glm::vec3{0.F, -10.F, -10.F};
+  FixedPointVector3D playerDisplacement{-400, 0, 0};
   while (!recreatingSwapChain) {
     if (glfwWindowShouldClose(glfwWindow.window) != 0) {
       break;
@@ -1124,37 +1100,34 @@ static void run(const std::string &vertexShaderCodePath,
       constexpr auto playerRunAcceleration{2};
       constexpr auto playerJumpAcceleration{6};
       const RationalNumber gravity{-1, 4};
-      if (glfwGetKey(glfwWindow.window, GLFW_KEY_Z) == GLFW_PRESS) {
-        worldOrigin += glm::vec3{1.F, 0.F, 0.F};
+      if (pressing(glfwWindow.window, GLFW_KEY_Z)) {
+        worldOrigin += glm::vec3{
+            pressing(glfwWindow.window, GLFW_KEY_LEFT_SHIFT) ? 1.F : -1.F, 0.F,
+            0.F};
       }
-      if (glfwGetKey(glfwWindow.window, GLFW_KEY_X) == GLFW_PRESS) {
-        worldOrigin += glm::vec3{0.F, 1.F, 0.F};
+      if (pressing(glfwWindow.window, GLFW_KEY_X)) {
+        worldOrigin += glm::vec3{
+            0.F, pressing(glfwWindow.window, GLFW_KEY_LEFT_SHIFT) ? 1.F : -1.F,
+            0.F};
       }
-      if (glfwGetKey(glfwWindow.window, GLFW_KEY_C) == GLFW_PRESS) {
-        worldOrigin += glm::vec3{0.F, 0.F, 1.F};
+      if (pressing(glfwWindow.window, GLFW_KEY_C)) {
+        worldOrigin += glm::vec3{
+            0.F, 0.F,
+            pressing(glfwWindow.window, GLFW_KEY_LEFT_SHIFT) ? 1.F : -1.F};
       }
-      if (glfwGetKey(glfwWindow.window, GLFW_KEY_E) == GLFW_PRESS) {
-        worldOrigin -= glm::vec3{1.F, 0.F, 0.F};
-      }
-      if (glfwGetKey(glfwWindow.window, GLFW_KEY_R) == GLFW_PRESS) {
-        worldOrigin -= glm::vec3{0.F, 1.F, 0.F};
-      }
-      if (glfwGetKey(glfwWindow.window, GLFW_KEY_T) == GLFW_PRESS) {
-        worldOrigin -= glm::vec3{0.F, 0.F, 1.F};
-      }
-      if (glfwGetKey(glfwWindow.window, GLFW_KEY_A) == GLFW_PRESS) {
+      if (pressing(glfwWindow.window, GLFW_KEY_A)) {
         playerVelocity.x += playerRunAcceleration;
       }
-      if (glfwGetKey(glfwWindow.window, GLFW_KEY_D) == GLFW_PRESS) {
+      if (pressing(glfwWindow.window, GLFW_KEY_D)) {
         playerVelocity.x -= playerRunAcceleration;
       }
-      if (glfwGetKey(glfwWindow.window, GLFW_KEY_W) == GLFW_PRESS) {
+      if (pressing(glfwWindow.window, GLFW_KEY_W)) {
         playerVelocity.z += playerRunAcceleration;
       }
-      if (glfwGetKey(glfwWindow.window, GLFW_KEY_S) == GLFW_PRESS) {
+      if (pressing(glfwWindow.window, GLFW_KEY_S)) {
         playerVelocity.z -= playerRunAcceleration;
       }
-      if (glfwGetKey(glfwWindow.window, GLFW_KEY_SPACE) == GLFW_PRESS &&
+      if (pressing(glfwWindow.window, GLFW_KEY_SPACE) &&
           jumpState == JumpState::grounded) {
         jumpState = JumpState::started;
         verticalVelocity += playerJumpAcceleration;
@@ -1209,12 +1182,12 @@ static void run(const std::string &vertexShaderCodePath,
     const glm::vec3 playerPosition{playerDisplacement.x / 10.F,
                                    playerDisplacement.y / 10.F,
                                    playerDisplacement.z / 10.F};
-    updateUniformBuffer(vulkanDevice,
-                        playerUniformBuffersWithMemory[imageIndex].memory,
-                        glfwCallback.camera, projection, playerPosition);
+    updateUniformBuffer(
+        vulkanDevice, playerUniformBuffersWithMemory[imageIndex].memory,
+        glfwCallback.camera, projection, playerPosition, 1, -90.F);
     updateUniformBuffer(vulkanDevice,
                         worldUniformBuffersWithMemory[imageIndex].memory,
-                        glfwCallback.camera, projection, worldOrigin, 40.F);
+                        glfwCallback.camera, projection, worldOrigin, 20.F);
 
     if (imagesInFlight[imageIndex] != VK_NULL_HANDLE)
       vkWaitForFences(vulkanDevice.device, 1, &imagesInFlight[imageIndex],
