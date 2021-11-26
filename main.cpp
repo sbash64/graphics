@@ -891,12 +891,30 @@ static void beginWithThrow(VkCommandBuffer commandBuffer) {
       "failed to begin recording command buffer!");
 }
 
+static auto textureImagePaths(const std::string &objectPath,
+                              const std::vector<Object> &objects)
+    -> std::vector<std::string> {
+  std::vector<std::string> textureImagePaths;
+  transform(objects.begin(), objects.end(), back_inserter(textureImagePaths),
+            [&objectPath](const Object &object) {
+              return std::filesystem::path{objectPath}.parent_path() /
+                     object.textureFileName;
+            });
+  return textureImagePaths;
+}
+
+static auto readTexturedObjects(const std::string &path)
+    -> std::vector<Object> {
+  auto objects{readObjects(path)};
+  erase_if(objects,
+           [](const Object &object) { return object.textureFileName.empty(); });
+  return objects;
+}
+
 static void run(const std::string &vertexShaderCodePath,
                 const std::string &fragmentShaderCodePath,
                 const std::string &playerObjectPath,
-                const std::vector<std::string> &playerTextureImagePaths,
-                const std::string &worldObjectPath,
-                const std::vector<std::string> &worldTextureImagePaths) {
+                const std::string &worldObjectPath) {
   const glfw_wrappers::Init glfwInitialization;
 
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -922,8 +940,8 @@ static void run(const std::string &vertexShaderCodePath,
   }
 
   glfwCallback.camera.rotationAnglesDegrees = {0.F, 0.F, 0.F};
-  glfwCallback.camera.position = glm::vec3{0.F, 0.F, -12.F};
-  FixedPointVector3D playerDisplacement{0, -30, 0};
+  glfwCallback.camera.position = glm::vec3{0.F, 0.F, -40.F};
+  FixedPointVector3D playerDisplacement{0, 0, 0};
 
   const vulkan_wrappers::Swapchain vulkanSwapchain{
       vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface,
@@ -987,16 +1005,18 @@ static void run(const std::string &vertexShaderCodePath,
   const vulkan_wrappers::DescriptorSetLayout vulkanDescriptorSetLayout{
       vulkanDevice.device};
 
+  const auto playerObjects{readTexturedObjects(playerObjectPath)};
   const auto playerTextureImages{textureImages(
       vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
-      graphicsQueue, playerTextureImagePaths)};
+      graphicsQueue, textureImagePaths(playerObjectPath, playerObjects))};
   const auto playerTextureImageDescriptors{descriptors(
       vulkanDevice, vulkanTextureSampler, vulkanDescriptorSetLayout,
       swapChainImages, playerUniformBuffersWithMemory, playerTextureImages)};
 
+  const auto worldObjects{readTexturedObjects(worldObjectPath)};
   const auto worldTextureImages{textureImages(
       vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
-      graphicsQueue, worldTextureImagePaths)};
+      graphicsQueue, textureImagePaths(worldObjectPath, worldObjects))};
   const auto worldTextureImageDescriptors{descriptors(
       vulkanDevice, vulkanTextureSampler, vulkanDescriptorSetLayout,
       swapChainImages, worldUniformBuffersWithMemory, worldTextureImages)};
@@ -1014,12 +1034,10 @@ static void run(const std::string &vertexShaderCodePath,
       vulkanRenderPass.renderPass, vertexShaderCodePath,
       fragmentShaderCodePath,      glfwWindow.window};
 
-  const auto playerObjects{readObjects(playerObjectPath)};
   const auto playerDrawables{
       drawables(vulkanDevice.device, vulkanPhysicalDevice,
                 vulkanCommandPool.commandPool, graphicsQueue, playerObjects)};
 
-  const auto worldObjects{readObjects(worldObjectPath)};
   const auto worldDrawables{drawables(vulkanDevice.device, vulkanPhysicalDevice,
                                       vulkanCommandPool.commandPool,
                                       graphicsQueue, worldObjects)};
@@ -1118,9 +1136,9 @@ static void run(const std::string &vertexShaderCodePath,
       playerDisplacement.x += playerVelocity.x;
       playerDisplacement.z += playerVelocity.z;
       playerDisplacement.y += round(verticalVelocity);
-      if (playerDisplacement.y < -30) {
+      if (playerDisplacement.y < 0) {
         jumpState = JumpState::grounded;
-        playerDisplacement.y = -30;
+        playerDisplacement.y = 0;
         verticalVelocity = {0, 1};
       }
     }
@@ -1148,7 +1166,7 @@ static void run(const std::string &vertexShaderCodePath,
         glm::perspective(glm::radians(45.F),
                          static_cast<float>(swapChainExtent.width) /
                              static_cast<float>(swapChainExtent.height),
-                         0.1F, 40.F);
+                         0.1F, 100.F);
     const glm::vec3 playerPosition{playerDisplacement.x / 10.F,
                                    playerDisplacement.y / 10.F,
                                    playerDisplacement.z / 10.F};
@@ -1156,10 +1174,9 @@ static void run(const std::string &vertexShaderCodePath,
                         playerUniformBuffersWithMemory[imageIndex].memory,
                         glfwCallback.camera, projection, playerPosition);
 
-    updateUniformBuffer(vulkanDevice,
-                        worldUniformBuffersWithMemory[imageIndex].memory,
-                        glfwCallback.camera, projection,
-                        glm::vec3{0.F, -5.F, -5.F}, 30.F, -90.F);
+    updateUniformBuffer(
+        vulkanDevice, worldUniformBuffersWithMemory[imageIndex].memory,
+        glfwCallback.camera, projection, glm::vec3{0.F, 0.F, 0.F}, 20.F);
 
     if (imagesInFlight[imageIndex] != VK_NULL_HANDLE)
       vkWaitForFences(vulkanDevice.device, 1, &imagesInFlight[imageIndex],
@@ -1193,16 +1210,11 @@ static void run(const std::string &vertexShaderCodePath,
 int main(int argc, char *argv[]) {
   const std::span<char *> arguments{
       argv, static_cast<std::span<char *>::size_type>(argc)};
-  if (arguments.size() < 7)
+  if (arguments.size() < 5)
     return EXIT_FAILURE;
   try {
-    std::vector<std::string> texturePaths(8);
-    std::vector<unsigned> textureOrder{7, 4, 2, 3, 6, 1, 5, 0};
-    auto count{0U};
-    for (const auto &entry : std::filesystem::directory_iterator{arguments[4]})
-      texturePaths[textureOrder[count++]] = entry.path();
     sbash64::graphics::run(arguments[1], arguments[2], arguments[3],
-                           texturePaths, arguments[5], {arguments[6]});
+                           arguments[4]);
   } catch (const std::exception &e) {
     std::cerr << e.what() << '\n';
     return EXIT_FAILURE;

@@ -38,6 +38,9 @@ auto readObjects(const std::string &path) -> std::vector<Object> {
 
           object.indices.push_back(uniqueVertices[vertex]);
         }
+        object.textureFileName = reader.GetMaterials()
+                                     .at(shape.mesh.material_ids.front())
+                                     .diffuse_texname;
         return object;
       });
   return objects;

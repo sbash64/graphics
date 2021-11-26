@@ -6,6 +6,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtx/hash.hpp>
 
+#include <string>
 #include <vector>
 
 namespace sbash64::graphics {
@@ -30,6 +31,7 @@ namespace sbash64::graphics {
 struct Object {
   std::vector<Vertex> vertices;
   std::vector<uint32_t> indices;
+  std::string textureFileName;
 };
 
 auto readObjects(const std::string &path) -> std::vector<Object>;
