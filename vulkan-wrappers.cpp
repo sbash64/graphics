@@ -8,6 +8,14 @@
 #include <stdexcept>
 
 namespace sbash64::graphics {
+static auto vulkanCountFromPhysicalDevice(
+    VkPhysicalDevice device,
+    const std::function<void(VkPhysicalDevice, uint32_t *)> &f) -> uint32_t {
+  uint32_t count{0};
+  f(device, &count);
+  return count;
+}
+
 auto swapSurfaceFormat(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface)
     -> VkSurfaceFormatKHR {
   // auto surface_priority_list = std::vector<VkSurfaceFormatKHR>{
@@ -54,6 +62,20 @@ static auto findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter,
   }
 
   throw std::runtime_error("failed to find suitable memory type!");
+}
+
+static auto maxUsableSampleCount(VkPhysicalDevice physicalDevice)
+    -> VkSampleCountFlagBits {
+  VkPhysicalDeviceProperties properties;
+  vkGetPhysicalDeviceProperties(physicalDevice, &properties);
+  const auto counts{properties.limits.framebufferColorSampleCounts &
+                    properties.limits.framebufferDepthSampleCounts};
+  for (const auto count :
+       {VK_SAMPLE_COUNT_64_BIT, VK_SAMPLE_COUNT_32_BIT, VK_SAMPLE_COUNT_16_BIT,
+        VK_SAMPLE_COUNT_8_BIT, VK_SAMPLE_COUNT_4_BIT, VK_SAMPLE_COUNT_2_BIT})
+    if ((counts & count) != 0U)
+      return count;
+  return VK_SAMPLE_COUNT_1_BIT;
 }
 
 static auto readFile(const std::string &filename) -> std::vector<char> {
@@ -851,16 +873,9 @@ Sampler::Sampler(VkDevice device, VkPhysicalDevice physicalDevice,
 Sampler::~Sampler() { vkDestroySampler(device, sampler, nullptr); }
 } // namespace vulkan_wrappers
 
-auto supportsGraphics(const VkQueueFamilyProperties &properties) -> bool {
+static auto supportsGraphics(const VkQueueFamilyProperties &properties)
+    -> bool {
   return (properties.queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0U;
-}
-
-auto vulkanCountFromPhysicalDevice(
-    VkPhysicalDevice device,
-    const std::function<void(VkPhysicalDevice, uint32_t *)> &f) -> uint32_t {
-  uint32_t count{0};
-  f(device, &count);
-  return count;
 }
 
 auto queueFamilyPropertiesCount(VkPhysicalDevice device) -> uint32_t {
@@ -945,20 +960,6 @@ void throwOnError(const std::function<VkResult()> &f,
     throw std::runtime_error{message};
 }
 
-auto maxUsableSampleCount(VkPhysicalDevice physicalDevice)
-    -> VkSampleCountFlagBits {
-  VkPhysicalDeviceProperties properties;
-  vkGetPhysicalDeviceProperties(physicalDevice, &properties);
-  const auto counts{properties.limits.framebufferColorSampleCounts &
-                    properties.limits.framebufferDepthSampleCounts};
-  for (const auto count :
-       {VK_SAMPLE_COUNT_64_BIT, VK_SAMPLE_COUNT_32_BIT, VK_SAMPLE_COUNT_16_BIT,
-        VK_SAMPLE_COUNT_8_BIT, VK_SAMPLE_COUNT_4_BIT, VK_SAMPLE_COUNT_2_BIT})
-    if ((counts & count) != 0U)
-      return count;
-  return VK_SAMPLE_COUNT_1_BIT;
-}
-
 auto bufferMemory(VkDevice device, VkPhysicalDevice physicalDevice,
                   VkBuffer buffer, VkMemoryPropertyFlags flags)
     -> vulkan_wrappers::DeviceMemory {
@@ -988,6 +989,19 @@ static void begin(VkCommandBuffer buffer) {
   vkBeginCommandBuffer(buffer, &beginInfo);
 }
 
+static void
+submitAndWait(const vulkan_wrappers::CommandBuffers &vulkanCommandBuffers,
+              VkQueue graphicsQueue) {
+  std::array<VkSubmitInfo, 1> submitInfo{};
+  submitInfo[0].sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+  submitInfo[0].commandBufferCount =
+      static_cast<uint32_t>(vulkanCommandBuffers.commandBuffers.size());
+  submitInfo[0].pCommandBuffers = vulkanCommandBuffers.commandBuffers.data();
+  vkQueueSubmit(graphicsQueue, submitInfo.size(), submitInfo.data(),
+                VK_NULL_HANDLE);
+  vkQueueWaitIdle(graphicsQueue);
+}
+
 static void copyBuffer(VkDevice device, VkCommandPool commandPool,
                        VkQueue graphicsQueue, VkBuffer sourceBuffer,
                        VkBuffer destinationBuffer, VkDeviceSize size) {
@@ -1001,9 +1015,9 @@ static void copyBuffer(VkDevice device, VkCommandPool commandPool,
   submitAndWait(vulkanCommandBuffers, graphicsQueue);
 }
 
-void copy(VkDevice device, VkPhysicalDevice physicalDevice,
-          VkCommandPool commandPool, VkQueue graphicsQueue,
-          VkBuffer destinationBuffer, const void *source, size_t size) {
+static void copy(VkDevice device, VkPhysicalDevice physicalDevice,
+                 VkCommandPool commandPool, VkQueue graphicsQueue,
+                 VkBuffer destinationBuffer, const void *source, size_t size) {
   const vulkan_wrappers::Buffer stagingBuffer{
       device, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, size};
   const auto memory{bufferMemory(device, physicalDevice, stagingBuffer.buffer,
@@ -1043,18 +1057,6 @@ void copy(VkDevice device, VkDeviceMemory memory, const void *source,
   vkMapMemory(device, memory, 0, size, 0, &data);
   memcpy(data, source, size);
   vkUnmapMemory(device, memory);
-}
-
-void submitAndWait(const vulkan_wrappers::CommandBuffers &vulkanCommandBuffers,
-                   VkQueue graphicsQueue) {
-  std::array<VkSubmitInfo, 1> submitInfo{};
-  submitInfo[0].sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-  submitInfo[0].commandBufferCount =
-      static_cast<uint32_t>(vulkanCommandBuffers.commandBuffers.size());
-  submitInfo[0].pCommandBuffers = vulkanCommandBuffers.commandBuffers.data();
-  vkQueueSubmit(graphicsQueue, submitInfo.size(), submitInfo.data(),
-                VK_NULL_HANDLE);
-  vkQueueWaitIdle(graphicsQueue);
 }
 
 auto swapChainImages(VkDevice device, VkSwapchainKHR swapChain)
@@ -1290,5 +1292,184 @@ auto swapChainImageViews(VkDevice device, VkPhysicalDevice physicalDevice,
                                                 VK_IMAGE_ASPECT_COLOR_BIT, 1};
             });
   return swapChainImageViews;
+}
+
+auto descriptor(
+    const vulkan_wrappers::Device &vulkanDevice,
+    const vulkan_wrappers::ImageView &vulkanTextureImageView,
+    const vulkan_wrappers::Sampler &vulkanTextureSampler,
+    const vulkan_wrappers::DescriptorSetLayout &vulkanDescriptorSetLayout,
+    const std::vector<VkImage> &swapChainImages,
+    const std::vector<VulkanBufferWithMemory> &vulkanUniformBuffers,
+    VkDeviceSize bufferObjectSize) -> VulkanDescriptor {
+  vulkan_wrappers::DescriptorPool vulkanDescriptorPool{vulkanDevice.device,
+                                                       swapChainImages};
+  std::vector<VkDescriptorSet> descriptorSets(swapChainImages.size());
+  std::vector<VkDescriptorSetLayout> layouts(
+      swapChainImages.size(), vulkanDescriptorSetLayout.descriptorSetLayout);
+
+  VkDescriptorSetAllocateInfo allocInfo{};
+  allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+  allocInfo.descriptorPool = vulkanDescriptorPool.descriptorPool;
+  allocInfo.descriptorSetCount = static_cast<uint32_t>(swapChainImages.size());
+  allocInfo.pSetLayouts = layouts.data();
+
+  throwOnError(
+      [&]() {
+        // no deallocate needed here per tutorial
+        return vkAllocateDescriptorSets(vulkanDevice.device, &allocInfo,
+                                        descriptorSets.data());
+      },
+      "failed to allocate descriptor sets!");
+
+  for (auto i{0U}; i < swapChainImages.size(); i++) {
+    VkDescriptorBufferInfo bufferInfo{};
+    bufferInfo.buffer = vulkanUniformBuffers[i].buffer.buffer;
+    bufferInfo.offset = 0;
+    bufferInfo.range = bufferObjectSize;
+
+    VkDescriptorImageInfo imageInfo{};
+    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    imageInfo.imageView = vulkanTextureImageView.view;
+    imageInfo.sampler = vulkanTextureSampler.sampler;
+
+    std::array<VkWriteDescriptorSet, 2> descriptorWrite{};
+    descriptorWrite[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrite[0].dstSet = descriptorSets[i];
+    descriptorWrite[0].dstBinding = 0;
+    descriptorWrite[0].dstArrayElement = 0;
+    descriptorWrite[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptorWrite[0].descriptorCount = 1;
+    descriptorWrite[0].pBufferInfo = &bufferInfo;
+
+    descriptorWrite[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrite[1].dstSet = descriptorSets[i];
+    descriptorWrite[1].dstBinding = 1;
+    descriptorWrite[1].dstArrayElement = 0;
+    descriptorWrite[1].descriptorType =
+        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptorWrite[1].descriptorCount = 1;
+    descriptorWrite[1].pImageInfo = &imageInfo;
+
+    vkUpdateDescriptorSets(vulkanDevice.device, descriptorWrite.size(),
+                           descriptorWrite.data(), 0, nullptr);
+  }
+  return VulkanDescriptor{std::move(vulkanDescriptorPool),
+                          std::move(descriptorSets)};
+}
+
+auto present(VkQueue presentQueue, const vulkan_wrappers::Swapchain &swapchain,
+             uint32_t imageIndex, VkSemaphore signalSemaphore) -> VkResult {
+  VkPresentInfoKHR presentInfo{};
+  presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+
+  std::array<VkSemaphore, 1> signalSemaphores{signalSemaphore};
+  presentInfo.waitSemaphoreCount = signalSemaphores.size();
+  presentInfo.pWaitSemaphores = signalSemaphores.data();
+
+  const std::array<VkSwapchainKHR, 1> swapChains = {swapchain.swapChain};
+  presentInfo.swapchainCount = swapChains.size();
+  presentInfo.pSwapchains = swapChains.data();
+
+  presentInfo.pImageIndices = &imageIndex;
+
+  return vkQueuePresentKHR(presentQueue, &presentInfo);
+}
+
+void submit(const vulkan_wrappers::Device &device, VkQueue graphicsQueue,
+            VkSemaphore imageAvailableSemaphore,
+            VkSemaphore renderFinishedSemaphore, VkFence inFlightFence,
+            VkCommandBuffer commandBuffer) {
+  VkSubmitInfo submitInfo{};
+  submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+
+  const std::array<VkSemaphore, 1> waitSemaphores = {imageAvailableSemaphore};
+  const std::array<VkPipelineStageFlags, 1> waitStages = {
+      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+  submitInfo.waitSemaphoreCount = waitSemaphores.size();
+  submitInfo.pWaitSemaphores = waitSemaphores.data();
+  submitInfo.pWaitDstStageMask = waitStages.data();
+
+  submitInfo.commandBufferCount = 1;
+  submitInfo.pCommandBuffers = &commandBuffer;
+
+  const std::array<VkSemaphore, 1> signalSemaphores = {renderFinishedSemaphore};
+  submitInfo.signalSemaphoreCount = signalSemaphores.size();
+  submitInfo.pSignalSemaphores = signalSemaphores.data();
+
+  vkResetFences(device.device, 1, &inFlightFence);
+  throwOnError(
+      [&]() {
+        return vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFence);
+      },
+      "failed to submit draw command buffer!");
+}
+
+auto frameImage(VkDevice device, VkPhysicalDevice physicalDevice,
+                VkSurfaceKHR surface, GLFWwindow *window, VkFormat format,
+                VkImageUsageFlags usageFlags, VkImageAspectFlags aspectFlags)
+    -> VulkanImage {
+  const auto swapChainExtent{swapExtent(physicalDevice, surface, window)};
+  vulkan_wrappers::Image image{device,
+                               swapChainExtent.width,
+                               swapChainExtent.height,
+                               format,
+                               VK_IMAGE_TILING_OPTIMAL,
+                               usageFlags,
+                               1,
+                               maxUsableSampleCount(physicalDevice)};
+  auto memory{imageMemory(device, physicalDevice, image.image,
+                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
+  vulkan_wrappers::ImageView view{device, image.image, format, aspectFlags, 1};
+  return VulkanImage{std::move(image), std::move(view), std::move(memory)};
+}
+
+auto bufferWithMemory(VkDevice device, VkPhysicalDevice physicalDevice,
+                      VkCommandPool commandPool, VkQueue graphicsQueue,
+                      VkBufferUsageFlags usageFlags, const void *source,
+                      size_t size) -> VulkanBufferWithMemory {
+  vulkan_wrappers::Buffer buffer{device, usageFlags, size};
+  auto memory{bufferMemory(device, physicalDevice, buffer.buffer,
+                           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
+  copy(device, physicalDevice, commandPool, graphicsQueue, buffer.buffer,
+       source, size);
+  return VulkanBufferWithMemory{std::move(buffer), std::move(memory)};
+}
+
+auto semaphores(VkDevice device, int n)
+    -> std::vector<vulkan_wrappers::Semaphore> {
+  std::vector<vulkan_wrappers::Semaphore> semaphores;
+  generate_n(back_inserter(semaphores), n,
+             [device]() { return vulkan_wrappers::Semaphore{device}; });
+  return semaphores;
+}
+
+void beginWithThrow(VkCommandBuffer commandBuffer) {
+  VkCommandBufferBeginInfo beginInfo{};
+  beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+  throwOnError(
+      [&]() { return vkBeginCommandBuffer(commandBuffer, &beginInfo); },
+      "failed to begin recording command buffer!");
+}
+
+void begin(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface,
+           VkFramebuffer framebuffer, VkCommandBuffer commandBuffer,
+           GLFWwindow *window, VkRenderPass renderPass) {
+  VkRenderPassBeginInfo renderPassInfo{};
+  renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+  renderPassInfo.renderPass = renderPass;
+  renderPassInfo.framebuffer = framebuffer;
+  renderPassInfo.renderArea.offset = {0, 0};
+  renderPassInfo.renderArea.extent =
+      swapExtent(physicalDevice, surface, window);
+
+  std::array<VkClearValue, 2> clearValues{};
+  clearValues[0].color = {{0.F, 0.F, 0.F, 1.F}};
+  clearValues[1].depthStencil = {1.F, 0};
+  renderPassInfo.clearValueCount = clearValues.size();
+  renderPassInfo.pClearValues = clearValues.data();
+
+  vkCmdBeginRenderPass(commandBuffer, &renderPassInfo,
+                       VK_SUBPASS_CONTENTS_INLINE);
 }
 } // namespace sbash64::graphics

@@ -280,10 +280,6 @@ struct DescriptorPool {
 };
 } // namespace vulkan_wrappers
 
-auto supportsGraphics(const VkQueueFamilyProperties &) -> bool;
-auto vulkanCountFromPhysicalDevice(
-    VkPhysicalDevice, const std::function<void(VkPhysicalDevice, uint32_t *)> &)
-    -> uint32_t;
 auto queueFamilyPropertiesCount(VkPhysicalDevice) -> uint32_t;
 auto queueFamilyProperties(VkPhysicalDevice, uint32_t count)
     -> std::vector<VkQueueFamilyProperties>;
@@ -297,21 +293,15 @@ auto swapSurfaceFormat(VkPhysicalDevice, VkSurfaceKHR) -> VkSurfaceFormatKHR;
 auto findDepthFormat(VkPhysicalDevice) -> VkFormat;
 void throwOnError(const std::function<VkResult()> &,
                   const std::string &message);
-auto maxUsableSampleCount(VkPhysicalDevice) -> VkSampleCountFlagBits;
 auto bufferMemory(VkDevice device, VkPhysicalDevice physicalDevice,
                   VkBuffer buffer, VkMemoryPropertyFlags flags)
     -> vulkan_wrappers::DeviceMemory;
 auto imageMemory(VkDevice device, VkPhysicalDevice physicalDevice,
                  VkImage image, VkMemoryPropertyFlags flags)
     -> vulkan_wrappers::DeviceMemory;
-void copy(VkDevice device, VkPhysicalDevice physicalDevice,
-          VkCommandPool commandPool, VkQueue graphicsQueue,
-          VkBuffer destinationBuffer, const void *source, size_t size);
 void copyBufferToImage(VkDevice device, VkCommandPool commandPool,
                        VkQueue graphicsQueue, VkBuffer buffer, VkImage image,
                        uint32_t width, uint32_t height);
-void submitAndWait(const vulkan_wrappers::CommandBuffers &vulkanCommandBuffers,
-                   VkQueue graphicsQueue);
 void copy(VkDevice device, VkDeviceMemory memory, const void *source,
           size_t size);
 auto swapChainImages(VkDevice device, VkSwapchainKHR swapChain)
@@ -330,6 +320,53 @@ auto swapChainImageViews(VkDevice device, VkPhysicalDevice physicalDevice,
                          VkSurfaceKHR surface,
                          const std::vector<VkImage> &swapChainImages)
     -> std::vector<vulkan_wrappers::ImageView>;
+auto present(VkQueue presentQueue, const vulkan_wrappers::Swapchain &swapchain,
+             uint32_t imageIndex, VkSemaphore signalSemaphore) -> VkResult;
+void submit(const vulkan_wrappers::Device &device, VkQueue graphicsQueue,
+            VkSemaphore imageAvailableSemaphore,
+            VkSemaphore renderFinishedSemaphore, VkFence inFlightFence,
+            VkCommandBuffer commandBuffer);
+auto semaphores(VkDevice device, int n)
+    -> std::vector<vulkan_wrappers::Semaphore>;
+void begin(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface,
+           VkFramebuffer framebuffer, VkCommandBuffer commandBuffer,
+           GLFWwindow *window, VkRenderPass renderPass);
+void beginWithThrow(VkCommandBuffer commandBuffer);
+
+struct VulkanImage {
+  vulkan_wrappers::Image image;
+  vulkan_wrappers::ImageView view;
+  vulkan_wrappers::DeviceMemory memory;
+};
+
+auto frameImage(VkDevice device, VkPhysicalDevice physicalDevice,
+                VkSurfaceKHR surface, GLFWwindow *window, VkFormat format,
+                VkImageUsageFlags usageFlags, VkImageAspectFlags aspectFlags)
+    -> VulkanImage;
+
+struct VulkanBufferWithMemory {
+  vulkan_wrappers::Buffer buffer;
+  vulkan_wrappers::DeviceMemory memory;
+};
+
+auto bufferWithMemory(VkDevice device, VkPhysicalDevice physicalDevice,
+                      VkCommandPool commandPool, VkQueue graphicsQueue,
+                      VkBufferUsageFlags usageFlags, const void *source,
+                      size_t size) -> VulkanBufferWithMemory;
+
+struct VulkanDescriptor {
+  vulkan_wrappers::DescriptorPool pool;
+  std::vector<VkDescriptorSet> sets;
+};
+
+auto descriptor(
+    const vulkan_wrappers::Device &vulkanDevice,
+    const vulkan_wrappers::ImageView &vulkanTextureImageView,
+    const vulkan_wrappers::Sampler &vulkanTextureSampler,
+    const vulkan_wrappers::DescriptorSetLayout &vulkanDescriptorSetLayout,
+    const std::vector<VkImage> &swapChainImages,
+    const std::vector<VulkanBufferWithMemory> &vulkanUniformBuffers,
+    VkDeviceSize bufferObjectSize) -> VulkanDescriptor;
 } // namespace sbash64::graphics
 
 #endif

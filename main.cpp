@@ -124,135 +124,6 @@ static void copy(VkDevice device, VkPhysicalDevice physicalDevice,
                   sourceImage.height, mipLevels);
 }
 
-struct VulkanDescriptor {
-  vulkan_wrappers::DescriptorPool pool;
-  std::vector<VkDescriptorSet> sets;
-};
-
-struct VulkanBufferWithMemory {
-  vulkan_wrappers::Buffer buffer;
-  vulkan_wrappers::DeviceMemory memory;
-};
-
-static auto descriptor(
-    const vulkan_wrappers::Device &vulkanDevice,
-    const vulkan_wrappers::ImageView &vulkanTextureImageView,
-    const vulkan_wrappers::Sampler &vulkanTextureSampler,
-    const vulkan_wrappers::DescriptorSetLayout &vulkanDescriptorSetLayout,
-    const std::vector<VkImage> &swapChainImages,
-    const std::vector<VulkanBufferWithMemory> &vulkanUniformBuffers)
-    -> VulkanDescriptor {
-  vulkan_wrappers::DescriptorPool vulkanDescriptorPool{vulkanDevice.device,
-                                                       swapChainImages};
-  std::vector<VkDescriptorSet> descriptorSets(swapChainImages.size());
-  std::vector<VkDescriptorSetLayout> layouts(
-      swapChainImages.size(), vulkanDescriptorSetLayout.descriptorSetLayout);
-
-  VkDescriptorSetAllocateInfo allocInfo{};
-  allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-  allocInfo.descriptorPool = vulkanDescriptorPool.descriptorPool;
-  allocInfo.descriptorSetCount = static_cast<uint32_t>(swapChainImages.size());
-  allocInfo.pSetLayouts = layouts.data();
-
-  throwOnError(
-      [&]() {
-        // no deallocate needed here per tutorial
-        return vkAllocateDescriptorSets(vulkanDevice.device, &allocInfo,
-                                        descriptorSets.data());
-      },
-      "failed to allocate descriptor sets!");
-
-  for (auto i{0U}; i < swapChainImages.size(); i++) {
-    VkDescriptorBufferInfo bufferInfo{};
-    bufferInfo.buffer = vulkanUniformBuffers[i].buffer.buffer;
-    bufferInfo.offset = 0;
-    bufferInfo.range = sizeof(UniformBufferObject);
-
-    VkDescriptorImageInfo imageInfo{};
-    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    imageInfo.imageView = vulkanTextureImageView.view;
-    imageInfo.sampler = vulkanTextureSampler.sampler;
-
-    std::array<VkWriteDescriptorSet, 2> descriptorWrite{};
-    descriptorWrite[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrite[0].dstSet = descriptorSets[i];
-    descriptorWrite[0].dstBinding = 0;
-    descriptorWrite[0].dstArrayElement = 0;
-    descriptorWrite[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    descriptorWrite[0].descriptorCount = 1;
-    descriptorWrite[0].pBufferInfo = &bufferInfo;
-
-    descriptorWrite[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrite[1].dstSet = descriptorSets[i];
-    descriptorWrite[1].dstBinding = 1;
-    descriptorWrite[1].dstArrayElement = 0;
-    descriptorWrite[1].descriptorType =
-        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    descriptorWrite[1].descriptorCount = 1;
-    descriptorWrite[1].pImageInfo = &imageInfo;
-
-    vkUpdateDescriptorSets(vulkanDevice.device, descriptorWrite.size(),
-                           descriptorWrite.data(), 0, nullptr);
-  }
-  return VulkanDescriptor{std::move(vulkanDescriptorPool),
-                          std::move(descriptorSets)};
-}
-
-static auto present(VkQueue presentQueue,
-                    const vulkan_wrappers::Swapchain &swapchain,
-                    uint32_t imageIndex, VkSemaphore signalSemaphore)
-    -> VkResult {
-  VkPresentInfoKHR presentInfo{};
-  presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-
-  std::array<VkSemaphore, 1> signalSemaphores{signalSemaphore};
-  presentInfo.waitSemaphoreCount = signalSemaphores.size();
-  presentInfo.pWaitSemaphores = signalSemaphores.data();
-
-  const std::array<VkSwapchainKHR, 1> swapChains = {swapchain.swapChain};
-  presentInfo.swapchainCount = swapChains.size();
-  presentInfo.pSwapchains = swapChains.data();
-
-  presentInfo.pImageIndices = &imageIndex;
-
-  return vkQueuePresentKHR(presentQueue, &presentInfo);
-}
-
-static void submit(const vulkan_wrappers::Device &device, VkQueue graphicsQueue,
-                   VkSemaphore imageAvailableSemaphore,
-                   VkSemaphore renderFinishedSemaphore, VkFence inFlightFence,
-                   VkCommandBuffer commandBuffer) {
-  VkSubmitInfo submitInfo{};
-  submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-
-  const std::array<VkSemaphore, 1> waitSemaphores = {imageAvailableSemaphore};
-  const std::array<VkPipelineStageFlags, 1> waitStages = {
-      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-  submitInfo.waitSemaphoreCount = waitSemaphores.size();
-  submitInfo.pWaitSemaphores = waitSemaphores.data();
-  submitInfo.pWaitDstStageMask = waitStages.data();
-
-  submitInfo.commandBufferCount = 1;
-  submitInfo.pCommandBuffers = &commandBuffer;
-
-  const std::array<VkSemaphore, 1> signalSemaphores = {renderFinishedSemaphore};
-  submitInfo.signalSemaphoreCount = signalSemaphores.size();
-  submitInfo.pSignalSemaphores = signalSemaphores.data();
-
-  vkResetFences(device.device, 1, &inFlightFence);
-  throwOnError(
-      [&]() {
-        return vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFence);
-      },
-      "failed to submit draw command buffer!");
-}
-
-struct VulkanImage {
-  vulkan_wrappers::Image image;
-  vulkan_wrappers::ImageView view;
-  vulkan_wrappers::DeviceMemory memory;
-};
-
 static auto textureImage(VkDevice device, VkPhysicalDevice physicalDevice,
                          VkCommandPool commandPool, VkQueue graphicsQueue,
                          const std::string &path) -> VulkanImage {
@@ -283,18 +154,6 @@ struct VulkanDrawable {
   VulkanBufferWithMemory vertexBufferWithMemory;
   VulkanBufferWithMemory indexBufferWithMemory;
 };
-
-static auto bufferWithMemory(VkDevice device, VkPhysicalDevice physicalDevice,
-                             VkCommandPool commandPool, VkQueue graphicsQueue,
-                             VkBufferUsageFlags usageFlags, const void *source,
-                             size_t size) -> VulkanBufferWithMemory {
-  vulkan_wrappers::Buffer buffer{device, usageFlags, size};
-  auto memory{bufferMemory(device, physicalDevice, buffer.buffer,
-                           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
-  copy(device, physicalDevice, commandPool, graphicsQueue, buffer.buffer,
-       source, size);
-  return VulkanBufferWithMemory{std::move(buffer), std::move(memory)};
-}
 
 static auto drawable(VkDevice device, VkPhysicalDevice physicalDevice,
                      VkCommandPool commandPool, VkQueue graphicsQueue,
@@ -422,25 +281,6 @@ static void updateUniformBuffer(const vulkan_wrappers::Device &device,
   copy(device.device, memory.memory, &ubo, sizeof(ubo));
 }
 
-static auto frameImage(VkDevice device, VkPhysicalDevice physicalDevice,
-                       VkSurfaceKHR surface, GLFWwindow *window,
-                       VkFormat format, VkImageUsageFlags usageFlags,
-                       VkImageAspectFlags aspectFlags) -> VulkanImage {
-  const auto swapChainExtent{swapExtent(physicalDevice, surface, window)};
-  vulkan_wrappers::Image image{device,
-                               swapChainExtent.width,
-                               swapChainExtent.height,
-                               format,
-                               VK_IMAGE_TILING_OPTIMAL,
-                               usageFlags,
-                               1,
-                               maxUsableSampleCount(physicalDevice)};
-  auto memory{imageMemory(device, physicalDevice, image.image,
-                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
-  vulkan_wrappers::ImageView view{device, image.image, format, aspectFlags, 1};
-  return VulkanImage{std::move(image), std::move(view), std::move(memory)};
-}
-
 static void draw(const std::vector<Object> &objects,
                  const std::vector<VulkanDrawable> &drawables,
                  const vulkan_wrappers::PipelineLayout &pipelineLayout,
@@ -505,14 +345,6 @@ static auto drawables(VkDevice device, VkPhysicalDevice physicalDevice,
   return drawables;
 }
 
-static auto semaphores(VkDevice device, int n)
-    -> std::vector<vulkan_wrappers::Semaphore> {
-  std::vector<vulkan_wrappers::Semaphore> semaphores;
-  generate_n(back_inserter(semaphores), n,
-             [device]() { return vulkan_wrappers::Semaphore{device}; });
-  return semaphores;
-}
-
 static auto
 uniformBuffersWithMemory(VkDevice device, VkPhysicalDevice physicalDevice,
                          const std::vector<VkImage> &swapChainImages)
@@ -534,45 +366,17 @@ static auto descriptors(
     const std::vector<VulkanImage> &playerTextureImages)
     -> std::vector<VulkanDescriptor> {
   std::vector<VulkanDescriptor> descriptors;
-  transform(
-      playerTextureImages.begin(), playerTextureImages.end(),
-      back_inserter(descriptors),
-      [&vulkanDevice, &vulkanTextureSampler, &vulkanDescriptorSetLayout,
-       &swapChainImages, &vulkanUniformBuffers](const VulkanImage &image) {
-        return graphics::descriptor(
-            vulkanDevice, image.view, vulkanTextureSampler,
-            vulkanDescriptorSetLayout, swapChainImages, vulkanUniformBuffers);
-      });
+  transform(playerTextureImages.begin(), playerTextureImages.end(),
+            back_inserter(descriptors),
+            [&vulkanDevice, &vulkanTextureSampler, &vulkanDescriptorSetLayout,
+             &swapChainImages,
+             &vulkanUniformBuffers](const VulkanImage &image) {
+              return graphics::descriptor(
+                  vulkanDevice, image.view, vulkanTextureSampler,
+                  vulkanDescriptorSetLayout, swapChainImages,
+                  vulkanUniformBuffers, sizeof(UniformBufferObject));
+            });
   return descriptors;
-}
-
-static void begin(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface,
-                  VkFramebuffer framebuffer, VkCommandBuffer commandBuffer,
-                  GLFWwindow *window, VkRenderPass renderPass) {
-  VkRenderPassBeginInfo renderPassInfo{};
-  renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-  renderPassInfo.renderPass = renderPass;
-  renderPassInfo.framebuffer = framebuffer;
-  renderPassInfo.renderArea.offset = {0, 0};
-  renderPassInfo.renderArea.extent =
-      swapExtent(physicalDevice, surface, window);
-
-  std::array<VkClearValue, 2> clearValues{};
-  clearValues[0].color = {{0.F, 0.F, 0.F, 1.F}};
-  clearValues[1].depthStencil = {1.F, 0};
-  renderPassInfo.clearValueCount = clearValues.size();
-  renderPassInfo.pClearValues = clearValues.data();
-
-  vkCmdBeginRenderPass(commandBuffer, &renderPassInfo,
-                       VK_SUBPASS_CONTENTS_INLINE);
-}
-
-static void beginWithThrow(VkCommandBuffer commandBuffer) {
-  VkCommandBufferBeginInfo beginInfo{};
-  beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-  throwOnError(
-      [&]() { return vkBeginCommandBuffer(commandBuffer, &beginInfo); },
-      "failed to begin recording command buffer!");
 }
 
 static auto textureImagePaths(const std::string &objectPath,
