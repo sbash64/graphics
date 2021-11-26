@@ -12,25 +12,6 @@ namespace sbash64::graphics {
 constexpr std::array<const char *, 1> deviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
-auto supportsGraphics(const VkQueueFamilyProperties &) -> bool;
-auto vulkanCountFromPhysicalDevice(
-    VkPhysicalDevice, const std::function<void(VkPhysicalDevice, uint32_t *)> &)
-    -> uint32_t;
-auto queueFamilyPropertiesCount(VkPhysicalDevice) -> uint32_t;
-auto queueFamilyProperties(VkPhysicalDevice, uint32_t count)
-    -> std::vector<VkQueueFamilyProperties>;
-auto graphicsSupportingQueueFamilyIndex(
-    const std::vector<VkQueueFamilyProperties> &) -> uint32_t;
-auto graphicsSupportingQueueFamilyIndex(VkPhysicalDevice) -> uint32_t;
-auto presentSupportingQueueFamilyIndex(VkPhysicalDevice, VkSurfaceKHR)
-    -> uint32_t;
-auto swapExtent(VkPhysicalDevice, VkSurfaceKHR, GLFWwindow *) -> VkExtent2D;
-auto swapSurfaceFormat(VkPhysicalDevice, VkSurfaceKHR) -> VkSurfaceFormatKHR;
-auto findDepthFormat(VkPhysicalDevice) -> VkFormat;
-void throwOnError(const std::function<VkResult()> &,
-                  const std::string &message);
-auto maxUsableSampleCount(VkPhysicalDevice) -> VkSampleCountFlagBits;
-
 namespace vulkan_wrappers {
 struct Instance {
   Instance();
@@ -298,6 +279,57 @@ struct DescriptorPool {
   VkDescriptorPool descriptorPool{};
 };
 } // namespace vulkan_wrappers
+
+auto supportsGraphics(const VkQueueFamilyProperties &) -> bool;
+auto vulkanCountFromPhysicalDevice(
+    VkPhysicalDevice, const std::function<void(VkPhysicalDevice, uint32_t *)> &)
+    -> uint32_t;
+auto queueFamilyPropertiesCount(VkPhysicalDevice) -> uint32_t;
+auto queueFamilyProperties(VkPhysicalDevice, uint32_t count)
+    -> std::vector<VkQueueFamilyProperties>;
+auto graphicsSupportingQueueFamilyIndex(
+    const std::vector<VkQueueFamilyProperties> &) -> uint32_t;
+auto graphicsSupportingQueueFamilyIndex(VkPhysicalDevice) -> uint32_t;
+auto presentSupportingQueueFamilyIndex(VkPhysicalDevice, VkSurfaceKHR)
+    -> uint32_t;
+auto swapExtent(VkPhysicalDevice, VkSurfaceKHR, GLFWwindow *) -> VkExtent2D;
+auto swapSurfaceFormat(VkPhysicalDevice, VkSurfaceKHR) -> VkSurfaceFormatKHR;
+auto findDepthFormat(VkPhysicalDevice) -> VkFormat;
+void throwOnError(const std::function<VkResult()> &,
+                  const std::string &message);
+auto maxUsableSampleCount(VkPhysicalDevice) -> VkSampleCountFlagBits;
+auto bufferMemory(VkDevice device, VkPhysicalDevice physicalDevice,
+                  VkBuffer buffer, VkMemoryPropertyFlags flags)
+    -> vulkan_wrappers::DeviceMemory;
+auto imageMemory(VkDevice device, VkPhysicalDevice physicalDevice,
+                 VkImage image, VkMemoryPropertyFlags flags)
+    -> vulkan_wrappers::DeviceMemory;
+void copy(VkDevice device, VkPhysicalDevice physicalDevice,
+          VkCommandPool commandPool, VkQueue graphicsQueue,
+          VkBuffer destinationBuffer, const void *source, size_t size);
+void copyBufferToImage(VkDevice device, VkCommandPool commandPool,
+                       VkQueue graphicsQueue, VkBuffer buffer, VkImage image,
+                       uint32_t width, uint32_t height);
+void submitAndWait(const vulkan_wrappers::CommandBuffers &vulkanCommandBuffers,
+                   VkQueue graphicsQueue);
+void copy(VkDevice device, VkDeviceMemory memory, const void *source,
+          size_t size);
+auto swapChainImages(VkDevice device, VkSwapchainKHR swapChain)
+    -> std::vector<VkImage>;
+auto suitableDevice(VkInstance instance, VkSurfaceKHR surface)
+    -> VkPhysicalDevice;
+void transitionImageLayout(VkDevice device, VkCommandPool commandPool,
+                           VkQueue graphicsQueue, VkImage image,
+                           VkImageLayout oldLayout, VkImageLayout newLayout,
+                           uint32_t mipLevels);
+void generateMipmaps(VkDevice device, VkPhysicalDevice physicalDevice,
+                     VkCommandPool commandPool, VkQueue graphicsQueue,
+                     VkImage image, VkFormat imageFormat, int32_t texWidth,
+                     int32_t texHeight, uint32_t mipLevels);
+auto swapChainImageViews(VkDevice device, VkPhysicalDevice physicalDevice,
+                         VkSurfaceKHR surface,
+                         const std::vector<VkImage> &swapChainImages)
+    -> std::vector<vulkan_wrappers::ImageView>;
 } // namespace sbash64::graphics
 
 #endif

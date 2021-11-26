@@ -958,4 +958,337 @@ auto maxUsableSampleCount(VkPhysicalDevice physicalDevice)
       return count;
   return VK_SAMPLE_COUNT_1_BIT;
 }
+
+auto bufferMemory(VkDevice device, VkPhysicalDevice physicalDevice,
+                  VkBuffer buffer, VkMemoryPropertyFlags flags)
+    -> vulkan_wrappers::DeviceMemory {
+  VkMemoryRequirements memoryRequirements;
+  vkGetBufferMemoryRequirements(device, buffer, &memoryRequirements);
+  vulkan_wrappers::DeviceMemory memory{device, physicalDevice, flags,
+                                       memoryRequirements};
+  vkBindBufferMemory(device, buffer, memory.memory, 0);
+  return memory;
+}
+
+auto imageMemory(VkDevice device, VkPhysicalDevice physicalDevice,
+                 VkImage image, VkMemoryPropertyFlags flags)
+    -> vulkan_wrappers::DeviceMemory {
+  VkMemoryRequirements memoryRequirements;
+  vkGetImageMemoryRequirements(device, image, &memoryRequirements);
+  vulkan_wrappers::DeviceMemory memory{device, physicalDevice, flags,
+                                       memoryRequirements};
+  vkBindImageMemory(device, image, memory.memory, 0);
+  return memory;
+}
+
+static void begin(VkCommandBuffer buffer) {
+  VkCommandBufferBeginInfo beginInfo{};
+  beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+  beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+  vkBeginCommandBuffer(buffer, &beginInfo);
+}
+
+static void copyBuffer(VkDevice device, VkCommandPool commandPool,
+                       VkQueue graphicsQueue, VkBuffer sourceBuffer,
+                       VkBuffer destinationBuffer, VkDeviceSize size) {
+  vulkan_wrappers::CommandBuffers vulkanCommandBuffers{device, commandPool, 1};
+  begin(vulkanCommandBuffers.commandBuffers[0]);
+  std::array<VkBufferCopy, 1> copyRegion{};
+  copyRegion[0].size = size;
+  vkCmdCopyBuffer(vulkanCommandBuffers.commandBuffers[0], sourceBuffer,
+                  destinationBuffer, copyRegion.size(), copyRegion.data());
+  vkEndCommandBuffer(vulkanCommandBuffers.commandBuffers[0]);
+  submitAndWait(vulkanCommandBuffers, graphicsQueue);
+}
+
+void copy(VkDevice device, VkPhysicalDevice physicalDevice,
+          VkCommandPool commandPool, VkQueue graphicsQueue,
+          VkBuffer destinationBuffer, const void *source, size_t size) {
+  const vulkan_wrappers::Buffer stagingBuffer{
+      device, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, size};
+  const auto memory{bufferMemory(device, physicalDevice, stagingBuffer.buffer,
+                                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                     VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
+  copy(device, memory.memory, source, size);
+  copyBuffer(device, commandPool, graphicsQueue, stagingBuffer.buffer,
+             destinationBuffer, size);
+}
+
+void copyBufferToImage(VkDevice device, VkCommandPool commandPool,
+                       VkQueue graphicsQueue, VkBuffer buffer, VkImage image,
+                       uint32_t width, uint32_t height) {
+  vulkan_wrappers::CommandBuffers vulkanCommandBuffers{device, commandPool, 1};
+  begin(vulkanCommandBuffers.commandBuffers[0]);
+
+  VkBufferImageCopy region{};
+  region.bufferOffset = 0;
+  region.bufferRowLength = 0;
+  region.bufferImageHeight = 0;
+  region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  region.imageSubresource.mipLevel = 0;
+  region.imageSubresource.baseArrayLayer = 0;
+  region.imageSubresource.layerCount = 1;
+  region.imageOffset = {0, 0, 0};
+  region.imageExtent = {width, height, 1};
+
+  vkCmdCopyBufferToImage(vulkanCommandBuffers.commandBuffers[0], buffer, image,
+                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+  vkEndCommandBuffer(vulkanCommandBuffers.commandBuffers[0]);
+  submitAndWait(vulkanCommandBuffers, graphicsQueue);
+}
+
+void copy(VkDevice device, VkDeviceMemory memory, const void *source,
+          size_t size) {
+  void *data = nullptr;
+  vkMapMemory(device, memory, 0, size, 0, &data);
+  memcpy(data, source, size);
+  vkUnmapMemory(device, memory);
+}
+
+void submitAndWait(const vulkan_wrappers::CommandBuffers &vulkanCommandBuffers,
+                   VkQueue graphicsQueue) {
+  std::array<VkSubmitInfo, 1> submitInfo{};
+  submitInfo[0].sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+  submitInfo[0].commandBufferCount =
+      static_cast<uint32_t>(vulkanCommandBuffers.commandBuffers.size());
+  submitInfo[0].pCommandBuffers = vulkanCommandBuffers.commandBuffers.data();
+  vkQueueSubmit(graphicsQueue, submitInfo.size(), submitInfo.data(),
+                VK_NULL_HANDLE);
+  vkQueueWaitIdle(graphicsQueue);
+}
+
+auto swapChainImages(VkDevice device, VkSwapchainKHR swapChain)
+    -> std::vector<VkImage> {
+  uint32_t imageCount{0};
+  vkGetSwapchainImagesKHR(device, swapChain, &imageCount, nullptr);
+  std::vector<VkImage> swapChainImages(imageCount);
+  vkGetSwapchainImagesKHR(device, swapChain, &imageCount,
+                          swapChainImages.data());
+  return swapChainImages;
+}
+
+static auto vulkanDevices(VkInstance instance)
+    -> std::vector<VkPhysicalDevice> {
+  uint32_t deviceCount{0};
+  vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
+  std::vector<VkPhysicalDevice> devices(deviceCount);
+  vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
+  return devices;
+}
+
+static auto suitable(VkPhysicalDevice device, VkSurfaceKHR surface) -> bool {
+  auto extensionPropertyCount{vulkanCountFromPhysicalDevice(
+      device, [](VkPhysicalDevice device_, uint32_t *count) {
+        vkEnumerateDeviceExtensionProperties(device_, nullptr, count, nullptr);
+      })};
+  std::vector<VkExtensionProperties> extensionProperties(
+      extensionPropertyCount);
+  vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionPropertyCount,
+                                       extensionProperties.data());
+  std::vector<std::string> extensionNames(extensionProperties.size());
+  transform(extensionProperties.begin(), extensionProperties.end(),
+            extensionNames.begin(),
+            [](const VkExtensionProperties &properties) {
+              return static_cast<const char *>(properties.extensionName);
+            });
+
+  if (!includes(extensionNames.begin(), extensionNames.end(),
+                deviceExtensions.begin(), deviceExtensions.end()))
+    return false;
+
+  if (vulkanCountFromPhysicalDevice(
+          device, [&surface](VkPhysicalDevice device_, uint32_t *count) {
+            vkGetPhysicalDeviceSurfacePresentModesKHR(device_, surface, count,
+                                                      nullptr);
+          }) == 0)
+    return false;
+
+  if (vulkanCountFromPhysicalDevice(device, [&surface](VkPhysicalDevice device_,
+                                                       uint32_t *count) {
+        vkGetPhysicalDeviceSurfaceFormatsKHR(device_, surface, count, nullptr);
+      }) == 0)
+    return false;
+
+  VkPhysicalDeviceFeatures supportedFeatures;
+  vkGetPhysicalDeviceFeatures(device, &supportedFeatures);
+
+  if (supportedFeatures.samplerAnisotropy == 0U)
+    return false;
+
+  VkPhysicalDeviceProperties deviceProperties;
+  vkGetPhysicalDeviceProperties(device, &deviceProperties);
+  if (deviceProperties.deviceType != VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
+    return false;
+
+  uint32_t index{0U};
+  for (const auto properties :
+       queueFamilyProperties(device, queueFamilyPropertiesCount(device))) {
+    VkBool32 presentSupport{0U};
+    vkGetPhysicalDeviceSurfaceSupportKHR(device, index, surface,
+                                         &presentSupport);
+    if (supportsGraphics(properties) && presentSupport != 0U)
+      return true;
+    ++index;
+  }
+  return false;
+}
+
+auto suitableDevice(VkInstance instance, VkSurfaceKHR surface)
+    -> VkPhysicalDevice {
+  for (auto *const device : vulkanDevices(instance))
+    if (suitable(device, surface))
+      return device;
+  throw std::runtime_error("failed to find a suitable GPU!");
+}
+
+void transitionImageLayout(VkDevice device, VkCommandPool commandPool,
+                           VkQueue graphicsQueue, VkImage image,
+                           VkImageLayout oldLayout, VkImageLayout newLayout,
+                           uint32_t mipLevels) {
+  vulkan_wrappers::CommandBuffers vulkanCommandBuffers{device, commandPool, 1};
+  begin(vulkanCommandBuffers.commandBuffers[0]);
+
+  VkImageMemoryBarrier barrier{};
+  barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+  barrier.oldLayout = oldLayout;
+  barrier.newLayout = newLayout;
+  barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  barrier.image = image;
+  barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  barrier.subresourceRange.baseMipLevel = 0;
+  barrier.subresourceRange.levelCount = mipLevels;
+  barrier.subresourceRange.baseArrayLayer = 0;
+  barrier.subresourceRange.layerCount = 1;
+
+  VkPipelineStageFlags sourceStage{0};
+  VkPipelineStageFlags destinationStage{0};
+
+  if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED &&
+      newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+    barrier.srcAccessMask = 0;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+    destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+  } else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL &&
+             newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+  } else
+    throw std::invalid_argument("unsupported layout transition!");
+
+  vkCmdPipelineBarrier(vulkanCommandBuffers.commandBuffers[0], sourceStage,
+                       destinationStage, 0, 0, nullptr, 0, nullptr, 1,
+                       &barrier);
+  vkEndCommandBuffer(vulkanCommandBuffers.commandBuffers[0]);
+  submitAndWait(vulkanCommandBuffers, graphicsQueue);
+}
+
+void generateMipmaps(VkDevice device, VkPhysicalDevice physicalDevice,
+                     VkCommandPool commandPool, VkQueue graphicsQueue,
+                     VkImage image, VkFormat imageFormat, int32_t texWidth,
+                     int32_t texHeight, uint32_t mipLevels) {
+  VkFormatProperties formatProperties;
+  vkGetPhysicalDeviceFormatProperties(physicalDevice, imageFormat,
+                                      &formatProperties);
+
+  if ((formatProperties.optimalTilingFeatures &
+       VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) == 0U)
+    throw std::runtime_error(
+        "texture image format does not support linear blitting!");
+
+  vulkan_wrappers::CommandBuffers vulkanCommandBuffers{device, commandPool, 1};
+  begin(vulkanCommandBuffers.commandBuffers[0]);
+
+  VkImageMemoryBarrier barrier{};
+  barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+  barrier.image = image;
+  barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+  barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+  barrier.subresourceRange.baseArrayLayer = 0;
+  barrier.subresourceRange.layerCount = 1;
+  barrier.subresourceRange.levelCount = 1;
+
+  auto mipWidth{texWidth};
+  auto mipHeight{texHeight};
+
+  for (auto i{1U}; i < mipLevels; i++) {
+    barrier.subresourceRange.baseMipLevel = i - 1;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+
+    vkCmdPipelineBarrier(
+        vulkanCommandBuffers.commandBuffers[0], VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    VkImageBlit blit{};
+    blit.srcOffsets[0] = {0, 0, 0};
+    blit.srcOffsets[1] = {mipWidth, mipHeight, 1};
+    blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    blit.srcSubresource.mipLevel = i - 1;
+    blit.srcSubresource.baseArrayLayer = 0;
+    blit.srcSubresource.layerCount = 1;
+    blit.dstOffsets[0] = {0, 0, 0};
+    blit.dstOffsets[1] = {mipWidth > 1 ? mipWidth / 2 : 1,
+                          mipHeight > 1 ? mipHeight / 2 : 1, 1};
+    blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    blit.dstSubresource.mipLevel = i;
+    blit.dstSubresource.baseArrayLayer = 0;
+    blit.dstSubresource.layerCount = 1;
+
+    vkCmdBlitImage(vulkanCommandBuffers.commandBuffers[0], image,
+                   VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, image,
+                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit,
+                   VK_FILTER_LINEAR);
+
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+    vkCmdPipelineBarrier(vulkanCommandBuffers.commandBuffers[0],
+                         VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr,
+                         0, nullptr, 1, &barrier);
+
+    if (mipWidth > 1)
+      mipWidth /= 2;
+    if (mipHeight > 1)
+      mipHeight /= 2;
+  }
+
+  barrier.subresourceRange.baseMipLevel = mipLevels - 1;
+  barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+  barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+  barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+  barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+  vkCmdPipelineBarrier(vulkanCommandBuffers.commandBuffers[0],
+                       VK_PIPELINE_STAGE_TRANSFER_BIT,
+                       VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0,
+                       nullptr, 1, &barrier);
+
+  vkEndCommandBuffer(vulkanCommandBuffers.commandBuffers[0]);
+  submitAndWait(vulkanCommandBuffers, graphicsQueue);
+}
+
+auto swapChainImageViews(VkDevice device, VkPhysicalDevice physicalDevice,
+                         VkSurfaceKHR surface,
+                         const std::vector<VkImage> &swapChainImages)
+    -> std::vector<vulkan_wrappers::ImageView> {
+  const auto format{swapSurfaceFormat(physicalDevice, surface).format};
+  std::vector<vulkan_wrappers::ImageView> swapChainImageViews;
+  transform(swapChainImages.begin(), swapChainImages.end(),
+            back_inserter(swapChainImageViews),
+            [device, format](VkImage image) {
+              return vulkan_wrappers::ImageView{device, image, format,
+                                                VK_IMAGE_ASPECT_COLOR_BIT, 1};
+            });
+  return swapChainImageViews;
+}
 } // namespace sbash64::graphics
