@@ -1,3 +1,4 @@
+#include "glm/gtx/dual_quaternion.hpp"
 #include <sbash64/graphics/glfw-wrappers.hpp>
 #include <sbash64/graphics/load-object.hpp>
 #include <sbash64/graphics/stbi-wrappers.hpp>
@@ -184,8 +185,8 @@ struct Mouse {
 };
 
 struct Camera {
-  std::vector<float> rotationAnglesDegrees;
-  glm::vec3 position;
+  float yaw;
+  float pitch;
 };
 
 struct FixedPointVector3D {
@@ -200,33 +201,18 @@ struct GlfwCallback {
   bool frameBufferResized{};
 };
 
-static auto viewMatrix(const Camera &camera) -> glm::mat4 {
-  return glm::translate(glm::mat4{1.F}, camera.position) *
-         glm::rotate(
-             glm::rotate(
-                 glm::rotate(glm::mat4{1.F},
-                             glm::radians(camera.rotationAnglesDegrees[0]),
-                             glm::vec3{1.F, 0.F, 0.F}),
-                 glm::radians(camera.rotationAnglesDegrees[1]),
-                 glm::vec3{0.F, 1.F, 0.F}),
-             glm::radians(camera.rotationAnglesDegrees[2]),
-             glm::vec3{0.F, 0.F, 1.F});
-}
-
 static void updateCameraAndMouse(GlfwCallback *callback, float x, float y) {
   const auto dy{callback->mouse.position.y - y};
   const auto dx{callback->mouse.position.x - x};
   if (callback->mouse.leftPressed) {
-    const auto rotationSpeed{1.F};
-    callback->camera.rotationAnglesDegrees[0] += dy * rotationSpeed;
-    callback->camera.rotationAnglesDegrees[1] -= dx * rotationSpeed;
-  }
-  if (callback->mouse.rightPressed) {
-    callback->camera.position += glm::vec3(-dx * .01F, -dy * .01F, .0F);
-  }
-  if (callback->mouse.middlePressed) {
-    const auto zoomSpeed{1.F};
-    callback->camera.position += glm::vec3(0.F, 0.F, dy * .005F * zoomSpeed);
+    float sensitivity = 0.1f;
+    callback->camera.yaw += dx * sensitivity;
+    callback->camera.pitch += dy * sensitivity;
+
+    if (callback->camera.pitch > 89.0f)
+      callback->camera.pitch = 89.0f;
+    if (callback->camera.pitch < -89.0f)
+      callback->camera.pitch = -89.0f;
   }
   callback->mouse.position = {x, y};
 }
@@ -268,13 +254,12 @@ static void onFramebufferResize(GLFWwindow *window, int /*width*/,
 
 static void updateUniformBuffer(const vulkan_wrappers::Device &device,
                                 const vulkan_wrappers::DeviceMemory &memory,
-                                const Camera &camera, glm::mat4 perspective,
+                                glm::mat4 view, glm::mat4 perspective,
                                 glm::vec3 translation, float scale = 1,
                                 float rotationAngleDegrees = 0) {
   UniformBufferObject ubo{};
   perspective[1][1] *= -1;
-  ubo.mvp = perspective * viewMatrix(camera) *
-            glm::translate(glm::mat4{1.F}, translation) *
+  ubo.mvp = perspective * view * glm::translate(glm::mat4{1.F}, translation) *
             glm::rotate(glm::mat4{1.F}, glm::radians(rotationAngleDegrees),
                         glm::vec3{0.F, 1.F, 0.F}) *
             glm::scale(glm::vec3{scale, scale, scale});
@@ -409,12 +394,12 @@ static void run(const std::string &vertexShaderCodePath,
                 const std::string &worldObjectPath) {
   const glfw_wrappers::Init glfwInitialization;
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-  const glfw_wrappers::Window glfwWindow{1280, 720};
+  const glfw_wrappers::Window glfwWindow{1280, 960};
   GlfwCallback glfwCallback{};
   glfwSetWindowUserPointer(glfwWindow.window, &glfwCallback);
-  glfwSetFramebufferSizeCallback(glfwWindow.window, onFramebufferResize);
   glfwSetCursorPosCallback(glfwWindow.window, onCursorPositionChanged);
   glfwSetMouseButtonCallback(glfwWindow.window, onMouseButton);
+  glfwSetFramebufferSizeCallback(glfwWindow.window, onFramebufferResize);
   const vulkan_wrappers::Instance vulkanInstance;
   const vulkan_wrappers::Surface vulkanSurface{vulkanInstance.instance,
                                                glfwWindow.window};
@@ -554,10 +539,10 @@ static void run(const std::string &vertexShaderCodePath,
   FixedPointVector3D playerVelocity{};
   RationalNumber verticalVelocity{0, 1};
   auto jumpState{JumpState::grounded};
-  auto worldOrigin = glm::vec3{30.F, 0.F, 0.F};
-  glfwCallback.camera.rotationAnglesDegrees = {0.F, 0.F, 0.F};
-  glfwCallback.camera.position = glm::vec3{0.F, -10.F, -10.F};
-  FixedPointVector3D playerDisplacement{-400, 0, 0};
+  auto worldOrigin = glm::vec3{0.F, 0.F, 0.F};
+  glfwCallback.camera.yaw = 0;
+  glfwCallback.camera.pitch = 45;
+  FixedPointVector3D playerDisplacement{1000, 0, -500};
   while (!recreatingSwapChain) {
     if (glfwWindowShouldClose(glfwWindow.window) != 0) {
       break;
@@ -568,21 +553,6 @@ static void run(const std::string &vertexShaderCodePath,
       constexpr auto playerRunAcceleration{2};
       constexpr auto playerJumpAcceleration{6};
       const RationalNumber gravity{-1, 4};
-      if (pressing(glfwWindow.window, GLFW_KEY_Z)) {
-        worldOrigin += glm::vec3{
-            pressing(glfwWindow.window, GLFW_KEY_LEFT_SHIFT) ? 1.F : -1.F, 0.F,
-            0.F};
-      }
-      if (pressing(glfwWindow.window, GLFW_KEY_X)) {
-        worldOrigin += glm::vec3{
-            0.F, pressing(glfwWindow.window, GLFW_KEY_LEFT_SHIFT) ? 1.F : -1.F,
-            0.F};
-      }
-      if (pressing(glfwWindow.window, GLFW_KEY_C)) {
-        worldOrigin += glm::vec3{
-            0.F, 0.F,
-            pressing(glfwWindow.window, GLFW_KEY_LEFT_SHIFT) ? 1.F : -1.F};
-      }
       if (pressing(glfwWindow.window, GLFW_KEY_A)) {
         playerVelocity.x += playerRunAcceleration;
       }
@@ -646,16 +616,25 @@ static void run(const std::string &vertexShaderCodePath,
         glm::perspective(glm::radians(45.F),
                          static_cast<float>(swapChainExtent.width) /
                              static_cast<float>(swapChainExtent.height),
-                         0.1F, 100.F);
-    const glm::vec3 playerPosition{playerDisplacement.x / 10.F,
-                                   playerDisplacement.y / 10.F,
-                                   playerDisplacement.z / 10.F};
-    updateUniformBuffer(
-        vulkanDevice, playerUniformBuffersWithMemory[imageIndex].memory,
-        glfwCallback.camera, projection, playerPosition, 1, -90.F);
+                         100.F, 10000.F);
+    const glm::vec3 playerPosition{playerDisplacement.x * 3.F,
+                                   playerDisplacement.y * 3.F,
+                                   playerDisplacement.z * 3.F};
+    const auto view = glm::lookAt(
+        playerPosition +
+            600.F * glm::normalize(glm::vec3{
+                        cos(glm::radians(glfwCallback.camera.yaw)) *
+                            cos(glm::radians(glfwCallback.camera.pitch)),
+                        sin(glm::radians(glfwCallback.camera.pitch)),
+                        sin(glm::radians(glfwCallback.camera.yaw)) *
+                            cos(glm::radians(glfwCallback.camera.pitch))}),
+        playerPosition, glm::vec3(0, 1, 0));
     updateUniformBuffer(vulkanDevice,
-                        worldUniformBuffersWithMemory[imageIndex].memory,
-                        glfwCallback.camera, projection, worldOrigin, 20.F);
+                        playerUniformBuffersWithMemory[imageIndex].memory, view,
+                        projection, playerPosition, 20, -90.F);
+    updateUniformBuffer(vulkanDevice,
+                        worldUniformBuffersWithMemory[imageIndex].memory, view,
+                        projection, worldOrigin);
 
     if (imagesInFlight[imageIndex] != VK_NULL_HANDLE)
       vkWaitForFences(vulkanDevice.device, 1, &imagesInFlight[imageIndex],
