@@ -197,7 +197,7 @@ struct FixedPointVector3D {
 
 struct GlfwCallback {
   Mouse mouse{};
-  Camera camera;
+  Camera camera{};
   bool frameBufferResized{};
 };
 
@@ -205,14 +205,10 @@ static void updateCameraAndMouse(GlfwCallback *callback, float x, float y) {
   const auto dy{callback->mouse.position.y - y};
   const auto dx{callback->mouse.position.x - x};
   if (callback->mouse.leftPressed) {
-    float sensitivity = 0.1f;
+    const auto sensitivity = 0.5F;
     callback->camera.yaw += dx * sensitivity;
-    callback->camera.pitch += dy * sensitivity;
-
-    if (callback->camera.pitch > 89.0f)
-      callback->camera.pitch = 89.0f;
-    if (callback->camera.pitch < -89.0f)
-      callback->camera.pitch = -89.0f;
+    callback->camera.pitch =
+        std::clamp(callback->camera.pitch + dy * sensitivity, 1.F, 179.F);
   }
   callback->mouse.position = {x, y};
 }
@@ -540,8 +536,8 @@ static void run(const std::string &vertexShaderCodePath,
   RationalNumber verticalVelocity{0, 1};
   auto jumpState{JumpState::grounded};
   auto worldOrigin = glm::vec3{0.F, 0.F, 0.F};
-  glfwCallback.camera.yaw = 0;
-  glfwCallback.camera.pitch = 45;
+  glfwCallback.camera.yaw = -90;
+  glfwCallback.camera.pitch = 15;
   FixedPointVector3D playerDisplacement{1000, 0, -500};
   while (!recreatingSwapChain) {
     if (glfwWindowShouldClose(glfwWindow.window) != 0) {
@@ -623,11 +619,11 @@ static void run(const std::string &vertexShaderCodePath,
     const auto view = glm::lookAt(
         playerPosition +
             600.F * glm::normalize(glm::vec3{
-                        cos(glm::radians(glfwCallback.camera.yaw)) *
-                            cos(glm::radians(glfwCallback.camera.pitch)),
-                        sin(glm::radians(glfwCallback.camera.pitch)),
-                        sin(glm::radians(glfwCallback.camera.yaw)) *
-                            cos(glm::radians(glfwCallback.camera.pitch))}),
+                        std::cos(glm::radians(glfwCallback.camera.yaw)) *
+                            std::cos(glm::radians(glfwCallback.camera.pitch)),
+                        std::sin(glm::radians(glfwCallback.camera.pitch)),
+                        std::sin(glm::radians(glfwCallback.camera.yaw)) *
+                            std::cos(glm::radians(glfwCallback.camera.pitch))}),
         playerPosition, glm::vec3(0, 1, 0));
     updateUniformBuffer(vulkanDevice,
                         playerUniformBuffersWithMemory[imageIndex].memory, view,
