@@ -199,7 +199,8 @@ struct Semaphore {
 };
 
 struct Fence {
-  explicit Fence(VkDevice);
+  explicit Fence(VkDevice,
+                 VkFenceCreateFlags flags = VK_FENCE_CREATE_SIGNALED_BIT);
   ~Fence();
   Fence(Fence &&) noexcept;
 

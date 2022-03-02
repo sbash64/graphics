@@ -645,10 +645,10 @@ Semaphore::Semaphore(Semaphore &&other) noexcept
   other.semaphore = nullptr;
 }
 
-Fence::Fence(VkDevice device) : device{device} {
+Fence::Fence(VkDevice device, VkFenceCreateFlags flags) : device{device} {
   VkFenceCreateInfo fenceInfo{};
   fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-  fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+  fenceInfo.flags = flags;
   throwOnError(
       [&]() { return vkCreateFence(device, &fenceInfo, nullptr, &fence); },
       "failed to create fence!");

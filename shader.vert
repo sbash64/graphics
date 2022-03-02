@@ -4,6 +4,10 @@ layout(binding = 0) uniform UniformBufferObject {
     mat4 mvp;
 } ubo;
 
+layout(std430, set = 1, binding = 0) readonly buffer JointMatrices {
+	mat4 jointMatrices[];
+};
+
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec2 inTexCoord;
 

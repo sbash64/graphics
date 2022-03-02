@@ -22,6 +22,18 @@ FetchContent_Declare(
   GIT_TAG 097ad6a826336a76e42a27e6e531da7dbdf3fd01)
 FetchContent_MakeAvailable(tinyobjloader)
 
+FetchContent_Declare(
+  tinygltf
+  GIT_REPOSITORY https://github.com/syoyo/tinygltf
+  GIT_TAG v2.5.0)
+set(TINYGLTF_HEADER_ONLY
+    ON
+    CACHE INTERNAL "" FORCE)
+set(TINYGLTF_INSTALL
+    OFF
+    CACHE INTERNAL "" FORCE)
+FetchContent_MakeAvailable(tinygltf)
+
 include(FindVulkan)
 
 add_executable(
@@ -29,8 +41,9 @@ add_executable(
                             stbi-wrappers.cpp load-object.cpp)
 target_link_libraries(sbash64-learn-vulkan-main glfw Vulkan::Vulkan glm
                       tinyobjloader)
-target_include_directories(sbash64-learn-vulkan-main PRIVATE include
-                                                             ${stb_SOURCE_DIR})
+target_include_directories(
+  sbash64-learn-vulkan-main PRIVATE include ${stb_SOURCE_DIR}
+                                    ${tinygltf_SOURCE_DIR})
 target_compile_features(sbash64-learn-vulkan-main PRIVATE cxx_std_20)
 target_compile_options(sbash64-learn-vulkan-main
                        PRIVATE "${SBASH64_LEARN_VULKAN_WARNINGS}")
