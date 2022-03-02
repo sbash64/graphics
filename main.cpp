@@ -726,8 +726,8 @@ struct AnimationSampler {
 
 struct AnimationChannel {
   std::string path;
-  Node *node;
-  uint32_t samplerIndex;
+  Node *node{};
+  uint32_t samplerIndex{};
 };
 
 struct Animation {
@@ -736,7 +736,7 @@ struct Animation {
   std::vector<AnimationChannel> channels;
   float start = std::numeric_limits<float>::max();
   float end = std::numeric_limits<float>::min();
-  float currentTime = 0.0f;
+  float currentTime = 0.0F;
 };
 
 template <typename T>
@@ -959,10 +959,8 @@ static void updateJoints(Node *node, VkDevice device) {
     sbash64::graphics::copy(device, deviceMemory(node), jointMatrices.data(),
                             jointMatrices.size() * sizeof(glm::mat4));
   }
-
-  for (auto &child : node->children) {
+  for (const auto &child : node->children)
     updateJoints(child.get(), device);
-  }
 }
 
 static auto
@@ -1025,7 +1023,6 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
   // Images can be stored inside the glTF (which is the case for the sample
   // model), so instead of directly loading them from disk, we fetch them
   // from the glTF loader and upload the buffers
-  // images.resize(input.images.size());
   std::vector<sbash64::graphics::VulkanImage> vulkanImages;
   transform(gltfModel.images.begin(), gltfModel.images.end(),
             back_inserter(vulkanImages),
@@ -1060,18 +1057,13 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
   transform(
       gltfModel.materials.begin(), gltfModel.materials.end(),
       back_inserter(materials), [](const tinygltf::Material &gltfMaterial) {
-        // We only read the most basic properties required for our sample
-        // Get the base color factor
         Material material;
-        if (gltfMaterial.values.contains("baseColorFactor")) {
+        if (gltfMaterial.values.contains("baseColorFactor"))
           material.baseColorFactor = glm::make_vec4(
               gltfMaterial.values.at("baseColorFactor").ColorFactor().data());
-        }
-        // Get base color texture index
-        if (gltfMaterial.values.contains("baseColorTexture")) {
+        if (gltfMaterial.values.contains("baseColorTexture"))
           material.baseColorTextureIndex =
               gltfMaterial.values.at("baseColorTexture").TextureIndex();
-        }
         return material;
       });
 
@@ -1090,23 +1082,20 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
   std::vector<Skin> skins;
   std::vector<sbash64::graphics::VulkanBufferWithMemory>
       jointsVulkanBuffersWithMemory;
-  std::transform(
+  transform(
       gltfModel.skins.begin(), gltfModel.skins.end(), back_inserter(skins),
       [&gltfModel, &nodes, &device, &physicalDevice,
        &jointsVulkanBuffersWithMemory](const tinygltf::Skin &gltfSkin) {
         Skin skin;
         skin.name = gltfSkin.name;
-        // Find the root node of the skeleton
         skin.skeletonRoot = nodeFromIndex(nodes, gltfSkin.skeleton);
 
-        // Find joint nodes
         for (const auto jointIndex : gltfSkin.joints) {
           auto *node = nodeFromIndex(nodes, jointIndex);
           if (node != nullptr)
             skin.joints.push_back(node);
         }
 
-        // Get the inverse bind matrices from the buffer associated to this skin
         if (gltfSkin.inverseBindMatrices > -1) {
           const auto span{
               ::span<glm::mat4>(gltfModel, gltfSkin.inverseBindMatrices)};
@@ -1139,15 +1128,12 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
       [&gltfModel, &nodes](const tinygltf::Animation &gltfAnimation) {
         Animation animation;
         animation.name = gltfAnimation.name;
-        // Samplers
         transform(gltfAnimation.samplers.begin(), gltfAnimation.samplers.end(),
                   back_inserter(animation.samplers),
                   [&gltfModel,
                    &animation](const tinygltf::AnimationSampler &gltfSampler) {
                     AnimationSampler animationSampler;
                     animationSampler.interpolation = gltfSampler.interpolation;
-
-                    // Read sampler keyframe gltfModel time values
                     for (const auto input :
                          span<float>(gltfModel, gltfSampler.input))
                       animationSampler.inputs.push_back(input);
@@ -1178,8 +1164,7 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
                     }
                     return animationSampler;
                   });
-
-        std::transform(
+        transform(
             gltfAnimation.channels.begin(), gltfAnimation.channels.end(),
             back_inserter(animation.channels),
             [&nodes](const tinygltf::AnimationChannel &gltfAnimationChannel) {
@@ -1193,14 +1178,12 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
         return animation;
       });
   // Calculate initial pose
-  for (const auto &node : nodes) {
+  for (const auto &node : nodes)
     updateJoints(node.get(), device);
-  }
 
   // Create and upload vertex and index buffer
   VkBuffer buffer;
-  VkDeviceMemory memory;
-  size_t vertexBufferSize = vertexBuffer.size() * sizeof(Vertex);
+  // size_t vertexBufferSize = vertexBuffer.size() * sizeof(Vertex);
   size_t indexBufferSize = indexBuffer.size() * sizeof(uint32_t);
   auto indicesCount = static_cast<uint32_t>(indexBuffer.size());
 
@@ -1210,34 +1193,49 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
   } vertexStaging, indexStaging;
 
   // Create host visible staging buffers (source)
-  // VK_CHECK_RESULT(
-  //     vulkanDevice->createBuffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-  //                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-  //                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-  //                                vertexBufferSize, &vertexStaging.buffer,
-  //                                &vertexStaging.memory,
-  //                                vertexBuffer.data()));
-  // // Index data
-  // VK_CHECK_RESULT(
-  //     vulkanDevice->createBuffer(VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-  //                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-  //                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-  //                                indexBufferSize, &indexStaging.buffer,
-  //                                &indexStaging.memory,
-  //                                indexBuffer.data()));
-
+  {
+    const VkDeviceSize bufferSize{vertexBuffer.size() * sizeof(Vertex)};
+    sbash64::graphics::vulkan_wrappers::Buffer vulkanBuffer{
+        device, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, bufferSize};
+    auto vulkanDeviceMemory{sbash64::graphics::bufferMemory(
+        device, physicalDevice, vulkanBuffer.buffer,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
+    sbash64::graphics::copy(device, vulkanDeviceMemory.memory,
+                            vertexBuffer.data(), bufferSize);
+  }
+  {
+    const VkDeviceSize bufferSize{indexBuffer.size() * sizeof(uint32_t)};
+    sbash64::graphics::vulkan_wrappers::Buffer vulkanBuffer{
+        device, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, bufferSize};
+    auto vulkanDeviceMemory{sbash64::graphics::bufferMemory(
+        device, physicalDevice, vulkanBuffer.buffer,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
+    sbash64::graphics::copy(device, vulkanDeviceMemory.memory,
+                            vertexBuffer.data(), bufferSize);
+  }
   // // Create device local buffers (target)
-  // VK_CHECK_RESULT(vulkanDevice->createBuffer(
-  //     VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
-  //     VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-  //     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertexBufferSize,
-  //     &glTFModel.vertices.buffer, &glTFModel.vertices.memory));
-  // VK_CHECK_RESULT(vulkanDevice->createBuffer(
-  //     VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
-  //     VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-  //     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, indexBufferSize,
-  //     &glTFModel.indices.buffer, &glTFModel.indices.memory));
-
+  {
+    const VkDeviceSize bufferSize{vertexBuffer.size() * sizeof(Vertex)};
+    sbash64::graphics::vulkan_wrappers::Buffer vulkanBuffer{
+        device,
+        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        bufferSize};
+    auto vulkanDeviceMemory{sbash64::graphics::bufferMemory(
+        device, physicalDevice, vulkanBuffer.buffer,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
+  }
+  {
+    const VkDeviceSize bufferSize{indexBuffer.size() * sizeof(uint32_t)};
+    sbash64::graphics::vulkan_wrappers::Buffer vulkanBuffer{
+        device,
+        VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+        bufferSize};
+    auto vulkanDeviceMemory{sbash64::graphics::bufferMemory(
+        device, physicalDevice, vulkanBuffer.buffer,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
+  }
   // // Copy data from staging buffers (host) do device local buffer (gpu)
   // VkCommandBuffer copyCmd =
   //     vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY,
