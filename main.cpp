@@ -1087,49 +1087,51 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
     loadNode(nodes, gltfModel.nodes[i], gltfModel, nullptr, i, indexBuffer,
              vertexBuffer);
 
-  std::vector<Skin> skins(gltfModel.skins.size());
+  std::vector<Skin> skins;
   std::vector<sbash64::graphics::VulkanBufferWithMemory>
       jointsVulkanBuffersWithMemory;
-  for (size_t i = 0; i < gltfModel.skins.size(); i++) {
-    const auto gltfSkin = gltfModel.skins[i];
+  std::transform(
+      gltfModel.skins.begin(), gltfModel.skins.end(), back_inserter(skins),
+      [&gltfModel, &nodes, &device, &physicalDevice,
+       &jointsVulkanBuffersWithMemory](const tinygltf::Skin &gltfSkin) {
+        Skin skin;
+        skin.name = gltfSkin.name;
+        // Find the root node of the skeleton
+        skin.skeletonRoot = nodeFromIndex(nodes, gltfSkin.skeleton);
 
-    skins[i].name = gltfSkin.name;
-    // Find the root node of the skeleton
-    skins[i].skeletonRoot = nodeFromIndex(nodes, gltfSkin.skeleton);
+        // Find joint nodes
+        for (const auto jointIndex : gltfSkin.joints) {
+          auto *node = nodeFromIndex(nodes, jointIndex);
+          if (node != nullptr)
+            skin.joints.push_back(node);
+        }
 
-    // Find joint nodes
-    for (int jointIndex : gltfSkin.joints) {
-      Node *node = nodeFromIndex(nodes, jointIndex);
-      if (node != nullptr) {
-        skins[i].joints.push_back(node);
-      }
-    }
+        // Get the inverse bind matrices from the buffer associated to this skin
+        if (gltfSkin.inverseBindMatrices > -1) {
+          const auto span{
+              ::span<glm::mat4>(gltfModel, gltfSkin.inverseBindMatrices)};
+          std::vector<glm::mat4> inverseBindMatrices{span.begin(), span.end()};
 
-    // Get the inverse bind matrices from the buffer associated to this skin
-    if (gltfSkin.inverseBindMatrices > -1) {
-      const auto span{
-          ::span<glm::mat4>(gltfModel, gltfSkin.inverseBindMatrices)};
-      std::vector<glm::mat4> inverseBindMatrices{span.begin(), span.end()};
+          // Store inverse bind matrices for this skin in a shader storage
+          // buffer object To keep this sample simple, we create a host visible
+          // shader storage buffer
 
-      // Store inverse bind matrices for this skin in a shader storage
-      // buffer object To keep this sample simple, we create a host visible
-      // shader storage buffer
-
-      const VkDeviceSize bufferSize{sizeof(glm::mat4) * span.size()};
-      sbash64::graphics::vulkan_wrappers::Buffer jointsVulkanBuffer{
-          device, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, bufferSize};
-      auto memory{sbash64::graphics::bufferMemory(
-          device, physicalDevice, jointsVulkanBuffer.buffer,
-          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-              VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
-      sbash64::graphics::copy(device, memory.memory, inverseBindMatrices.data(),
-                              bufferSize);
-      // VK_CHECK_RESULT(skins[i].ssbo.map());
-      jointsVulkanBuffersWithMemory.push_back(
-          sbash64::graphics::VulkanBufferWithMemory{
-              std::move(jointsVulkanBuffer), std::move(memory)});
-    }
-  }
+          const VkDeviceSize bufferSize{sizeof(glm::mat4) * span.size()};
+          sbash64::graphics::vulkan_wrappers::Buffer jointsVulkanBuffer{
+              device, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, bufferSize};
+          auto memory{sbash64::graphics::bufferMemory(
+              device, physicalDevice, jointsVulkanBuffer.buffer,
+              VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                  VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
+          sbash64::graphics::copy(device, memory.memory,
+                                  inverseBindMatrices.data(), bufferSize);
+          // VK_CHECK_RESULT(skins[i].ssbo.map());
+          jointsVulkanBuffersWithMemory.push_back(
+              sbash64::graphics::VulkanBufferWithMemory{
+                  std::move(jointsVulkanBuffer), std::move(memory)});
+        }
+        return skin;
+      });
   std::vector<Animation> animations;
   transform(
       gltfModel.animations.begin(), gltfModel.animations.end(),
