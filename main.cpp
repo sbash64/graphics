@@ -1130,66 +1130,66 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
               std::move(jointsVulkanBuffer), std::move(memory)});
     }
   }
-  std::vector<Animation> animations(gltfModel.animations.size());
-  for (size_t i = 0; i < gltfModel.animations.size(); i++) {
-    tinygltf::Animation gltfAnimation = gltfModel.animations[i];
-    animations[i].name = gltfAnimation.name;
-    auto &animation{animations[i]};
-    // Samplers
-    std::transform(
-        gltfAnimation.samplers.begin(), gltfAnimation.samplers.end(),
-        back_inserter(animation.samplers),
-        [&gltfModel,
-         &animation](const tinygltf::AnimationSampler &gltfSampler) {
-          AnimationSampler animationSampler;
-          animationSampler.interpolation = gltfSampler.interpolation;
+  std::vector<Animation> animations;
+  transform(
+      gltfModel.animations.begin(), gltfModel.animations.end(),
+      back_inserter(animations),
+      [&gltfModel, &nodes](const tinygltf::Animation &gltfAnimation) {
+        Animation animation;
+        animation.name = gltfAnimation.name;
+        // Samplers
+        transform(gltfAnimation.samplers.begin(), gltfAnimation.samplers.end(),
+                  back_inserter(animation.samplers),
+                  [&gltfModel,
+                   &animation](const tinygltf::AnimationSampler &gltfSampler) {
+                    AnimationSampler animationSampler;
+                    animationSampler.interpolation = gltfSampler.interpolation;
 
-          // Read sampler keyframe gltfModel time values
-          {
-            for (const auto input : span<float>(gltfModel, gltfSampler.input)) {
-              animationSampler.inputs.push_back(input);
-            }
-            // Adjust animation's start and end times
-            for (auto input : animationSampler.inputs) {
-              if (input < animation.start) {
-                animation.start = input;
-              };
-              if (input > animation.end) {
-                animation.end = input;
-              }
-            }
-          }
+                    // Read sampler keyframe gltfModel time values
+                    for (const auto input :
+                         span<float>(gltfModel, gltfSampler.input))
+                      animationSampler.inputs.push_back(input);
+                    // Adjust animation's start and end times
+                    for (const auto input : animationSampler.inputs) {
+                      if (input < animation.start)
+                        animation.start = input;
+                      if (input > animation.end)
+                        animation.end = input;
+                    }
 
-          // Read sampler keyframe output translate/rotate/scale
-          // values
-          switch (gltfModel.accessors[gltfSampler.output].type) {
-          case TINYGLTF_TYPE_VEC3:
-            for (const auto v : span<glm::vec3>(gltfModel, gltfSampler.output))
-              animationSampler.outputsVec4.emplace_back(v, 0.0F);
-            break;
-          case TINYGLTF_TYPE_VEC4:
-            for (const auto v : span<glm::vec4>(gltfModel, gltfSampler.output))
-              animationSampler.outputsVec4.push_back(v);
-            break;
-          default:
-            std::cout << "unknown type" << std::endl;
-            break;
-          }
-          return animationSampler;
-        });
+                    // Read sampler keyframe output translate/rotate/scale
+                    // values
+                    switch (gltfModel.accessors[gltfSampler.output].type) {
+                    case TINYGLTF_TYPE_VEC3:
+                      for (const auto v :
+                           span<glm::vec3>(gltfModel, gltfSampler.output))
+                        animationSampler.outputsVec4.emplace_back(v, 0.0F);
+                      break;
+                    case TINYGLTF_TYPE_VEC4:
+                      for (const auto v :
+                           span<glm::vec4>(gltfModel, gltfSampler.output))
+                        animationSampler.outputsVec4.push_back(v);
+                      break;
+                    default:
+                      std::cout << "unknown type" << std::endl;
+                      break;
+                    }
+                    return animationSampler;
+                  });
 
-    // Channels
-    // animations[i].channels.resize(glTFAnimation.channels.size());
-    for (const auto &glTFChannel : gltfAnimation.channels) {
-      // AnimationChannel &dstChannel = animations[i].channels[j];
-      //  dstChannel.path =
-      glTFChannel.target_path;
-      // dstChannel.samplerIndex =
-      glTFChannel.sampler;
-      // dstChannel.node =
-      nodeFromIndex(nodes, glTFChannel.target_node);
-    }
-  }
+        std::transform(
+            gltfAnimation.channels.begin(), gltfAnimation.channels.end(),
+            back_inserter(animation.channels),
+            [&nodes](const tinygltf::AnimationChannel &gltfAnimationChannel) {
+              AnimationChannel animationChannel;
+              animationChannel.path = gltfAnimationChannel.target_path;
+              animationChannel.samplerIndex = gltfAnimationChannel.sampler;
+              animationChannel.node =
+                  nodeFromIndex(nodes, gltfAnimationChannel.target_node);
+              return animationChannel;
+            });
+        return animation;
+      });
   // Calculate initial pose
   for (const auto &node : nodes) {
     updateJoints(node.get(), device);
