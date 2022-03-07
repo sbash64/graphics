@@ -452,8 +452,23 @@ static void run(const std::string &vertexShaderCodePath,
                    &graphicsQueue);
   const vulkan_wrappers::CommandPool vulkanCommandPool{vulkanDevice.device,
                                                        vulkanPhysicalDevice};
+
+  VkDescriptorSetLayoutBinding uboLayoutBinding{};
+  uboLayoutBinding.binding = 0;
+  uboLayoutBinding.descriptorCount = 1;
+  uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  uboLayoutBinding.pImmutableSamplers = nullptr;
+  uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+  VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+  samplerLayoutBinding.binding = 1;
+  samplerLayoutBinding.descriptorCount = 1;
+  samplerLayoutBinding.descriptorType =
+      VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  samplerLayoutBinding.pImmutableSamplers = nullptr;
+  samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
   const vulkan_wrappers::DescriptorSetLayout vulkanDescriptorSetLayout{
-      vulkanDevice.device};
+      vulkanDevice.device, {uboLayoutBinding, samplerLayoutBinding}};
 
   const auto playerObjects{readTexturedObjects(playerObjectPath)};
   const auto playerTextureImages{textureImages(
@@ -476,11 +491,29 @@ static void run(const std::string &vertexShaderCodePath,
       vulkanFrameBuffers.size()};
   const vulkan_wrappers::PipelineLayout vulkanPipelineLayout{
       vulkanDevice.device, vulkanDescriptorSetLayout.descriptorSetLayout};
+
+  std::vector<VkVertexInputAttributeDescription> attributeDescriptions(2);
+  attributeDescriptions[0].binding = 0;
+  attributeDescriptions[0].location = 0;
+  attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+  attributeDescriptions[0].offset = offsetof(Vertex, position);
+
+  attributeDescriptions[1].binding = 0;
+  attributeDescriptions[1].location = 1;
+  attributeDescriptions[1].format = VK_FORMAT_R32G32_SFLOAT;
+  attributeDescriptions[1].offset = offsetof(Vertex, textureCoordinate);
+
+  std::vector<VkVertexInputBindingDescription> bindingDescription(1);
+  bindingDescription[0].binding = 0;
+  bindingDescription[0].stride = sizeof(Vertex);
+  bindingDescription[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
   const vulkan_wrappers::Pipeline vulkanPipeline{
       vulkanDevice.device,         vulkanPhysicalDevice,
       vulkanSurface.surface,       vulkanPipelineLayout.pipelineLayout,
       vulkanRenderPass.renderPass, vertexShaderCodePath,
-      fragmentShaderCodePath,      glfwWindow.window};
+      fragmentShaderCodePath,      glfwWindow.window,
+      attributeDescriptions,       bindingDescription};
 
   const auto playerDrawables{
       drawables(vulkanDevice.device, vulkanPhysicalDevice,

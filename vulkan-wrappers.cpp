@@ -416,12 +416,13 @@ RenderPass::RenderPass(VkDevice device, VkPhysicalDevice physicalDevice,
 
 RenderPass::~RenderPass() { vkDestroyRenderPass(device, renderPass, nullptr); }
 
-Pipeline::Pipeline(VkDevice device, VkPhysicalDevice physicalDevice,
-                   VkSurfaceKHR surface, VkPipelineLayout pipelineLayout,
-                   VkRenderPass renderPass,
-                   const std::string &vertexShaderCodePath,
-                   const std::string &fragmentShaderCodePath,
-                   GLFWwindow *window)
+Pipeline::Pipeline(
+    VkDevice device, VkPhysicalDevice physicalDevice, VkSurfaceKHR surface,
+    VkPipelineLayout pipelineLayout, VkRenderPass renderPass,
+    const std::string &vertexShaderCodePath,
+    const std::string &fragmentShaderCodePath, GLFWwindow *window,
+    const std::vector<VkVertexInputAttributeDescription> &attributeDescriptions,
+    const std::vector<VkVertexInputBindingDescription> &bindingDescription)
     : device{device} {
   const vulkan_wrappers::ShaderModule vertexShaderModule{
       device, readFile(vertexShaderCodePath)};
@@ -453,23 +454,6 @@ Pipeline::Pipeline(VkDevice device, VkPhysicalDevice physicalDevice,
   VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
   vertexInputInfo.sType =
       VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-
-  std::array<VkVertexInputBindingDescription, 1> bindingDescription{};
-  bindingDescription[0].binding = 0;
-  bindingDescription[0].stride = sizeof(Vertex);
-  bindingDescription[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-  std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions{};
-
-  attributeDescriptions[0].binding = 0;
-  attributeDescriptions[0].location = 0;
-  attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-  attributeDescriptions[0].offset = offsetof(Vertex, position);
-
-  attributeDescriptions[1].binding = 0;
-  attributeDescriptions[1].location = 1;
-  attributeDescriptions[1].format = VK_FORMAT_R32G32_SFLOAT;
-  attributeDescriptions[1].offset = offsetof(Vertex, textureCoordinate);
 
   vertexInputInfo.vertexBindingDescriptionCount = bindingDescription.size();
   vertexInputInfo.vertexAttributeDescriptionCount =
@@ -736,24 +720,9 @@ DeviceMemory::DeviceMemory(DeviceMemory &&other) noexcept
   other.memory = nullptr;
 }
 
-DescriptorSetLayout::DescriptorSetLayout(VkDevice device) : device{device} {
-  VkDescriptorSetLayoutBinding uboLayoutBinding{};
-  uboLayoutBinding.binding = 0;
-  uboLayoutBinding.descriptorCount = 1;
-  uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  uboLayoutBinding.pImmutableSamplers = nullptr;
-  uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-  VkDescriptorSetLayoutBinding samplerLayoutBinding{};
-  samplerLayoutBinding.binding = 1;
-  samplerLayoutBinding.descriptorCount = 1;
-  samplerLayoutBinding.descriptorType =
-      VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-  samplerLayoutBinding.pImmutableSamplers = nullptr;
-  samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-  std::array<VkDescriptorSetLayoutBinding, 2> bindings = {uboLayoutBinding,
-                                                          samplerLayoutBinding};
+DescriptorSetLayout::DescriptorSetLayout(
+    VkDevice device, const std::vector<VkDescriptorSetLayoutBinding> &bindings)
+    : device{device} {
   VkDescriptorSetLayoutCreateInfo layoutInfo{};
   layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
   layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());

@@ -1,6 +1,7 @@
 #ifndef SBASH64_GRAPHICS_VULKAN_WRAPPERS_HPP_
 #define SBASH64_GRAPHICS_VULKAN_WRAPPERS_HPP_
 
+#include <vulkan/vulkan_core.h>
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 
@@ -146,7 +147,9 @@ struct RenderPass {
 struct Pipeline {
   Pipeline(VkDevice, VkPhysicalDevice, VkSurfaceKHR, VkPipelineLayout,
            VkRenderPass, const std::string &vertexShaderCodePath,
-           const std::string &fragmentShaderCodePath, GLFWwindow *);
+           const std::string &fragmentShaderCodePath, GLFWwindow *,
+           const std::vector<VkVertexInputAttributeDescription> &,
+           const std::vector<VkVertexInputBindingDescription> &);
   ~Pipeline();
 
   Pipeline(Pipeline &&) = delete;
@@ -255,7 +258,8 @@ struct DeviceMemory {
 };
 
 struct DescriptorSetLayout {
-  explicit DescriptorSetLayout(VkDevice);
+  explicit DescriptorSetLayout(
+      VkDevice, const std::vector<VkDescriptorSetLayoutBinding> &);
   ~DescriptorSetLayout();
 
   DescriptorSetLayout(DescriptorSetLayout &&) = delete;
