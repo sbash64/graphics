@@ -1182,80 +1182,17 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
     updateJoints(node.get(), device);
 
   // Create and upload vertex and index buffer
-  VkBuffer buffer;
-  // size_t vertexBufferSize = vertexBuffer.size() * sizeof(Vertex);
-  size_t indexBufferSize = indexBuffer.size() * sizeof(uint32_t);
-  auto indicesCount = static_cast<uint32_t>(indexBuffer.size());
+  const auto vertexBufferSize = vertexBuffer.size() * sizeof(Vertex);
+  const auto indexBufferSize = indexBuffer.size() * sizeof(uint32_t);
 
-  struct StagingBuffer {
-    VkBuffer buffer;
-    VkDeviceMemory memory;
-  } vertexStaging, indexStaging;
-
-  // Create host visible staging buffers (source)
-  {
-    const VkDeviceSize bufferSize{vertexBuffer.size() * sizeof(Vertex)};
-    sbash64::graphics::vulkan_wrappers::Buffer vulkanBuffer{
-        device, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, bufferSize};
-    auto vulkanDeviceMemory{sbash64::graphics::bufferMemory(
-        device, physicalDevice, vulkanBuffer.buffer,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
-    sbash64::graphics::copy(device, vulkanDeviceMemory.memory,
-                            vertexBuffer.data(), bufferSize);
-  }
-  {
-    const VkDeviceSize bufferSize{indexBuffer.size() * sizeof(uint32_t)};
-    sbash64::graphics::vulkan_wrappers::Buffer vulkanBuffer{
-        device, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, bufferSize};
-    auto vulkanDeviceMemory{sbash64::graphics::bufferMemory(
-        device, physicalDevice, vulkanBuffer.buffer,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-            VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
-    sbash64::graphics::copy(device, vulkanDeviceMemory.memory,
-                            vertexBuffer.data(), bufferSize);
-  }
-  // // Create device local buffers (target)
-  {
-    const VkDeviceSize bufferSize{vertexBuffer.size() * sizeof(Vertex)};
-    sbash64::graphics::vulkan_wrappers::Buffer vulkanBuffer{
-        device,
-        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-        bufferSize};
-    auto vulkanDeviceMemory{sbash64::graphics::bufferMemory(
-        device, physicalDevice, vulkanBuffer.buffer,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
-  }
-  {
-    const VkDeviceSize bufferSize{indexBuffer.size() * sizeof(uint32_t)};
-    sbash64::graphics::vulkan_wrappers::Buffer vulkanBuffer{
-        device,
-        VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-        bufferSize};
-    auto vulkanDeviceMemory{sbash64::graphics::bufferMemory(
-        device, physicalDevice, vulkanBuffer.buffer,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
-  }
-  // // Copy data from staging buffers (host) do device local buffer (gpu)
-  // VkCommandBuffer copyCmd =
-  //     vulkanDevice->createCommandBuffer(VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-  //     true);
-  // VkBufferCopy copyRegion = {};
-  // copyRegion.size = vertexBufferSize;
-  // vkCmdCopyBuffer(copyCmd, vertexStaging.buffer,
-  // glTFModel.vertices.buffer, 1,
-  //                 &copyRegion);
-  // copyRegion.size = indexBufferSize;
-  // vkCmdCopyBuffer(copyCmd, indexStaging.buffer, glTFModel.indices.buffer,
-  // 1,
-  //                 &copyRegion);
-  // vulkanDevice->flushCommandBuffer(copyCmd, queue, true);
-
-  // // Free staging resources
-  // vkDestroyBuffer(device, vertexStaging.buffer, nullptr);
-  // vkFreeMemory(device, vertexStaging.memory, nullptr);
-  // vkDestroyBuffer(device, indexStaging.buffer, nullptr);
-  // vkFreeMemory(device, indexStaging.memory, nullptr);
+  const auto vertexBufferWithMemory{sbash64::graphics::bufferWithMemory(
+      device, physicalDevice, commandPool, copyQueue,
+      VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+      vertexBuffer.data(), vertexBufferSize)};
+  const auto indexBufferWithMemory{sbash64::graphics::bufferWithMemory(
+      device, physicalDevice, commandPool, copyQueue,
+      VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+      indexBuffer.data(), indexBufferSize)};
 }
 
 int main(int argc, char *argv[]) {
