@@ -1089,6 +1089,10 @@ static void updateAnimation(Animation &animation,
   for (const auto &node : nodes)
     updateJoints(node.get(), device);
 }
+struct AnimatingUniformBufferObject {
+  alignas(16) glm::mat4 projection;
+  alignas(16) glm::mat4 view;
+};
 
 static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
                      VkQueue copyQueue, VkCommandPool commandPool,
@@ -1283,6 +1287,17 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
       VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
       indexBuffer.data(), indexBufferSize)};
 
+  sbash64::graphics::vulkan_wrappers::Buffer animatingUniformBuffer{
+      device, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+      sizeof(AnimatingUniformBufferObject)};
+  auto animatingUniformBufferMemory{sbash64::graphics::bufferMemory(
+      device, physicalDevice, animatingUniformBuffer.buffer,
+      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+          VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
+  sbash64::graphics::VulkanBufferWithMemory animatingUniformBufferWithMemory{
+      std::move(animatingUniformBuffer),
+      std::move(animatingUniformBufferMemory)};
+
   /*
           This sample uses separate descriptor sets (and layouts) for the
      matrices and materials (textures)
@@ -1323,36 +1338,6 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
   // // Set 0 = Scene matrices (VS)
   // // Set 1 = Joint matrices (VS)
   // // Set 2 = Material texture (FS)
-  // std::array<VkDescriptorSetLayout, 3> setLayouts = {
-  //     descriptorSetLayouts.matrices, descriptorSetLayouts.jointMatrices,
-  //     descriptorSetLayouts.textures};
-  // VkPipelineLayoutCreateInfo pipelineLayoutCI =
-  //     vks::initializers::pipelineLayoutCreateInfo(
-  //         setLayouts.data(), static_cast<uint32_t>(setLayouts.size()));
-
-  // // We will use push constants to push the local matrices of a primitive to
-  // the
-  // // vertex shader
-  // VkPushConstantRange pushConstantRange =
-  // vks::initializers::pushConstantRange(
-  //     VK_SHADER_STAGE_VERTEX_BIT, sizeof(glm::mat4), 0);
-  // // Push constant ranges are part of the pipeline layout
-  // pipelineLayoutCI.pushConstantRangeCount = 1;
-  // pipelineLayoutCI.pPushConstantRanges = &pushConstantRange;
-  // VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutCI, nullptr,
-  //                                        &pipelineLayout));
-
-  // // Descriptor set for scene matrices
-  // VkDescriptorSetAllocateInfo allocInfo =
-  //     vks::initializers::descriptorSetAllocateInfo(
-  //         descriptorPool, &descriptorSetLayouts.matrices, 1);
-  // VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo,
-  // &descriptorSet)); VkWriteDescriptorSet writeDescriptorSet =
-  //     vks::initializers::writeDescriptorSet(descriptorSet,
-  //                                           VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-  //                                           0,
-  //                                           &shaderData.buffer.descriptor);
-  // vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0, nullptr);
 
   // // Descriptor set for glTF model skin joint matrices
   // for (auto &skin : glTFModel.skins) {
@@ -1413,10 +1398,45 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
   const sbash64::graphics::vulkan_wrappers::DescriptorSetLayout
       jointMatricesSetLayout{device, {jointMatricesLayoutBinding}};
 
+  // We will use push constants to push the local matrices of a primitive to the
+  // vertex shader
+  VkPushConstantRange pushConstantRange{};
+  pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+  pushConstantRange.offset = 0;
+  pushConstantRange.size = sizeof(glm::mat4);
+
   const sbash64::graphics::vulkan_wrappers::PipelineLayout vulkanPipelineLayout{
       device,
       {uboSetLayout.descriptorSetLayout, samplerSetLayout.descriptorSetLayout,
-       jointMatricesSetLayout.descriptorSetLayout}};
+       jointMatricesSetLayout.descriptorSetLayout},
+      {pushConstantRange}};
+
+  // Descriptor set for scene matrices
+  VkDescriptorSetAllocateInfo descriptorSetAllocateInfo{};
+  descriptorSetAllocateInfo.sType =
+      VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+  descriptorSetAllocateInfo.descriptorPool = descriptorPool.descriptorPool;
+  descriptorSetAllocateInfo.pSetLayouts = &uboSetLayout.descriptorSetLayout;
+  descriptorSetAllocateInfo.descriptorSetCount = 1;
+
+  VkDescriptorSet uboDescriptorSet = nullptr;
+  vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo,
+                           &uboDescriptorSet);
+
+  VkWriteDescriptorSet writeDescriptorSet{};
+  writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+  writeDescriptorSet.dstSet = uboDescriptorSet;
+  writeDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  writeDescriptorSet.dstBinding = 0;
+
+  VkDescriptorBufferInfo descriptorBufferInfo;
+  descriptorBufferInfo.buffer = animatingUniformBufferWithMemory.buffer.buffer;
+  descriptorBufferInfo.offset = 0;
+  descriptorBufferInfo.range = VK_WHOLE_SIZE;
+
+  writeDescriptorSet.pBufferInfo = &descriptorBufferInfo;
+  writeDescriptorSet.descriptorCount = 1;
+  vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0, nullptr);
 
   std::vector<VkVertexInputAttributeDescription> attributeDescriptions(4);
   attributeDescriptions[0].binding = 0;

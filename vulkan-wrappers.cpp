@@ -314,13 +314,16 @@ ShaderModule::~ShaderModule() {
 }
 
 PipelineLayout::PipelineLayout(
-    VkDevice device, const std::vector<VkDescriptorSetLayout> &setLayouts)
+    VkDevice device, const std::vector<VkDescriptorSetLayout> &setLayouts,
+    const std::vector<VkPushConstantRange> &pushConstantRanges)
     : device{device} {
   VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
   pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 
   pipelineLayoutInfo.setLayoutCount = setLayouts.size();
   pipelineLayoutInfo.pSetLayouts = setLayouts.data();
+  pipelineLayoutInfo.pushConstantRangeCount = pushConstantRanges.size();
+  pipelineLayoutInfo.pPushConstantRanges = pushConstantRanges.data();
   throwOnError(
       [&]() {
         return vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr,

@@ -1,8 +1,13 @@
 #version 450
 
 layout(set = 0, binding = 0) uniform UniformBufferObject {
-    mat4 mvp;
+	mat4 projection;
+	mat4 view;
 } ubo;
+
+layout(push_constant) uniform PushConsts {
+	mat4 model;
+} primitive;
 
 layout(set = 1, binding = 0) readonly buffer JointMatrices {
 	mat4 jointMatrices[];

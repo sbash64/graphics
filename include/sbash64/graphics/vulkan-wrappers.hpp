@@ -119,7 +119,8 @@ struct ShaderModule {
 };
 
 struct PipelineLayout {
-  PipelineLayout(VkDevice, const std::vector<VkDescriptorSetLayout> &);
+  PipelineLayout(VkDevice, const std::vector<VkDescriptorSetLayout> &,
+                 const std::vector<VkPushConstantRange> & = {});
   ~PipelineLayout();
 
   PipelineLayout(PipelineLayout &&) = delete;
