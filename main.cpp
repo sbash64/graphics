@@ -1,3 +1,4 @@
+#include <GLFW/glfw3.h>
 #include <memory>
 #include <sbash64/graphics/glfw-wrappers.hpp>
 #include <sbash64/graphics/load-object.hpp>
@@ -730,7 +731,7 @@ static auto getLocalMatrix(const Node &node) -> glm::mat4 {
          node.matrix;
 }
 
-struct Vertex {
+struct AnimatingVertex {
   glm::vec3 pos;
   glm::vec3 normal;
   glm::vec2 uv;
@@ -795,7 +796,7 @@ static void loadNode(std::vector<std::unique_ptr<Node>> &nodes,
                      const tinygltf::Node &gltfNode,
                      const tinygltf::Model &gltfModel, Node *parent,
                      uint32_t nodeIndex, std::vector<uint32_t> &indexBuffer,
-                     std::vector<Vertex> &vertexBuffer) {
+                     std::vector<AnimatingVertex> &vertexBuffer) {
   auto node{std::make_unique<Node>()};
   node->parent = parent;
   node->matrix = glm::mat4(1.0F);
@@ -876,7 +877,7 @@ static void loadNode(std::vector<std::unique_ptr<Node>> &nodes,
 
         // Append data to model's vertex buffer
         for (size_t v = 0; v < vertexCount; v++) {
-          Vertex vertex{};
+          AnimatingVertex vertex{};
           vertex.pos = glm::vec4(glm::make_vec3(&positionBuffer[v * 3]), 1.0F);
           vertex.normal = glm::normalize(glm::vec3(
               normalsBuffer != nullptr ? glm::make_vec3(&normalsBuffer[v * 3])
@@ -1039,7 +1040,11 @@ vulkanImage(void *buffer, VkDeviceSize bufferSize, VkFormat format,
 }
 
 static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
-                     VkQueue copyQueue, VkCommandPool commandPool) {
+                     VkQueue copyQueue, VkCommandPool commandPool,
+                     VkSurfaceKHR surface, VkRenderPass renderPass,
+                     GLFWwindow *window,
+                     const std::string &vertexShaderCodePath,
+                     const std::string &fragmentShaderCodePath) {
   tinygltf::TinyGLTF gltf;
   tinygltf::Model gltfModel;
   {
@@ -1106,7 +1111,7 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
             [](const tinygltf::Texture &texture) { return texture.source; });
 
   std::vector<uint32_t> indexBuffer;
-  std::vector<Vertex> vertexBuffer;
+  std::vector<AnimatingVertex> vertexBuffer;
   std::vector<std::unique_ptr<Node>> nodes;
   for (int i : gltfModel.scenes[0].nodes)
     loadNode(nodes, gltfModel.nodes[i], gltfModel, nullptr, i, indexBuffer,
@@ -1215,7 +1220,7 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
     updateJoints(node.get(), device);
 
   // Create and upload vertex and index buffer
-  const auto vertexBufferSize = vertexBuffer.size() * sizeof(Vertex);
+  const auto vertexBufferSize = vertexBuffer.size() * sizeof(AnimatingVertex);
   const auto indexBufferSize = indexBuffer.size() * sizeof(uint32_t);
 
   const auto vertexBufferWithMemory{sbash64::graphics::bufferWithMemory(
@@ -1226,6 +1231,72 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
       device, physicalDevice, commandPool, copyQueue,
       VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
       indexBuffer.data(), indexBufferSize)};
+
+  VkDescriptorSetLayoutBinding uboLayoutBinding{};
+  uboLayoutBinding.binding = 0;
+  uboLayoutBinding.descriptorCount = 1;
+  uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  uboLayoutBinding.pImmutableSamplers = nullptr;
+  uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+  VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+  samplerLayoutBinding.binding = 1;
+  samplerLayoutBinding.descriptorCount = 1;
+  samplerLayoutBinding.descriptorType =
+      VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  samplerLayoutBinding.pImmutableSamplers = nullptr;
+  samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+  VkDescriptorSetLayoutBinding jointMatricesLayoutBinding{};
+  samplerLayoutBinding.binding = 2;
+  samplerLayoutBinding.descriptorCount = 1;
+  samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+  samplerLayoutBinding.pImmutableSamplers = nullptr;
+  samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+  const sbash64::graphics::vulkan_wrappers::DescriptorSetLayout
+      vulkanDescriptorSetLayout{
+          device,
+          {uboLayoutBinding, samplerLayoutBinding, jointMatricesLayoutBinding}};
+  const sbash64::graphics::vulkan_wrappers::PipelineLayout vulkanPipelineLayout{
+      device, vulkanDescriptorSetLayout.descriptorSetLayout};
+
+  std::vector<VkVertexInputAttributeDescription> attributeDescriptions(4);
+  attributeDescriptions[0].binding = 0;
+  attributeDescriptions[0].location = 0;
+  attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+  attributeDescriptions[0].offset = offsetof(AnimatingVertex, pos);
+
+  attributeDescriptions[1].binding = 0;
+  attributeDescriptions[1].location = 1;
+  attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+  attributeDescriptions[1].offset = offsetof(AnimatingVertex, uv);
+
+  attributeDescriptions[2].binding = 0;
+  attributeDescriptions[2].location = 2;
+  attributeDescriptions[2].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+  attributeDescriptions[2].offset = offsetof(AnimatingVertex, jointIndices);
+
+  attributeDescriptions[3].binding = 0;
+  attributeDescriptions[3].location = 3;
+  attributeDescriptions[3].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+  attributeDescriptions[3].offset = offsetof(AnimatingVertex, jointWeights);
+
+  std::vector<VkVertexInputBindingDescription> bindingDescription(1);
+  bindingDescription[0].binding = 0;
+  bindingDescription[0].stride = sizeof(AnimatingVertex);
+  bindingDescription[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+  const sbash64::graphics::vulkan_wrappers::Pipeline animatingPipeline{
+      device,
+      physicalDevice,
+      surface,
+      vulkanPipelineLayout.pipelineLayout,
+      renderPass,
+      vertexShaderCodePath,
+      fragmentShaderCodePath,
+      window,
+      attributeDescriptions,
+      bindingDescription};
 }
 
 int main(int argc, char *argv[]) {
