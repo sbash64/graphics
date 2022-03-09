@@ -1413,7 +1413,7 @@ auto semaphores(VkDevice device, int n)
   return semaphores;
 }
 
-void beginWithThrow(VkCommandBuffer commandBuffer) {
+void throwIfFailsToBegin(VkCommandBuffer commandBuffer) {
   VkCommandBufferBeginInfo beginInfo{};
   beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
   throwOnError(
@@ -1421,9 +1421,9 @@ void beginWithThrow(VkCommandBuffer commandBuffer) {
       "failed to begin recording command buffer!");
 }
 
-void begin(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface,
-           VkFramebuffer framebuffer, VkCommandBuffer commandBuffer,
-           GLFWwindow *window, VkRenderPass renderPass) {
+void beginRenderPass(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface,
+                     VkFramebuffer framebuffer, VkCommandBuffer commandBuffer,
+                     GLFWwindow *window, VkRenderPass renderPass) {
   VkRenderPassBeginInfo renderPassInfo{};
   renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
   renderPassInfo.renderPass = renderPass;

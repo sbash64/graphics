@@ -524,11 +524,11 @@ static void run(const std::string &vertexShaderCodePath,
                                       graphicsQueue, worldObjects)};
 
   for (auto i{0U}; i < vulkanCommandBuffers.commandBuffers.size(); i++) {
-    beginWithThrow(vulkanCommandBuffers.commandBuffers[i]);
-    begin(vulkanPhysicalDevice, vulkanSurface.surface,
-          vulkanFrameBuffers.at(i).framebuffer,
-          vulkanCommandBuffers.commandBuffers[i], glfwWindow.window,
-          vulkanRenderPass.renderPass);
+    throwIfFailsToBegin(vulkanCommandBuffers.commandBuffers[i]);
+    beginRenderPass(vulkanPhysicalDevice, vulkanSurface.surface,
+                    vulkanFrameBuffers.at(i).framebuffer,
+                    vulkanCommandBuffers.commandBuffers[i], glfwWindow.window,
+                    vulkanRenderPass.renderPass);
     vkCmdBindPipeline(vulkanCommandBuffers.commandBuffers[i],
                       VK_PIPELINE_BIND_POINT_GRAPHICS, vulkanPipeline.pipeline);
     draw(playerObjects, playerDrawables, vulkanPipelineLayout,

@@ -333,10 +333,10 @@ void submit(const vulkan_wrappers::Device &device, VkQueue graphicsQueue,
             VkCommandBuffer commandBuffer);
 auto semaphores(VkDevice device, int n)
     -> std::vector<vulkan_wrappers::Semaphore>;
-void begin(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface,
-           VkFramebuffer framebuffer, VkCommandBuffer commandBuffer,
-           GLFWwindow *window, VkRenderPass renderPass);
-void beginWithThrow(VkCommandBuffer commandBuffer);
+void beginRenderPass(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface,
+                     VkFramebuffer framebuffer, VkCommandBuffer commandBuffer,
+                     GLFWwindow *window, VkRenderPass renderPass);
+void throwIfFailsToBegin(VkCommandBuffer commandBuffer);
 
 struct VulkanImage {
   vulkan_wrappers::Image image;
