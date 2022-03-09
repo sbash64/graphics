@@ -491,7 +491,7 @@ static void run(const std::string &vertexShaderCodePath,
       vulkanDevice.device, vulkanCommandPool.commandPool,
       vulkanFrameBuffers.size()};
   const vulkan_wrappers::PipelineLayout vulkanPipelineLayout{
-      vulkanDevice.device, vulkanDescriptorSetLayout.descriptorSetLayout};
+      vulkanDevice.device, {vulkanDescriptorSetLayout.descriptorSetLayout}};
 
   std::vector<VkVertexInputAttributeDescription> attributeDescriptions(2);
   attributeDescriptions[0].binding = 0;
@@ -1319,33 +1319,6 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
   sbash64::graphics::vulkan_wrappers::DescriptorPool descriptorPool{
       device, poolSizes, maxSetCount};
 
-  // Descriptor set layouts
-  // VkDescriptorSetLayoutBinding setLayoutBinding{};
-  // VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCI =
-  //     vks::initializers::descriptorSetLayoutCreateInfo(&setLayoutBinding, 1);
-
-  // // Descriptor set layout for passing matrices
-  // setLayoutBinding = vks::initializers::descriptorSetLayoutBinding(
-  //     VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0);
-  // VK_CHECK_RESULT(vkCreateDescriptorSetLayout(
-  //     device, &descriptorSetLayoutCI, nullptr,
-  //     &descriptorSetLayouts.matrices));
-
-  // // Descriptor set layout for passing material textures
-  // setLayoutBinding = vks::initializers::descriptorSetLayoutBinding(
-  //     VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-  //     VK_SHADER_STAGE_FRAGMENT_BIT, 0);
-  // VK_CHECK_RESULT(vkCreateDescriptorSetLayout(
-  //     device, &descriptorSetLayoutCI, nullptr,
-  //     &descriptorSetLayouts.textures));
-
-  // // Descriptor set layout for passing skin joint matrices
-  // setLayoutBinding = vks::initializers::descriptorSetLayoutBinding(
-  //     VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0);
-  // VK_CHECK_RESULT(
-  //     vkCreateDescriptorSetLayout(device, &descriptorSetLayoutCI, nullptr,
-  //                                 &descriptorSetLayouts.jointMatrices));
-
   // // The pipeline layout uses three sets:
   // // Set 0 = Scene matrices (VS)
   // // Set 1 = Joint matrices (VS)
@@ -1417,7 +1390,7 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
   uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
   VkDescriptorSetLayoutBinding samplerLayoutBinding{};
-  samplerLayoutBinding.binding = 1;
+  samplerLayoutBinding.binding = 0;
   samplerLayoutBinding.descriptorCount = 1;
   samplerLayoutBinding.descriptorType =
       VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -1425,17 +1398,25 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
   samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
   VkDescriptorSetLayoutBinding jointMatricesLayoutBinding{};
-  samplerLayoutBinding.binding = 2;
+  samplerLayoutBinding.binding = 0;
   samplerLayoutBinding.descriptorCount = 1;
   samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
   samplerLayoutBinding.pImmutableSamplers = nullptr;
   samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+  const sbash64::graphics::vulkan_wrappers::DescriptorSetLayout uboSetLayout{
+      device, {uboLayoutBinding}};
+
   const sbash64::graphics::vulkan_wrappers::DescriptorSetLayout
-      vulkanDescriptorSetLayout{
-          device,
-          {uboLayoutBinding, samplerLayoutBinding, jointMatricesLayoutBinding}};
+      samplerSetLayout{device, {samplerLayoutBinding}};
+
+  const sbash64::graphics::vulkan_wrappers::DescriptorSetLayout
+      jointMatricesSetLayout{device, {jointMatricesLayoutBinding}};
+
   const sbash64::graphics::vulkan_wrappers::PipelineLayout vulkanPipelineLayout{
-      device, vulkanDescriptorSetLayout.descriptorSetLayout};
+      device,
+      {uboSetLayout.descriptorSetLayout, samplerSetLayout.descriptorSetLayout,
+       jointMatricesSetLayout.descriptorSetLayout}};
 
   std::vector<VkVertexInputAttributeDescription> attributeDescriptions(4);
   attributeDescriptions[0].binding = 0;

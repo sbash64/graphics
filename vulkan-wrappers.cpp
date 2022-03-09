@@ -313,16 +313,14 @@ ShaderModule::~ShaderModule() {
   vkDestroyShaderModule(device, module, nullptr);
 }
 
-PipelineLayout::PipelineLayout(VkDevice device,
-                               VkDescriptorSetLayout descriptorSetLayout)
+PipelineLayout::PipelineLayout(
+    VkDevice device, const std::vector<VkDescriptorSetLayout> &setLayouts)
     : device{device} {
   VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
   pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 
-  const std::array<VkDescriptorSetLayout, 1> descriptorSetLayouts{
-      descriptorSetLayout};
-  pipelineLayoutInfo.setLayoutCount = descriptorSetLayouts.size();
-  pipelineLayoutInfo.pSetLayouts = descriptorSetLayouts.data();
+  pipelineLayoutInfo.setLayoutCount = setLayouts.size();
+  pipelineLayoutInfo.pSetLayouts = setLayouts.data();
   throwOnError(
       [&]() {
         return vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr,

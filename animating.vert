@@ -1,10 +1,10 @@
 #version 450
 
-layout(binding = 0) uniform UniformBufferObject {
+layout(set = 0, binding = 0) uniform UniformBufferObject {
     mat4 mvp;
 } ubo;
 
-layout(binding = 2) readonly buffer JointMatrices {
+layout(set = 1, binding = 0) readonly buffer JointMatrices {
 	mat4 jointMatrices[];
 };
 
