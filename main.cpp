@@ -1283,6 +1283,132 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
       VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
       indexBuffer.data(), indexBufferSize)};
 
+  /*
+          This sample uses separate descriptor sets (and layouts) for the
+     matrices and materials (textures)
+  */
+
+  VkDescriptorPoolSize uniformBufferDescriptorPoolSize{};
+  uniformBufferDescriptorPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  uniformBufferDescriptorPoolSize.descriptorCount = 1;
+
+  VkDescriptorPoolSize imageSamplerDescriptorPoolSize{};
+  imageSamplerDescriptorPoolSize.type =
+      VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  imageSamplerDescriptorPoolSize.descriptorCount =
+      static_cast<uint32_t>(vulkanImages.size());
+
+  VkDescriptorPoolSize storageBufferDescriptorPoolSize{};
+  storageBufferDescriptorPoolSize.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+  storageBufferDescriptorPoolSize.descriptorCount =
+      static_cast<uint32_t>(skins.size());
+  std::vector<VkDescriptorPoolSize> poolSizes = {
+      uniformBufferDescriptorPoolSize,
+      // One combined image sampler per material image/texture
+      imageSamplerDescriptorPoolSize,
+      // One ssbo per skin
+      storageBufferDescriptorPoolSize};
+  // Number of descriptor sets = One for the scene ubo + one per image + one per
+  // skin
+  const auto maxSetCount{
+      accumulate(poolSizes.begin(), poolSizes.end(), 0U,
+                 [](uint32_t count, const VkDescriptorPoolSize &size) {
+                   return count + size.descriptorCount;
+                 })};
+
+  sbash64::graphics::vulkan_wrappers::DescriptorPool descriptorPool{
+      device, poolSizes, maxSetCount};
+
+  // Descriptor set layouts
+  // VkDescriptorSetLayoutBinding setLayoutBinding{};
+  // VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCI =
+  //     vks::initializers::descriptorSetLayoutCreateInfo(&setLayoutBinding, 1);
+
+  // // Descriptor set layout for passing matrices
+  // setLayoutBinding = vks::initializers::descriptorSetLayoutBinding(
+  //     VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0);
+  // VK_CHECK_RESULT(vkCreateDescriptorSetLayout(
+  //     device, &descriptorSetLayoutCI, nullptr,
+  //     &descriptorSetLayouts.matrices));
+
+  // // Descriptor set layout for passing material textures
+  // setLayoutBinding = vks::initializers::descriptorSetLayoutBinding(
+  //     VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+  //     VK_SHADER_STAGE_FRAGMENT_BIT, 0);
+  // VK_CHECK_RESULT(vkCreateDescriptorSetLayout(
+  //     device, &descriptorSetLayoutCI, nullptr,
+  //     &descriptorSetLayouts.textures));
+
+  // // Descriptor set layout for passing skin joint matrices
+  // setLayoutBinding = vks::initializers::descriptorSetLayoutBinding(
+  //     VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT, 0);
+  // VK_CHECK_RESULT(
+  //     vkCreateDescriptorSetLayout(device, &descriptorSetLayoutCI, nullptr,
+  //                                 &descriptorSetLayouts.jointMatrices));
+
+  // // The pipeline layout uses three sets:
+  // // Set 0 = Scene matrices (VS)
+  // // Set 1 = Joint matrices (VS)
+  // // Set 2 = Material texture (FS)
+  // std::array<VkDescriptorSetLayout, 3> setLayouts = {
+  //     descriptorSetLayouts.matrices, descriptorSetLayouts.jointMatrices,
+  //     descriptorSetLayouts.textures};
+  // VkPipelineLayoutCreateInfo pipelineLayoutCI =
+  //     vks::initializers::pipelineLayoutCreateInfo(
+  //         setLayouts.data(), static_cast<uint32_t>(setLayouts.size()));
+
+  // // We will use push constants to push the local matrices of a primitive to
+  // the
+  // // vertex shader
+  // VkPushConstantRange pushConstantRange =
+  // vks::initializers::pushConstantRange(
+  //     VK_SHADER_STAGE_VERTEX_BIT, sizeof(glm::mat4), 0);
+  // // Push constant ranges are part of the pipeline layout
+  // pipelineLayoutCI.pushConstantRangeCount = 1;
+  // pipelineLayoutCI.pPushConstantRanges = &pushConstantRange;
+  // VK_CHECK_RESULT(vkCreatePipelineLayout(device, &pipelineLayoutCI, nullptr,
+  //                                        &pipelineLayout));
+
+  // // Descriptor set for scene matrices
+  // VkDescriptorSetAllocateInfo allocInfo =
+  //     vks::initializers::descriptorSetAllocateInfo(
+  //         descriptorPool, &descriptorSetLayouts.matrices, 1);
+  // VK_CHECK_RESULT(vkAllocateDescriptorSets(device, &allocInfo,
+  // &descriptorSet)); VkWriteDescriptorSet writeDescriptorSet =
+  //     vks::initializers::writeDescriptorSet(descriptorSet,
+  //                                           VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+  //                                           0,
+  //                                           &shaderData.buffer.descriptor);
+  // vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0, nullptr);
+
+  // // Descriptor set for glTF model skin joint matrices
+  // for (auto &skin : glTFModel.skins) {
+  //   const VkDescriptorSetAllocateInfo allocInfo =
+  //       vks::initializers::descriptorSetAllocateInfo(
+  //           descriptorPool, &descriptorSetLayouts.jointMatrices, 1);
+  //   VK_CHECK_RESULT(
+  //       vkAllocateDescriptorSets(device, &allocInfo, &skin.descriptorSet));
+  //   VkWriteDescriptorSet writeDescriptorSet =
+  //       vks::initializers::writeDescriptorSet(skin.descriptorSet,
+  //                                             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+  //                                             0, &skin.ssbo.descriptor);
+  //   vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0, nullptr);
+  // }
+
+  // // Descriptor sets for glTF model materials
+  // for (auto &image : glTFModel.images) {
+  //   const VkDescriptorSetAllocateInfo allocInfo =
+  //       vks::initializers::descriptorSetAllocateInfo(
+  //           descriptorPool, &descriptorSetLayouts.textures, 1);
+  //   VK_CHECK_RESULT(
+  //       vkAllocateDescriptorSets(device, &allocInfo, &image.descriptorSet));
+  //   VkWriteDescriptorSet writeDescriptorSet =
+  //       vks::initializers::writeDescriptorSet(
+  //           image.descriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+  //           0, &image.texture.descriptor);
+  //   vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0, nullptr);
+  // }
+
   VkDescriptorSetLayoutBinding uboLayoutBinding{};
   uboLayoutBinding.binding = 0;
   uboLayoutBinding.descriptorCount = 1;

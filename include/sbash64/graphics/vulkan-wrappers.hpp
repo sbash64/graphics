@@ -272,7 +272,8 @@ struct DescriptorSetLayout {
 };
 
 struct DescriptorPool {
-  DescriptorPool(VkDevice, const std::vector<VkImage> &swapChainImages);
+  DescriptorPool(VkDevice, const std::vector<VkDescriptorPoolSize> &,
+                 uint32_t maxSets);
   ~DescriptorPool();
   DescriptorPool(DescriptorPool &&) noexcept;
 

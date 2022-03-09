@@ -740,20 +740,15 @@ DescriptorSetLayout::~DescriptorSetLayout() {
   vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
 }
 
-DescriptorPool::DescriptorPool(VkDevice device,
-                               const std::vector<VkImage> &swapChainImages)
+DescriptorPool::DescriptorPool(
+    VkDevice device, const std::vector<VkDescriptorPoolSize> &poolSize,
+    uint32_t maxSets)
     : device{device} {
-  std::array<VkDescriptorPoolSize, 2> poolSize{};
-  poolSize[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  poolSize[0].descriptorCount = static_cast<uint32_t>(swapChainImages.size());
-  poolSize[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-  poolSize[1].descriptorCount = static_cast<uint32_t>(swapChainImages.size());
-
   VkDescriptorPoolCreateInfo poolInfo{};
   poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
   poolInfo.poolSizeCount = poolSize.size();
   poolInfo.pPoolSizes = poolSize.data();
-  poolInfo.maxSets = static_cast<uint32_t>(swapChainImages.size());
+  poolInfo.maxSets = maxSets;
 
   throwOnError(
       [&]() {
@@ -1271,8 +1266,17 @@ auto descriptor(
     const std::vector<VkImage> &swapChainImages,
     const std::vector<VulkanBufferWithMemory> &vulkanUniformBuffers,
     VkDeviceSize bufferObjectSize) -> VulkanDescriptor {
-  vulkan_wrappers::DescriptorPool vulkanDescriptorPool{vulkanDevice.device,
-                                                       swapChainImages};
+
+  std::vector<VkDescriptorPoolSize> poolSize(2);
+  poolSize[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  poolSize[0].descriptorCount = static_cast<uint32_t>(swapChainImages.size());
+  poolSize[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  poolSize[1].descriptorCount = static_cast<uint32_t>(swapChainImages.size());
+
+  vulkan_wrappers::DescriptorPool vulkanDescriptorPool{
+      vulkanDevice.device, poolSize,
+      static_cast<uint32_t>(swapChainImages.size())};
+
   std::vector<VkDescriptorSet> descriptorSets(swapChainImages.size());
   std::vector<VkDescriptorSetLayout> layouts(
       swapChainImages.size(), vulkanDescriptorSetLayout.descriptorSetLayout);
