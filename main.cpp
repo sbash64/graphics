@@ -998,7 +998,7 @@ static void updateJoints(Node *node, VkDevice device) {
 }
 
 static auto
-vulkanImage(void *buffer, VkDeviceSize bufferSize, VkFormat format,
+vulkanImage(const void *buffer, VkDeviceSize bufferSize, VkFormat format,
             uint32_t width, uint32_t height, VkDevice device,
             VkPhysicalDevice physicalDevice, VkCommandPool commandPool,
             VkQueue copyQueue,
@@ -1089,9 +1089,16 @@ static void updateAnimation(Animation &animation,
   for (const auto &node : nodes)
     updateJoints(node.get(), device);
 }
+
 struct AnimatingUniformBufferObject {
   alignas(16) glm::mat4 projection;
   alignas(16) glm::mat4 view;
+};
+
+struct Image {
+  std::vector<unsigned char> buffer;
+  int width;
+  int height;
 };
 
 static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
@@ -1111,16 +1118,12 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
     std::cout << warning << '\n';
   }
 
-  std::cout << gltfModel.images.size() << '\n';
-
   // Images can be stored inside the glTF (which is the case for the sample
   // model), so instead of directly loading them from disk, we fetch them
   // from the glTF loader and upload the buffers
-  std::vector<sbash64::graphics::VulkanImage> vulkanImages;
+  std::vector<Image> images;
   transform(gltfModel.images.begin(), gltfModel.images.end(),
-            back_inserter(vulkanImages),
-            [device, physicalDevice, commandPool,
-             copyQueue](const tinygltf::Image &image) {
+            back_inserter(images), [](const tinygltf::Image &image) {
               // Get the image data from the glTF loader
               // We convert RGB-only images to RGBA, as most devices don't
               // support RGB-formats in Vulkan
@@ -1140,10 +1143,7 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
                 buffer.resize(gltfBuffer.size());
                 copy(gltfBuffer.begin(), gltfBuffer.end(), buffer.begin());
               }
-              return vulkanImage(buffer.data(), buffer.size(),
-                                 VK_FORMAT_R8G8B8A8_UNORM, image.width,
-                                 image.height, device, physicalDevice,
-                                 commandPool, copyQueue);
+              return Image{std::move(buffer), image.width, image.height};
             });
 
   std::vector<Material> materials;
@@ -1173,47 +1173,27 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
              vertexBuffer);
 
   std::vector<Skin> skins;
-  std::vector<sbash64::graphics::VulkanBufferWithMemory>
-      jointsVulkanBuffersWithMemory;
-  transform(
-      gltfModel.skins.begin(), gltfModel.skins.end(), back_inserter(skins),
-      [&gltfModel, &nodes, &device, &physicalDevice,
-       &jointsVulkanBuffersWithMemory](const tinygltf::Skin &gltfSkin) {
-        Skin skin;
-        skin.name = gltfSkin.name;
-        skin.skeletonRoot = nodeFromIndex(nodes, gltfSkin.skeleton);
+  transform(gltfModel.skins.begin(), gltfModel.skins.end(),
+            back_inserter(skins),
+            [&gltfModel, &nodes](const tinygltf::Skin &gltfSkin) {
+              Skin skin;
+              skin.name = gltfSkin.name;
+              skin.skeletonRoot = nodeFromIndex(nodes, gltfSkin.skeleton);
 
-        for (const auto jointIndex : gltfSkin.joints) {
-          auto *node = nodeFromIndex(nodes, jointIndex);
-          if (node != nullptr)
-            skin.joints.push_back(node);
-        }
+              for (const auto jointIndex : gltfSkin.joints) {
+                auto *node = nodeFromIndex(nodes, jointIndex);
+                if (node != nullptr)
+                  skin.joints.push_back(node);
+              }
 
-        if (gltfSkin.inverseBindMatrices > -1) {
-          const auto span{
-              ::span<glm::mat4>(gltfModel, gltfSkin.inverseBindMatrices)};
-          std::vector<glm::mat4> inverseBindMatrices{span.begin(), span.end()};
+              if (gltfSkin.inverseBindMatrices > -1) {
+                const auto span{
+                    ::span<glm::mat4>(gltfModel, gltfSkin.inverseBindMatrices)};
+                skin.inverseBindMatrices = {span.begin(), span.end()};
+              }
+              return skin;
+            });
 
-          // Store inverse bind matrices for this skin in a shader storage
-          // buffer object To keep this sample simple, we create a host visible
-          // shader storage buffer
-
-          const VkDeviceSize bufferSize{sizeof(glm::mat4) * span.size()};
-          sbash64::graphics::vulkan_wrappers::Buffer jointsVulkanBuffer{
-              device, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, bufferSize};
-          auto memory{sbash64::graphics::bufferMemory(
-              device, physicalDevice, jointsVulkanBuffer.buffer,
-              VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                  VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
-          sbash64::graphics::copy(device, memory.memory,
-                                  inverseBindMatrices.data(), bufferSize);
-          // VK_CHECK_RESULT(skins[i].ssbo.map());
-          jointsVulkanBuffersWithMemory.push_back(
-              sbash64::graphics::VulkanBufferWithMemory{
-                  std::move(jointsVulkanBuffer), std::move(memory)});
-        }
-        return skin;
-      });
   std::vector<Animation> animations;
   transform(
       gltfModel.animations.begin(), gltfModel.animations.end(),
@@ -1273,6 +1253,39 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
   // Calculate initial pose
   for (const auto &node : nodes)
     updateJoints(node.get(), device);
+
+  std::vector<sbash64::graphics::VulkanImage> vulkanImages;
+  transform(
+      images.begin(), images.end(), back_inserter(vulkanImages),
+      [device, physicalDevice, commandPool, copyQueue](const Image &image) {
+        return vulkanImage(image.buffer.data(), image.buffer.size(),
+                           VK_FORMAT_R8G8B8A8_UNORM, image.width, image.height,
+                           device, physicalDevice, commandPool, copyQueue);
+      });
+
+  std::vector<sbash64::graphics::VulkanBufferWithMemory>
+      jointsVulkanBuffersWithMemory;
+  for (const auto &skin : skins)
+    if (!skin.inverseBindMatrices.empty()) {
+      // Store inverse bind matrices for this skin in a shader storage
+      // buffer object To keep this sample simple, we create a host visible
+      // shader storage buffer
+
+      const VkDeviceSize bufferSize{sizeof(glm::mat4) *
+                                    skin.inverseBindMatrices.size()};
+      sbash64::graphics::vulkan_wrappers::Buffer jointsVulkanBuffer{
+          device, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, bufferSize};
+      auto memory{sbash64::graphics::bufferMemory(
+          device, physicalDevice, jointsVulkanBuffer.buffer,
+          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+              VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
+      sbash64::graphics::copy(device, memory.memory,
+                              skin.inverseBindMatrices.data(), bufferSize);
+      // VK_CHECK_RESULT(skins[i].ssbo.map());
+      jointsVulkanBuffersWithMemory.push_back(
+          sbash64::graphics::VulkanBufferWithMemory{
+              std::move(jointsVulkanBuffer), std::move(memory)});
+    }
 
   // Create and upload vertex and index buffer
   const auto vertexBufferSize = vertexBuffer.size() * sizeof(AnimatingVertex);
