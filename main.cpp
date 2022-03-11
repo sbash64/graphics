@@ -1122,29 +1122,31 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
   // model), so instead of directly loading them from disk, we fetch them
   // from the glTF loader and upload the buffers
   std::vector<Image> images;
-  transform(gltfModel.images.begin(), gltfModel.images.end(),
-            back_inserter(images), [](const tinygltf::Image &image) {
-              // Get the image data from the glTF loader
-              // We convert RGB-only images to RGBA, as most devices don't
-              // support RGB-formats in Vulkan
-              std::vector<unsigned char> buffer;
-              if (image.component == 3) {
-                buffer.resize(image.width * image.height * 4);
-                unsigned char *rgba = buffer.data();
-                const auto *rgb = &image.image[0];
-                for (size_t i = 0; i < image.width * image.height; ++i) {
-                  memcpy(rgba, rgb, sizeof(unsigned char) * 3);
-                  rgba += 4;
-                  rgb += 3;
-                }
-              } else {
-                std::span<const unsigned char> gltfBuffer{&image.image[0],
-                                                          image.image.size()};
-                buffer.resize(gltfBuffer.size());
-                copy(gltfBuffer.begin(), gltfBuffer.end(), buffer.begin());
-              }
-              return Image{std::move(buffer), image.width, image.height};
-            });
+  transform(
+      gltfModel.images.begin(), gltfModel.images.end(), back_inserter(images),
+      [](const tinygltf::Image &gltfImage) {
+        // We convert RGB-only images to RGBA, as most devices don't
+        // support RGB-formats in Vulkan
+        Image image;
+        image.width = gltfImage.width;
+        image.height = gltfImage.height;
+        if (gltfImage.component == 3) {
+          image.buffer.resize(gltfImage.width * gltfImage.height * 4);
+          unsigned char *rgba = image.buffer.data();
+          const auto *rgb = &gltfImage.image[0];
+          for (size_t i = 0; i < gltfImage.width * gltfImage.height; ++i) {
+            memcpy(rgba, rgb, sizeof(unsigned char) * 3);
+            rgba += 4;
+            rgb += 3;
+          }
+        } else {
+          std::span<const unsigned char> gltfBuffer{&gltfImage.image[0],
+                                                    gltfImage.image.size()};
+          image.buffer.resize(gltfBuffer.size());
+          copy(gltfBuffer.begin(), gltfBuffer.end(), image.buffer.begin());
+        }
+        return image;
+      });
 
   std::vector<Material> materials;
   transform(
@@ -1168,7 +1170,7 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
   std::vector<uint32_t> indexBuffer;
   std::vector<AnimatingVertex> vertexBuffer;
   std::vector<std::unique_ptr<Node>> nodes;
-  for (int i : gltfModel.scenes[0].nodes)
+  for (const auto i : gltfModel.scenes[0].nodes)
     loadNode(nodes, gltfModel.nodes[i], gltfModel, nullptr, i, indexBuffer,
              vertexBuffer);
 
@@ -1250,6 +1252,7 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
             });
         return animation;
       });
+
   // Calculate initial pose
   for (const auto &node : nodes)
     updateJoints(node.get(), device);
@@ -1287,18 +1290,15 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
               std::move(jointsVulkanBuffer), std::move(memory)});
     }
 
-  // Create and upload vertex and index buffer
-  const auto vertexBufferSize = vertexBuffer.size() * sizeof(AnimatingVertex);
-  const auto indexBufferSize = indexBuffer.size() * sizeof(uint32_t);
-
   const auto vertexBufferWithMemory{sbash64::graphics::bufferWithMemory(
       device, physicalDevice, commandPool, copyQueue,
       VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-      vertexBuffer.data(), vertexBufferSize)};
+      vertexBuffer.data(), vertexBuffer.size() * sizeof(AnimatingVertex))};
+
   const auto indexBufferWithMemory{sbash64::graphics::bufferWithMemory(
       device, physicalDevice, commandPool, copyQueue,
       VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-      indexBuffer.data(), indexBufferSize)};
+      indexBuffer.data(), indexBuffer.size() * sizeof(uint32_t))};
 
   sbash64::graphics::vulkan_wrappers::Buffer animatingUniformBuffer{
       device, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
@@ -1352,34 +1352,6 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
   // // Set 1 = Joint matrices (VS)
   // // Set 2 = Material texture (FS)
 
-  // // Descriptor set for glTF model skin joint matrices
-  // for (auto &skin : glTFModel.skins) {
-  //   const VkDescriptorSetAllocateInfo allocInfo =
-  //       vks::initializers::descriptorSetAllocateInfo(
-  //           descriptorPool, &descriptorSetLayouts.jointMatrices, 1);
-  //   VK_CHECK_RESULT(
-  //       vkAllocateDescriptorSets(device, &allocInfo, &skin.descriptorSet));
-  //   VkWriteDescriptorSet writeDescriptorSet =
-  //       vks::initializers::writeDescriptorSet(skin.descriptorSet,
-  //                                             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-  //                                             0, &skin.ssbo.descriptor);
-  //   vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0, nullptr);
-  // }
-
-  // // Descriptor sets for glTF model materials
-  // for (auto &image : glTFModel.images) {
-  //   const VkDescriptorSetAllocateInfo allocInfo =
-  //       vks::initializers::descriptorSetAllocateInfo(
-  //           descriptorPool, &descriptorSetLayouts.textures, 1);
-  //   VK_CHECK_RESULT(
-  //       vkAllocateDescriptorSets(device, &allocInfo, &image.descriptorSet));
-  //   VkWriteDescriptorSet writeDescriptorSet =
-  //       vks::initializers::writeDescriptorSet(
-  //           image.descriptorSet, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
-  //           0, &image.texture.descriptor);
-  //   vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0, nullptr);
-  // }
-
   VkDescriptorSetLayoutBinding uboLayoutBinding{};
   uboLayoutBinding.binding = 0;
   uboLayoutBinding.descriptorCount = 1;
@@ -1410,6 +1382,82 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
 
   const sbash64::graphics::vulkan_wrappers::DescriptorSetLayout
       jointMatricesSetLayout{device, {jointMatricesLayoutBinding}};
+
+  // Descriptor set for glTF model skin joint matrices
+  std::vector<VkDescriptorSet> skinDescriptorSets;
+  transform(
+      jointsVulkanBuffersWithMemory.begin(),
+      jointsVulkanBuffersWithMemory.end(), back_inserter(skinDescriptorSets),
+      [&device, &descriptorPool, &jointMatricesSetLayout](
+          const sbash64::graphics::VulkanBufferWithMemory &buffer) {
+        VkDescriptorSetAllocateInfo descriptorSetAllocateInfo{};
+        descriptorSetAllocateInfo.sType =
+            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        descriptorSetAllocateInfo.descriptorPool =
+            descriptorPool.descriptorPool;
+        descriptorSetAllocateInfo.pSetLayouts =
+            &jointMatricesSetLayout.descriptorSetLayout;
+        descriptorSetAllocateInfo.descriptorSetCount = 1;
+
+        VkDescriptorSet descriptorSet = nullptr;
+        vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo,
+                                 &descriptorSet);
+
+        VkWriteDescriptorSet writeDescriptorSet{};
+        writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writeDescriptorSet.dstSet = descriptorSet;
+        writeDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        writeDescriptorSet.dstBinding = 0;
+
+        VkDescriptorBufferInfo descriptorBufferInfo;
+        descriptorBufferInfo.buffer = buffer.buffer.buffer;
+        descriptorBufferInfo.offset = 0;
+        descriptorBufferInfo.range = VK_WHOLE_SIZE;
+
+        writeDescriptorSet.pBufferInfo = &descriptorBufferInfo;
+        writeDescriptorSet.descriptorCount = 1;
+        vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0, nullptr);
+        return descriptorSet;
+      });
+
+  // Descriptor sets for glTF model materials
+  const sbash64::graphics::vulkan_wrappers::Sampler vulkanTextureSampler{
+      device, physicalDevice, 1};
+  std::vector<VkDescriptorSet> textureDescriptorSets;
+  transform(
+      vulkanImages.begin(), vulkanImages.end(),
+      back_inserter(skinDescriptorSets),
+      [&device, &descriptorPool, &samplerSetLayout,
+       &vulkanTextureSampler](const sbash64::graphics::VulkanImage &image) {
+        VkDescriptorSetAllocateInfo descriptorSetAllocateInfo{};
+        descriptorSetAllocateInfo.sType =
+            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        descriptorSetAllocateInfo.descriptorPool =
+            descriptorPool.descriptorPool;
+        descriptorSetAllocateInfo.pSetLayouts =
+            &samplerSetLayout.descriptorSetLayout;
+        descriptorSetAllocateInfo.descriptorSetCount = 1;
+        VkDescriptorSet descriptorSet = nullptr;
+        vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo,
+                                 &descriptorSet);
+
+        VkWriteDescriptorSet writeDescriptorSet{};
+        writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writeDescriptorSet.dstSet = descriptorSet;
+        writeDescriptorSet.descriptorType =
+            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writeDescriptorSet.dstBinding = 0;
+
+        VkDescriptorImageInfo descriptor;
+        descriptor.sampler = vulkanTextureSampler.sampler;
+        descriptor.imageView = image.view.view;
+        descriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        writeDescriptorSet.pImageInfo = &descriptor;
+        writeDescriptorSet.descriptorCount = 1;
+        vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0, nullptr);
+        return descriptorSet;
+      });
 
   // We will use push constants to push the local matrices of a primitive to the
   // vertex shader
