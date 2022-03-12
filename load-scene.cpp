@@ -26,10 +26,11 @@ void fill(std::vector<uint32_t> &indexBuffer, uint32_t vertexStart,
 }
 
 static void loadNode(std::vector<std::unique_ptr<Node>> &nodes,
-                     const tinygltf::Node &gltfNode,
+                     std::vector<uint32_t> &indexBuffer,
+                     std::vector<AnimatingVertex> &vertexBuffer,
                      const tinygltf::Model &gltfModel, Node *parent,
-                     uint32_t nodeIndex, std::vector<uint32_t> &indexBuffer,
-                     std::vector<AnimatingVertex> &vertexBuffer) {
+                     uint32_t nodeIndex) {
+  const auto gltfNode{gltfModel.nodes.at(nodeIndex)};
   auto node{std::make_unique<Node>()};
   node->parent = parent;
   node->matrix = glm::mat4(1.0F);
@@ -49,9 +50,8 @@ static void loadNode(std::vector<std::unique_ptr<Node>> &nodes,
   if (gltfNode.matrix.size() == 16)
     node->matrix = glm::make_mat4x4(gltfNode.matrix.data());
 
-  for (int i : gltfNode.children)
-    loadNode(nodes, gltfModel.nodes[i], gltfModel, node.get(), i, indexBuffer,
-             vertexBuffer);
+  for (const auto child : gltfNode.children)
+    loadNode(nodes, indexBuffer, vertexBuffer, gltfModel, node.get(), child);
 
   // If the node contains mesh data, we load vertices and indices from the
   // buffers In glTF this is done via accessors and buffer views
@@ -183,23 +183,11 @@ static auto nodeFromIndex(const std::vector<std::unique_ptr<Node>> &nodes,
   return nullptr;
 }
 
-auto readScene(const std::string &path) -> Scene {
-  tinygltf::TinyGLTF gltf;
-  tinygltf::Model gltfModel;
-  {
-    std::string error;
-    std::string warning;
-    if (!gltf.LoadASCIIFromFile(&gltfModel, &error, &warning, path))
-      throw std::runtime_error{error};
-  }
-
-  // Images can be stored inside the glTF (which is the case for the sample
-  // model), so instead of directly loading them from disk, we fetch them
-  // from the glTF loader and upload the buffers
-  Scene scene;
+static auto images(const tinygltf::Model &gltfModel) -> std::vector<Image> {
+  std::vector<Image> images;
   transform(
-      gltfModel.images.begin(), gltfModel.images.end(),
-      back_inserter(scene.images), [](const tinygltf::Image &gltfImage) {
+      gltfModel.images.begin(), gltfModel.images.end(), back_inserter(images),
+      [](const tinygltf::Image &gltfImage) {
         // We convert RGB-only images to RGBA, as most devices don't
         // support RGB-formats in Vulkan
         Image image;
@@ -224,6 +212,15 @@ auto readScene(const std::string &path) -> Scene {
         }
         return image;
       });
+  return images;
+}
+
+auto loadScene(const tinygltf::Model &gltfModel) -> Scene {
+  // Images can be stored inside the glTF (which is the case for the sample
+  // model), so instead of directly loading them from disk, we fetch them
+  // from the glTF loader and upload the buffers
+  Scene scene;
+  scene.images = images(gltfModel);
 
   transform(
       gltfModel.materials.begin(), gltfModel.materials.end(),
@@ -243,9 +240,9 @@ auto readScene(const std::string &path) -> Scene {
             back_inserter(scene.textureIndices),
             [](const tinygltf::Texture &texture) { return texture.source; });
 
-  for (const auto i : gltfModel.scenes[0].nodes)
-    loadNode(scene.nodes, gltfModel.nodes[i], gltfModel, nullptr, i,
-             scene.indexBuffer, scene.vertexBuffer);
+  for (const auto node : gltfModel.scenes[0].nodes)
+    loadNode(scene.nodes, scene.indexBuffer, scene.vertexBuffer, gltfModel,
+             nullptr, node);
 
   transform(gltfModel.skins.begin(), gltfModel.skins.end(),
             back_inserter(scene.skins),
@@ -323,5 +320,15 @@ auto readScene(const std::string &path) -> Scene {
         return animation;
       });
   return scene;
+}
+
+auto readScene(const std::string &path) -> Scene {
+  tinygltf::TinyGLTF gltf;
+  tinygltf::Model gltfModel;
+  std::string error;
+  std::string warning;
+  if (!gltf.LoadASCIIFromFile(&gltfModel, &error, &warning, path))
+    throw std::runtime_error{error};
+  return loadScene(gltfModel);
 }
 } // namespace sbash64::graphics

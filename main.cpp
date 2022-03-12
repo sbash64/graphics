@@ -386,6 +386,47 @@ static auto pressing(GLFWwindow *window, int key) -> bool {
   return glfwGetKey(window, key) == GLFW_PRESS;
 }
 
+static void drawNode(VkCommandBuffer commandBuffer,
+                     VkPipelineLayout pipelineLayout, const Node &node,
+                     const Scene &scene) {
+  if (!node.mesh.primitives.empty()) {
+    // Pass the node's matrix via push constants
+    // Traverse the node hierarchy to the top-most parent to get the final
+    // matrix of the current node
+    auto nodeMatrix = node.matrix;
+    const auto *currentParent = node.parent;
+    while (currentParent != nullptr) {
+      nodeMatrix = currentParent->matrix * nodeMatrix;
+      currentParent = currentParent->parent;
+    }
+    // Pass the final matrix to the vertex shader using push constants
+    vkCmdPushConstants(commandBuffer, pipelineLayout,
+                       VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4),
+                       &nodeMatrix);
+    // Bind SSBO with skin data for this node to set 1
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            pipelineLayout, 1, 1,
+                            &scene.skins[node.skin].descriptorSet, 0, nullptr);
+    for (const auto &primitive : node.mesh.primitives) {
+      if (primitive.indexCount > 0) {
+        // Get the texture index for this primitive
+        const auto index =
+            scene.textureIndices[scene.materials[primitive.materialIndex]
+                                     .baseColorTextureIndex];
+        // Bind the descriptor for the current primitive's texture to set 2
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                pipelineLayout, 2, 1,
+                                &scene.images[index].descriptorSet, 0, nullptr);
+        vkCmdDrawIndexed(commandBuffer, primitive.indexCount, 1,
+                         primitive.firstIndex, 0, 0);
+      }
+    }
+  }
+  for (const auto &child : node.children) {
+    drawNode(commandBuffer, pipelineLayout, *child, scene);
+  }
+}
+
 static void run(const std::string &vertexShaderCodePath,
                 const std::string &fragmentShaderCodePath,
                 const std::string &playerObjectPath,
@@ -487,7 +528,7 @@ static void run(const std::string &vertexShaderCodePath,
       vulkanDevice, vulkanTextureSampler, vulkanDescriptorSetLayout,
       swapChainImages, worldUniformBuffersWithMemory, worldTextureImages)};
 
-  const vulkan_wrappers::CommandBuffers vulkanCommandBuffers{
+  const vulkan_wrappers::CommandBuffers vulkanDrawCommandBuffers{
       vulkanDevice.device, vulkanCommandPool.commandPool,
       vulkanFrameBuffers.size()};
   const vulkan_wrappers::PipelineLayout vulkanPipelineLayout{
@@ -524,24 +565,46 @@ static void run(const std::string &vertexShaderCodePath,
                                       vulkanCommandPool.commandPool,
                                       graphicsQueue, worldObjects)};
 
-  for (auto i{0U}; i < vulkanCommandBuffers.commandBuffers.size(); i++) {
-    throwIfFailsToBegin(vulkanCommandBuffers.commandBuffers[i]);
+  for (auto i{0U}; i < vulkanDrawCommandBuffers.commandBuffers.size(); i++) {
+    throwIfFailsToBegin(vulkanDrawCommandBuffers.commandBuffers[i]);
     beginRenderPass(vulkanPhysicalDevice, vulkanSurface.surface,
                     vulkanFrameBuffers.at(i).framebuffer,
-                    vulkanCommandBuffers.commandBuffers[i], glfwWindow.window,
-                    vulkanRenderPass.renderPass);
-    vkCmdBindPipeline(vulkanCommandBuffers.commandBuffers[i],
+                    vulkanDrawCommandBuffers.commandBuffers[i],
+                    glfwWindow.window, vulkanRenderPass.renderPass);
+    vkCmdBindPipeline(vulkanDrawCommandBuffers.commandBuffers[i],
                       VK_PIPELINE_BIND_POINT_GRAPHICS, vulkanPipeline.pipeline);
     draw(playerObjects, playerDrawables, vulkanPipelineLayout,
-         playerTextureImageDescriptors, vulkanCommandBuffers.commandBuffers[i],
-         i);
+         playerTextureImageDescriptors,
+         vulkanDrawCommandBuffers.commandBuffers[i], i);
     draw(worldObjects, worldDrawables, vulkanPipelineLayout,
-         worldTextureImageDescriptors, vulkanCommandBuffers.commandBuffers[i],
-         i);
-    vkCmdEndRenderPass(vulkanCommandBuffers.commandBuffers[i]);
+         worldTextureImageDescriptors,
+         vulkanDrawCommandBuffers.commandBuffers[i], i);
+    // Bind scene matrices descriptor to set 0
+    // vkCmdBindDescriptorSets(vulkanDrawCommandBuffers.commandBuffers[i],
+    //                         VK_PIPELINE_BIND_POINT_GRAPHICS,
+    //                         animatingPipelineLayout, 0, 1, &descriptorSet, 0,
+    //                         nullptr);
+    // vkCmdBindPipeline(vulkanDrawCommandBuffers.commandBuffers[i],
+    //                   animatingPipeline);
+    // // All vertices and indices are stored in single buffers, so we only need
+    // to
+    // // bind once
+    // {
+    //   VkDeviceSize offsets[1] = {0};
+    //   vkCmdBindVertexBuffers(vulkanDrawCommandBuffers.commandBuffers[i], 0,
+    //   1,
+    //                          &vertices.buffer, offsets);
+    //   vkCmdBindIndexBuffer(vulkanDrawCommandBuffers.commandBuffers[i],
+    //                        indices.buffer, 0, VK_INDEX_TYPE_UINT32);
+    //   // Render all nodes at top-level
+    //   for (auto &node : nodes) {
+    //     drawNode(commandBuffer, pipelineLayout, *node);
+    //   }
+    // }
+    vkCmdEndRenderPass(vulkanDrawCommandBuffers.commandBuffers[i]);
     throwOnError(
         [&]() {
-          return vkEndCommandBuffer(vulkanCommandBuffers.commandBuffers[i]);
+          return vkEndCommandBuffer(vulkanDrawCommandBuffers.commandBuffers[i]);
         },
         "failed to record command buffer!");
   }
@@ -676,7 +739,7 @@ static void run(const std::string &vertexShaderCodePath,
            vulkanImageAvailableSemaphores[currentFrame].semaphore,
            vulkanRenderFinishedSemaphores[currentFrame].semaphore,
            vulkanInFlightFences[currentFrame].fence,
-           vulkanCommandBuffers.commandBuffers[imageIndex]);
+           vulkanDrawCommandBuffers.commandBuffers[imageIndex]);
     {
       const auto result{
           present(presentQueue, vulkanSwapchain, imageIndex,
