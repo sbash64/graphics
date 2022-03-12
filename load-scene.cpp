@@ -8,8 +8,7 @@
 
 namespace sbash64::graphics {
 template <typename T>
-static auto span(const tinygltf::Model &model, int index)
-    -> std::span<const T> {
+auto span(const tinygltf::Model &model, int index) -> std::span<const T> {
   const auto &accessor = model.accessors[index];
   const auto &bufferView = model.bufferViews[accessor.bufferView];
   const auto &buffer = model.buffers[bufferView.buffer];
@@ -19,17 +18,26 @@ static auto span(const tinygltf::Model &model, int index)
 }
 
 template <typename T>
-void fill(std::vector<uint32_t> &indexBuffer, uint32_t vertexStart,
-          const tinygltf::Model &model, const tinygltf::Primitive &primitive) {
+void appendIndices(std::vector<uint32_t> &indexBuffer, uint32_t vertexStart,
+                   const tinygltf::Model &model,
+                   const tinygltf::Primitive &primitive) {
   for (const auto index : span<T>(model, primitive.indices))
     indexBuffer.push_back(index + vertexStart);
+}
+
+template <typename T>
+auto span(const tinygltf::Model &model, const tinygltf::Primitive &primitive,
+          const std::string &attribute) -> std::span<const T> {
+  if (primitive.attributes.contains(attribute))
+    return graphics::span<T>(model, primitive.attributes.at(attribute));
+  return {};
 }
 
 static void loadNode(std::vector<std::unique_ptr<Node>> &nodes,
                      std::vector<uint32_t> &indexBuffer,
                      std::vector<AnimatingVertex> &vertexBuffer,
                      const tinygltf::Model &gltfModel, Node *parent,
-                     uint32_t nodeIndex) {
+                     int nodeIndex) {
   const auto gltfNode{gltfModel.nodes.at(nodeIndex)};
   auto node{std::make_unique<Node>()};
   node->parent = parent;
@@ -58,67 +66,35 @@ static void loadNode(std::vector<std::unique_ptr<Node>> &nodes,
   if (gltfNode.mesh > -1) {
     for (const auto &gltfPrimitive :
          gltfModel.meshes[gltfNode.mesh].primitives) {
-      const auto firstIndex = static_cast<uint32_t>(indexBuffer.size());
+      Primitive primitive{};
+      primitive.materialIndex = gltfPrimitive.material;
       const auto vertexStart = static_cast<uint32_t>(vertexBuffer.size());
-      uint32_t indexCount = 0;
-      bool hasSkin = false;
       // Vertices
       {
-        const float *positionBuffer = nullptr;
-        const float *normalsBuffer = nullptr;
-        const float *texCoordsBuffer = nullptr;
-        const uint16_t *jointIndicesBuffer = nullptr;
-        const float *jointWeightsBuffer = nullptr;
-        size_t vertexCount = 0;
-
-        // Get buffer data for vertex normals
-        if (gltfPrimitive.attributes.contains("POSITION")) {
-          const auto span{graphics::span<float>(
-              gltfModel, gltfPrimitive.attributes.at("POSITION"))};
-          positionBuffer = span.data();
-          vertexCount = span.size();
-        }
-        // Get buffer data for vertex normals
-        if (gltfPrimitive.attributes.contains("NORMAL")) {
-          const auto span{graphics ::span<float>(
-              gltfModel, gltfPrimitive.attributes.at("NORMAL"))};
-          normalsBuffer = span.data();
-        }
-        // Get buffer data for vertex texture coordinates
-        // glTF supports multiple sets, we only load the first one
-        if (gltfPrimitive.attributes.contains("TEXCOORD_0")) {
-          const auto span{graphics::span<float>(
-              gltfModel, gltfPrimitive.attributes.at("TEXCOORD_0"))};
-          texCoordsBuffer = span.data();
-        }
-        // POI: Get buffer data required for vertex skinning
-        // Get vertex joint indices
-        if (gltfPrimitive.attributes.contains("JOINTS_0")) {
-          const auto span{graphics::span<uint16_t>(
-              gltfModel, gltfPrimitive.attributes.at("JOINTS_0"))};
-          jointIndicesBuffer = span.data();
-        }
-        // Get vertex joint weights
-        if (gltfPrimitive.attributes.contains("WEIGHTS_0")) {
-          const auto span{graphics::span<float>(
-              gltfModel, gltfPrimitive.attributes.at("WEIGHTS_0"))};
-          jointWeightsBuffer = span.data();
-        }
-
-        hasSkin = ((jointIndicesBuffer != nullptr) &&
-                   (jointWeightsBuffer != nullptr));
+        const auto positionBuffer{
+            span<float>(gltfModel, gltfPrimitive, "POSITION")};
+        const auto normalsBuffer{
+            span<float>(gltfModel, gltfPrimitive, "NORMAL")};
+        const auto texCoordsBuffer{
+            span<float>(gltfModel, gltfPrimitive, "TEXCOORD_0")};
+        const auto jointIndicesBuffer{
+            span<uint16_t>(gltfModel, gltfPrimitive, "JOINTS_0")};
+        const auto jointWeightsBuffer{
+            span<float>(gltfModel, gltfPrimitive, "WEIGHTS_0")};
 
         // Append data to model's vertex buffer
-        for (size_t v = 0; v < vertexCount; v++) {
+        for (size_t v = 0; v < positionBuffer.size(); v++) {
           AnimatingVertex vertex{};
           vertex.pos = glm::vec4(glm::make_vec3(&positionBuffer[v * 3]), 1.0F);
           vertex.normal = glm::normalize(glm::vec3(
-              normalsBuffer != nullptr ? glm::make_vec3(&normalsBuffer[v * 3])
-                                       : glm::vec3(0.0F)));
-          vertex.uv = texCoordsBuffer != nullptr
+              !normalsBuffer.empty() ? glm::make_vec3(&normalsBuffer[v * 3])
+                                     : glm::vec3(0.0F)));
+          vertex.uv = !texCoordsBuffer.empty()
                           ? glm::make_vec2(&texCoordsBuffer[v * 2])
                           : glm::vec3(0.0F);
           vertex.color = glm::vec3(1.0F);
+          const auto hasSkin{!jointIndicesBuffer.empty() &&
+                             !jointWeightsBuffer.empty()};
           vertex.jointIndices =
               hasSkin ? glm::vec4(glm::make_vec4(&jointIndicesBuffer[v * 4]))
                       : glm::vec4(0.0F);
@@ -129,27 +105,27 @@ static void loadNode(std::vector<std::unique_ptr<Node>> &nodes,
         }
       }
       // Indices
+      primitive.firstIndex = static_cast<uint32_t>(indexBuffer.size());
       {
         const auto &accessor = gltfModel.accessors[gltfPrimitive.indices];
-        indexCount += static_cast<uint32_t>(accessor.count);
+        primitive.indexCount = static_cast<uint32_t>(accessor.count);
         switch (accessor.componentType) {
         case TINYGLTF_PARAMETER_TYPE_UNSIGNED_INT:
-          fill<uint32_t>(indexBuffer, vertexStart, gltfModel, gltfPrimitive);
+          appendIndices<uint32_t>(indexBuffer, vertexStart, gltfModel,
+                                  gltfPrimitive);
           break;
         case TINYGLTF_PARAMETER_TYPE_UNSIGNED_SHORT:
-          fill<uint16_t>(indexBuffer, vertexStart, gltfModel, gltfPrimitive);
+          appendIndices<uint16_t>(indexBuffer, vertexStart, gltfModel,
+                                  gltfPrimitive);
           break;
         case TINYGLTF_PARAMETER_TYPE_UNSIGNED_BYTE:
-          fill<uint8_t>(indexBuffer, vertexStart, gltfModel, gltfPrimitive);
+          appendIndices<uint8_t>(indexBuffer, vertexStart, gltfModel,
+                                 gltfPrimitive);
           break;
         default:
           throw std::runtime_error{"component type not supported"};
         }
       }
-      Primitive primitive{};
-      primitive.firstIndex = firstIndex;
-      primitive.indexCount = indexCount;
-      primitive.materialIndex = gltfPrimitive.material;
       node->mesh.primitives.push_back(primitive);
     }
   }
@@ -215,17 +191,12 @@ static auto images(const tinygltf::Model &gltfModel) -> std::vector<Image> {
   return images;
 }
 
-auto loadScene(const tinygltf::Model &gltfModel) -> Scene {
-  // Images can be stored inside the glTF (which is the case for the sample
-  // model), so instead of directly loading them from disk, we fetch them
-  // from the glTF loader and upload the buffers
-  Scene scene;
-  scene.images = images(gltfModel);
-
+static auto materials(const tinygltf::Model &gltfModel)
+    -> std::vector<Material> {
+  std::vector<Material> materials;
   transform(
       gltfModel.materials.begin(), gltfModel.materials.end(),
-      back_inserter(scene.materials),
-      [](const tinygltf::Material &gltfMaterial) {
+      back_inserter(materials), [](const tinygltf::Material &gltfMaterial) {
         Material material;
         if (gltfMaterial.values.contains("baseColorFactor"))
           material.baseColorFactor = glm::make_vec4(
@@ -235,12 +206,22 @@ auto loadScene(const tinygltf::Model &gltfModel) -> Scene {
               gltfMaterial.values.at("baseColorTexture").TextureIndex();
         return material;
       });
+  return materials;
+}
+
+auto loadScene(const tinygltf::Model &gltfModel) -> Scene {
+  // Images can be stored inside the glTF (which is the case for the sample
+  // model), so instead of directly loading them from disk, we fetch them
+  // from the glTF loader and upload the buffers
+  Scene scene;
+  scene.images = images(gltfModel);
+  scene.materials = materials(gltfModel);
 
   transform(gltfModel.textures.begin(), gltfModel.textures.end(),
             back_inserter(scene.textureIndices),
             [](const tinygltf::Texture &texture) { return texture.source; });
 
-  for (const auto node : gltfModel.scenes[0].nodes)
+  for (const auto node : gltfModel.scenes.at(0).nodes)
     loadNode(scene.nodes, scene.indexBuffer, scene.vertexBuffer, gltfModel,
              nullptr, node);
 
