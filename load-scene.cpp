@@ -4,8 +4,9 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <tiny_gltf.h>
 
-namespace sbash64::graphics {
+#include <span>
 
+namespace sbash64::graphics {
 template <typename T>
 static auto span(const tinygltf::Model &model, int index)
     -> std::span<const T> {
@@ -205,10 +206,12 @@ auto readScene(const std::string &path) -> Scene {
         image.width = gltfImage.width;
         image.height = gltfImage.height;
         if (gltfImage.component == 3) {
-          image.buffer.resize(gltfImage.width * gltfImage.height * 4);
+          image.buffer.resize(static_cast<long>(gltfImage.width) *
+                              gltfImage.height * 4);
           unsigned char *rgba = image.buffer.data();
           const auto *rgb = &gltfImage.image[0];
-          for (size_t i = 0; i < gltfImage.width * gltfImage.height; ++i) {
+          for (size_t i = 0;
+               i < static_cast<long>(gltfImage.width) * gltfImage.height; ++i) {
             memcpy(rgba, rgb, sizeof(unsigned char) * 3);
             rgba += 4;
             rgb += 3;
