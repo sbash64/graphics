@@ -941,12 +941,12 @@ struct AnimatingUniformBufferObject {
   alignas(16) glm::mat4 view;
 };
 
-auto animatingPipeline(
-    VkDevice &device, VkPhysicalDevice &physicalDevice, VkSurfaceKHR &surface,
-    VkRenderPass &renderPass, GLFWwindow *&window,
-    const std::string &vertexShaderCodePath,
-    const std::string &fragmentShaderCodePath,
-    const vulkan_wrappers::PipelineLayout &vulkanPipelineLayout)
+static auto
+animatingPipeline(VkDevice device, VkPhysicalDevice physicalDevice,
+                  VkSurfaceKHR surface, VkRenderPass renderPass,
+                  GLFWwindow *window, const std::string &vertexShaderCodePath,
+                  const std::string &fragmentShaderCodePath,
+                  const vulkan_wrappers::PipelineLayout &vulkanPipelineLayout)
     -> vulkan_wrappers::Pipeline {
   std::vector<VkVertexInputAttributeDescription> attributeDescriptions(4);
   attributeDescriptions[0].binding = 0;
@@ -986,7 +986,7 @@ auto animatingPipeline(
           bindingDescription};
 }
 
-auto animatingUniformBufferObjectDescriptorSet(
+static auto animatingUniformBufferObjectDescriptorSet(
     VkDevice device,
     const sbash64::graphics::VulkanBufferWithMemory &bufferWithMemory,
     const sbash64::graphics::vulkan_wrappers::DescriptorPool &descriptorPool,
