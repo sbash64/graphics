@@ -222,7 +222,7 @@ auto loadScene(const tinygltf::Model &gltfModel) -> Scene {
             [](const tinygltf::Texture &texture) { return texture.source; });
 
   for (const auto node : gltfModel.scenes.at(0).nodes)
-    loadNode(scene.nodes, scene.indexBuffer, scene.vertexBuffer, gltfModel,
+    loadNode(scene.nodes, scene.vertexIndices, scene.vertices, gltfModel,
              nullptr, node);
 
   transform(gltfModel.skins.begin(), gltfModel.skins.end(),

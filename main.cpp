@@ -440,337 +440,6 @@ static void drawNode(VkCommandBuffer commandBuffer,
   }
 }
 
-static void run(const std::string &vertexShaderCodePath,
-                const std::string &fragmentShaderCodePath,
-                const std::string &playerObjectPath,
-                const std::string &worldObjectPath) {
-  const glfw_wrappers::Init glfwInitialization;
-  glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-  const glfw_wrappers::Window glfwWindow{1280, 960};
-  GlfwCallback glfwCallback{};
-  glfwSetWindowUserPointer(glfwWindow.window, &glfwCallback);
-  glfwSetCursorPosCallback(glfwWindow.window, onCursorPositionChanged);
-  glfwSetMouseButtonCallback(glfwWindow.window, onMouseButton);
-  glfwSetFramebufferSizeCallback(glfwWindow.window, onFramebufferResize);
-  const vulkan_wrappers::Instance vulkanInstance;
-  const vulkan_wrappers::Surface vulkanSurface{vulkanInstance.instance,
-                                               glfwWindow.window};
-  auto *const vulkanPhysicalDevice{
-      suitableDevice(vulkanInstance.instance, vulkanSurface.surface)};
-  const vulkan_wrappers::Device vulkanDevice{vulkanPhysicalDevice,
-                                             vulkanSurface.surface};
-  const vulkan_wrappers::Swapchain vulkanSwapchain{
-      vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface,
-      glfwWindow.window};
-  const auto swapChainImages{graphics::swapChainImages(
-      vulkanDevice.device, vulkanSwapchain.swapChain)};
-  const auto swapChainImageViews{
-      graphics::swapChainImageViews(vulkanDevice.device, vulkanPhysicalDevice,
-                                    vulkanSurface.surface, swapChainImages)};
-  const auto vulkanColorImage{frameImage(
-      vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface,
-      glfwWindow.window,
-      swapSurfaceFormat(vulkanPhysicalDevice, vulkanSurface.surface).format,
-      VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-          VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT,
-      VK_IMAGE_ASPECT_COLOR_BIT)};
-  const auto vulkanDepthImage{frameImage(
-      vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface,
-      glfwWindow.window, findDepthFormat(vulkanPhysicalDevice),
-      VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_ASPECT_DEPTH_BIT)};
-  const vulkan_wrappers::RenderPass vulkanRenderPass{
-      vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface};
-  std::vector<vulkan_wrappers::Framebuffer> vulkanFrameBuffers;
-  transform(swapChainImageViews.begin(), swapChainImageViews.end(),
-            back_inserter(vulkanFrameBuffers),
-            [&vulkanDevice, vulkanPhysicalDevice, &vulkanSurface,
-             &vulkanRenderPass, &vulkanColorImage, &vulkanDepthImage,
-             &glfwWindow](const vulkan_wrappers::ImageView &imageView) {
-              return vulkan_wrappers::Framebuffer{vulkanDevice.device,
-                                                  vulkanPhysicalDevice,
-                                                  vulkanSurface.surface,
-                                                  vulkanRenderPass.renderPass,
-                                                  {vulkanColorImage.view.view,
-                                                   vulkanDepthImage.view.view,
-                                                   imageView.view},
-                                                  glfwWindow.window};
-            });
-  const auto playerUniformBuffersWithMemory{uniformBuffersWithMemory(
-      vulkanDevice.device, vulkanPhysicalDevice, swapChainImages)};
-  const auto worldUniformBuffersWithMemory{uniformBuffersWithMemory(
-      vulkanDevice.device, vulkanPhysicalDevice, swapChainImages)};
-  const vulkan_wrappers::Sampler vulkanTextureSampler{vulkanDevice.device,
-                                                      vulkanPhysicalDevice, 13};
-  VkQueue graphicsQueue{nullptr};
-  vkGetDeviceQueue(vulkanDevice.device,
-                   graphicsSupportingQueueFamilyIndex(vulkanPhysicalDevice), 0,
-                   &graphicsQueue);
-  const vulkan_wrappers::CommandPool vulkanCommandPool{vulkanDevice.device,
-                                                       vulkanPhysicalDevice};
-
-  VkDescriptorSetLayoutBinding uboLayoutBinding{};
-  uboLayoutBinding.binding = 0;
-  uboLayoutBinding.descriptorCount = 1;
-  uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  uboLayoutBinding.pImmutableSamplers = nullptr;
-  uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-  VkDescriptorSetLayoutBinding samplerLayoutBinding{};
-  samplerLayoutBinding.binding = 1;
-  samplerLayoutBinding.descriptorCount = 1;
-  samplerLayoutBinding.descriptorType =
-      VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-  samplerLayoutBinding.pImmutableSamplers = nullptr;
-  samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-  const vulkan_wrappers::DescriptorSetLayout vulkanDescriptorSetLayout{
-      vulkanDevice.device, {uboLayoutBinding, samplerLayoutBinding}};
-
-  const auto playerObjects{readTexturedObjects(playerObjectPath)};
-  const auto playerTextureImages{textureImages(
-      vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
-      graphicsQueue, textureImagePaths(playerObjectPath, playerObjects))};
-  const auto playerTextureImageDescriptors{descriptors(
-      vulkanDevice, vulkanTextureSampler, vulkanDescriptorSetLayout,
-      swapChainImages, playerUniformBuffersWithMemory, playerTextureImages)};
-
-  const auto worldObjects{readTexturedObjects(worldObjectPath)};
-  const auto worldTextureImages{textureImages(
-      vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
-      graphicsQueue, textureImagePaths(worldObjectPath, worldObjects))};
-  const auto worldTextureImageDescriptors{descriptors(
-      vulkanDevice, vulkanTextureSampler, vulkanDescriptorSetLayout,
-      swapChainImages, worldUniformBuffersWithMemory, worldTextureImages)};
-
-  const vulkan_wrappers::CommandBuffers vulkanDrawCommandBuffers{
-      vulkanDevice.device, vulkanCommandPool.commandPool,
-      vulkanFrameBuffers.size()};
-  const vulkan_wrappers::PipelineLayout vulkanPipelineLayout{
-      vulkanDevice.device, {vulkanDescriptorSetLayout.descriptorSetLayout}};
-
-  std::vector<VkVertexInputAttributeDescription> attributeDescriptions(2);
-  attributeDescriptions[0].binding = 0;
-  attributeDescriptions[0].location = 0;
-  attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-  attributeDescriptions[0].offset = offsetof(Vertex, position);
-
-  attributeDescriptions[1].binding = 0;
-  attributeDescriptions[1].location = 1;
-  attributeDescriptions[1].format = VK_FORMAT_R32G32_SFLOAT;
-  attributeDescriptions[1].offset = offsetof(Vertex, textureCoordinate);
-
-  std::vector<VkVertexInputBindingDescription> bindingDescription(1);
-  bindingDescription[0].binding = 0;
-  bindingDescription[0].stride = sizeof(Vertex);
-  bindingDescription[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-  const vulkan_wrappers::Pipeline vulkanPipeline{
-      vulkanDevice.device,         vulkanPhysicalDevice,
-      vulkanSurface.surface,       vulkanPipelineLayout.pipelineLayout,
-      vulkanRenderPass.renderPass, vertexShaderCodePath,
-      fragmentShaderCodePath,      glfwWindow.window,
-      attributeDescriptions,       bindingDescription};
-
-  const auto playerDrawables{
-      drawables(vulkanDevice.device, vulkanPhysicalDevice,
-                vulkanCommandPool.commandPool, graphicsQueue, playerObjects)};
-
-  const auto worldDrawables{drawables(vulkanDevice.device, vulkanPhysicalDevice,
-                                      vulkanCommandPool.commandPool,
-                                      graphicsQueue, worldObjects)};
-
-  for (auto i{0U}; i < vulkanDrawCommandBuffers.commandBuffers.size(); i++) {
-    throwIfFailsToBegin(vulkanDrawCommandBuffers.commandBuffers[i]);
-    beginRenderPass(vulkanPhysicalDevice, vulkanSurface.surface,
-                    vulkanFrameBuffers.at(i).framebuffer,
-                    vulkanDrawCommandBuffers.commandBuffers[i],
-                    glfwWindow.window, vulkanRenderPass.renderPass);
-    vkCmdBindPipeline(vulkanDrawCommandBuffers.commandBuffers[i],
-                      VK_PIPELINE_BIND_POINT_GRAPHICS, vulkanPipeline.pipeline);
-    draw(playerObjects, playerDrawables, vulkanPipelineLayout,
-         playerTextureImageDescriptors,
-         vulkanDrawCommandBuffers.commandBuffers[i], i);
-    draw(worldObjects, worldDrawables, vulkanPipelineLayout,
-         worldTextureImageDescriptors,
-         vulkanDrawCommandBuffers.commandBuffers[i], i);
-    // Bind scene matrices descriptor to set 0
-    // vkCmdBindDescriptorSets(vulkanDrawCommandBuffers.commandBuffers[i],
-    //                         VK_PIPELINE_BIND_POINT_GRAPHICS,
-    //                         animatingPipelineLayout, 0, 1, &descriptorSet, 0,
-    //                         nullptr);
-    // vkCmdBindPipeline(vulkanDrawCommandBuffers.commandBuffers[i],
-    //                   animatingPipeline);
-    // // All vertices and indices are stored in single buffers, so we only need
-    // to
-    // // bind once
-    // {
-    //   VkDeviceSize offsets[1] = {0};
-    //   vkCmdBindVertexBuffers(vulkanDrawCommandBuffers.commandBuffers[i], 0,
-    //   1,
-    //                          &vertices.buffer, offsets);
-    //   vkCmdBindIndexBuffer(vulkanDrawCommandBuffers.commandBuffers[i],
-    //                        indices.buffer, 0, VK_INDEX_TYPE_UINT32);
-    //   // Render all nodes at top-level
-    //   for (auto &node : nodes) {
-    //     drawNode(commandBuffer, pipelineLayout, *node);
-    //   }
-    // }
-    vkCmdEndRenderPass(vulkanDrawCommandBuffers.commandBuffers[i]);
-    throwOnError(
-        [&]() {
-          return vkEndCommandBuffer(vulkanDrawCommandBuffers.commandBuffers[i]);
-        },
-        "failed to record command buffer!");
-  }
-
-  VkQueue presentQueue{nullptr};
-  vkGetDeviceQueue(vulkanDevice.device,
-                   presentSupportingQueueFamilyIndex(vulkanPhysicalDevice,
-                                                     vulkanSurface.surface),
-                   0, &presentQueue);
-  const auto maxFramesInFlight{2};
-  std::vector<vulkan_wrappers::Fence> vulkanInFlightFences;
-  generate_n(back_inserter(vulkanInFlightFences), maxFramesInFlight,
-             [&vulkanDevice]() {
-               return vulkan_wrappers::Fence{vulkanDevice.device};
-             });
-  const auto vulkanImageAvailableSemaphores{
-      semaphores(vulkanDevice.device, maxFramesInFlight)};
-  const auto vulkanRenderFinishedSemaphores{
-      semaphores(vulkanDevice.device, maxFramesInFlight)};
-  std::vector<VkFence> imagesInFlight(swapChainImages.size(), VK_NULL_HANDLE);
-  const auto swapChainExtent{swapExtent(
-      vulkanPhysicalDevice, vulkanSurface.surface, glfwWindow.window)};
-
-  auto recreatingSwapChain{false};
-  auto currentFrame{0U};
-  FixedPointVector3D playerVelocity{};
-  RationalNumber verticalVelocity{0, 1};
-  auto jumpState{JumpState::grounded};
-  auto worldOrigin = glm::vec3{0.F, 0.F, 0.F};
-  glfwCallback.camera.yaw = -90;
-  glfwCallback.camera.pitch = 15;
-  FixedPointVector3D playerDisplacement{1000, 0, -500};
-  while (!recreatingSwapChain) {
-    if (glfwWindowShouldClose(glfwWindow.window) != 0) {
-      break;
-    }
-
-    glfwPollEvents();
-    {
-      constexpr auto playerRunAcceleration{2};
-      constexpr auto playerJumpAcceleration{6};
-      const RationalNumber gravity{-1, 4};
-      if (pressing(glfwWindow.window, GLFW_KEY_A)) {
-        playerVelocity.x += playerRunAcceleration;
-      }
-      if (pressing(glfwWindow.window, GLFW_KEY_D)) {
-        playerVelocity.x -= playerRunAcceleration;
-      }
-      if (pressing(glfwWindow.window, GLFW_KEY_W)) {
-        playerVelocity.z += playerRunAcceleration;
-      }
-      if (pressing(glfwWindow.window, GLFW_KEY_S)) {
-        playerVelocity.z -= playerRunAcceleration;
-      }
-      if (pressing(glfwWindow.window, GLFW_KEY_SPACE) &&
-          jumpState == JumpState::grounded) {
-        jumpState = JumpState::started;
-        verticalVelocity += playerJumpAcceleration;
-      }
-      verticalVelocity += gravity;
-      if (glfwGetKey(glfwWindow.window, GLFW_KEY_SPACE) != GLFW_PRESS &&
-          jumpState == JumpState::started) {
-        jumpState = JumpState::released;
-        if (verticalVelocity.numerator > 0)
-          verticalVelocity = {0, 1};
-      }
-      constexpr auto playerMaxGroundSpeed{4};
-      constexpr auto groundFriction{1};
-      playerVelocity.x = withFriction(
-          clamp(playerVelocity.x, playerMaxGroundSpeed), groundFriction);
-      playerVelocity.z = withFriction(
-          clamp(playerVelocity.z, playerMaxGroundSpeed), groundFriction);
-      playerDisplacement.x += playerVelocity.x;
-      playerDisplacement.z += playerVelocity.z;
-      playerDisplacement.y += round(verticalVelocity);
-      if (playerDisplacement.y < 0) {
-        jumpState = JumpState::grounded;
-        playerDisplacement.y = 0;
-        verticalVelocity = {0, 1};
-      }
-    }
-    vkWaitForFences(vulkanDevice.device, 1,
-                    &vulkanInFlightFences[currentFrame].fence, VK_TRUE,
-                    UINT64_MAX);
-
-    uint32_t imageIndex{0};
-    {
-      const auto result{vkAcquireNextImageKHR(
-          vulkanDevice.device, vulkanSwapchain.swapChain, UINT64_MAX,
-          vulkanImageAvailableSemaphores[currentFrame].semaphore,
-          VK_NULL_HANDLE, &imageIndex)};
-
-      if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-        prepareForSwapChainRecreation(vulkanDevice.device, glfwWindow.window);
-        recreatingSwapChain = true;
-        continue;
-      }
-      if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
-        throw std::runtime_error("failed to acquire swap chain image!");
-    }
-
-    const auto projection =
-        glm::perspective(glm::radians(45.F),
-                         static_cast<float>(swapChainExtent.width) /
-                             static_cast<float>(swapChainExtent.height),
-                         100.F, 10000.F);
-    const glm::vec3 playerPosition{playerDisplacement.x * 3.F,
-                                   playerDisplacement.y * 3.F,
-                                   playerDisplacement.z * 3.F};
-    const auto view = glm::lookAt(
-        playerPosition +
-            600.F * glm::normalize(glm::vec3{
-                        std::cos(glm::radians(glfwCallback.camera.yaw)) *
-                            std::cos(glm::radians(glfwCallback.camera.pitch)),
-                        std::sin(glm::radians(glfwCallback.camera.pitch)),
-                        std::sin(glm::radians(glfwCallback.camera.yaw)) *
-                            std::cos(glm::radians(glfwCallback.camera.pitch))}),
-        playerPosition, glm::vec3(0, 1, 0));
-    updateUniformBuffer(vulkanDevice,
-                        playerUniformBuffersWithMemory[imageIndex].memory, view,
-                        projection, playerPosition, 20, -90.F);
-    updateUniformBuffer(vulkanDevice,
-                        worldUniformBuffersWithMemory[imageIndex].memory, view,
-                        projection, worldOrigin);
-
-    if (imagesInFlight[imageIndex] != VK_NULL_HANDLE)
-      vkWaitForFences(vulkanDevice.device, 1, &imagesInFlight[imageIndex],
-                      VK_TRUE, UINT64_MAX);
-
-    imagesInFlight[imageIndex] = vulkanInFlightFences[currentFrame].fence;
-    submit(vulkanDevice, graphicsQueue,
-           vulkanImageAvailableSemaphores[currentFrame].semaphore,
-           vulkanRenderFinishedSemaphores[currentFrame].semaphore,
-           vulkanInFlightFences[currentFrame].fence,
-           vulkanDrawCommandBuffers.commandBuffers[imageIndex]);
-    {
-      const auto result{
-          present(presentQueue, vulkanSwapchain, imageIndex,
-                  vulkanRenderFinishedSemaphores[currentFrame].semaphore)};
-      if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR ||
-          glfwCallback.frameBufferResized) {
-        glfwCallback.frameBufferResized = false;
-        prepareForSwapChainRecreation(vulkanDevice.device, glfwWindow.window);
-        recreatingSwapChain = true;
-      } else if (result != VK_SUCCESS)
-        throw std::runtime_error("failed to present swap chain image!");
-    }
-    if (++currentFrame == maxFramesInFlight)
-      currentFrame = 0;
-  }
-  vkDeviceWaitIdle(vulkanDevice.device);
-}
-
 static auto getLocalMatrix(const Node &node) -> glm::mat4 {
   return glm::translate(glm::mat4(1.0F), node.translation) *
          glm::mat4(node.rotation) * glm::scale(glm::mat4(1.0F), node.scale) *
@@ -985,7 +654,7 @@ animatingPipeline(VkDevice device, VkPhysicalDevice physicalDevice,
           bindingDescription};
 }
 
-static auto animatingJointMatricesDescriptorSetLayout(VkDevice device)
+static auto jointMatricesDescriptorSetLayout(VkDevice device)
     -> vulkan_wrappers::DescriptorSetLayout {
   VkDescriptorSetLayoutBinding jointMatricesLayoutBinding{};
   jointMatricesLayoutBinding.binding = 0;
@@ -1138,7 +807,7 @@ static auto textureImages(VkDevice device, VkPhysicalDevice physicalDevice,
   return vulkanImages;
 }
 
-static auto inverseBindMatricesDescriptorSets(
+static auto jointMatricesDescriptorSets(
     VkDevice device, const vulkan_wrappers::DescriptorPool &descriptorPool,
     const vulkan_wrappers::DescriptorSetLayout &setLayout,
     const std::vector<VulkanBufferWithMemory> &buffersWithMemory)
@@ -1221,18 +890,151 @@ static auto animatingTextureDescriptorSets(
   return descriptorSets;
 }
 
-static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
-                     VkQueue copyQueue, VkCommandPool commandPool,
-                     VkSurfaceKHR surface, VkRenderPass renderPass,
-                     GLFWwindow *window,
-                     const std::string &vertexShaderCodePath,
-                     const std::string &fragmentShaderCodePath) {
-  const auto scene{readScene("/home/seth/Documents/CesiumMan.gltf")};
-  const auto textureVulkanImages{
-      textureImages(device, physicalDevice, commandPool, copyQueue, scene)};
+static void run(const std::string &vertexShaderCodePath,
+                const std::string &fragmentShaderCodePath,
+                const std::string &playerObjectPath,
+                const std::string &worldObjectPath) {
+  const glfw_wrappers::Init glfwInitialization;
+  glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+  const glfw_wrappers::Window glfwWindow{1280, 960};
+  GlfwCallback glfwCallback{};
+  glfwSetWindowUserPointer(glfwWindow.window, &glfwCallback);
+  glfwSetCursorPosCallback(glfwWindow.window, onCursorPositionChanged);
+  glfwSetMouseButtonCallback(glfwWindow.window, onMouseButton);
+  glfwSetFramebufferSizeCallback(glfwWindow.window, onFramebufferResize);
+  const vulkan_wrappers::Instance vulkanInstance;
+  const vulkan_wrappers::Surface vulkanSurface{vulkanInstance.instance,
+                                               glfwWindow.window};
+  auto *const vulkanPhysicalDevice{
+      suitableDevice(vulkanInstance.instance, vulkanSurface.surface)};
+  const vulkan_wrappers::Device vulkanDevice{vulkanPhysicalDevice,
+                                             vulkanSurface.surface};
+  const vulkan_wrappers::Swapchain vulkanSwapchain{
+      vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface,
+      glfwWindow.window};
+  const auto swapChainImages{graphics::swapChainImages(
+      vulkanDevice.device, vulkanSwapchain.swapChain)};
+  const auto swapChainImageViews{
+      graphics::swapChainImageViews(vulkanDevice.device, vulkanPhysicalDevice,
+                                    vulkanSurface.surface, swapChainImages)};
+  const auto vulkanColorImage{frameImage(
+      vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface,
+      glfwWindow.window,
+      swapSurfaceFormat(vulkanPhysicalDevice, vulkanSurface.surface).format,
+      VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+          VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT,
+      VK_IMAGE_ASPECT_COLOR_BIT)};
+  const auto vulkanDepthImage{frameImage(
+      vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface,
+      glfwWindow.window, findDepthFormat(vulkanPhysicalDevice),
+      VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_IMAGE_ASPECT_DEPTH_BIT)};
+  const vulkan_wrappers::RenderPass vulkanRenderPass{
+      vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface};
+  std::vector<vulkan_wrappers::Framebuffer> vulkanFrameBuffers;
+  transform(swapChainImageViews.begin(), swapChainImageViews.end(),
+            back_inserter(vulkanFrameBuffers),
+            [&vulkanDevice, vulkanPhysicalDevice, &vulkanSurface,
+             &vulkanRenderPass, &vulkanColorImage, &vulkanDepthImage,
+             &glfwWindow](const vulkan_wrappers::ImageView &imageView) {
+              return vulkan_wrappers::Framebuffer{vulkanDevice.device,
+                                                  vulkanPhysicalDevice,
+                                                  vulkanSurface.surface,
+                                                  vulkanRenderPass.renderPass,
+                                                  {vulkanColorImage.view.view,
+                                                   vulkanDepthImage.view.view,
+                                                   imageView.view},
+                                                  glfwWindow.window};
+            });
+  const auto playerUniformBuffersWithMemory{uniformBuffersWithMemory(
+      vulkanDevice.device, vulkanPhysicalDevice, swapChainImages)};
+  const auto worldUniformBuffersWithMemory{uniformBuffersWithMemory(
+      vulkanDevice.device, vulkanPhysicalDevice, swapChainImages)};
+  const vulkan_wrappers::Sampler vulkanTextureSampler{vulkanDevice.device,
+                                                      vulkanPhysicalDevice, 13};
+  VkQueue graphicsQueue{nullptr};
+  vkGetDeviceQueue(vulkanDevice.device,
+                   graphicsSupportingQueueFamilyIndex(vulkanPhysicalDevice), 0,
+                   &graphicsQueue);
+  const vulkan_wrappers::CommandPool vulkanCommandPool{vulkanDevice.device,
+                                                       vulkanPhysicalDevice};
 
-  const auto descriptorPool{
-      animatingDescriptorPool(device, textureVulkanImages, scene)};
+  VkDescriptorSetLayoutBinding uboLayoutBinding{};
+  uboLayoutBinding.binding = 0;
+  uboLayoutBinding.descriptorCount = 1;
+  uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  uboLayoutBinding.pImmutableSamplers = nullptr;
+  uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+  VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+  samplerLayoutBinding.binding = 1;
+  samplerLayoutBinding.descriptorCount = 1;
+  samplerLayoutBinding.descriptorType =
+      VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  samplerLayoutBinding.pImmutableSamplers = nullptr;
+  samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+  const vulkan_wrappers::DescriptorSetLayout vulkanDescriptorSetLayout{
+      vulkanDevice.device, {uboLayoutBinding, samplerLayoutBinding}};
+
+  const auto playerObjects{readTexturedObjects(playerObjectPath)};
+  const auto playerTextureImages{textureImages(
+      vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
+      graphicsQueue, textureImagePaths(playerObjectPath, playerObjects))};
+  const auto playerTextureImageDescriptors{descriptors(
+      vulkanDevice, vulkanTextureSampler, vulkanDescriptorSetLayout,
+      swapChainImages, playerUniformBuffersWithMemory, playerTextureImages)};
+
+  const auto worldObjects{readTexturedObjects(worldObjectPath)};
+  const auto worldTextureImages{textureImages(
+      vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
+      graphicsQueue, textureImagePaths(worldObjectPath, worldObjects))};
+  const auto worldTextureImageDescriptors{descriptors(
+      vulkanDevice, vulkanTextureSampler, vulkanDescriptorSetLayout,
+      swapChainImages, worldUniformBuffersWithMemory, worldTextureImages)};
+
+  const vulkan_wrappers::CommandBuffers vulkanDrawCommandBuffers{
+      vulkanDevice.device, vulkanCommandPool.commandPool,
+      vulkanFrameBuffers.size()};
+  const vulkan_wrappers::PipelineLayout vulkanPipelineLayout{
+      vulkanDevice.device, {vulkanDescriptorSetLayout.descriptorSetLayout}};
+
+  std::vector<VkVertexInputAttributeDescription> attributeDescriptions(2);
+  attributeDescriptions[0].binding = 0;
+  attributeDescriptions[0].location = 0;
+  attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+  attributeDescriptions[0].offset = offsetof(Vertex, position);
+
+  attributeDescriptions[1].binding = 0;
+  attributeDescriptions[1].location = 1;
+  attributeDescriptions[1].format = VK_FORMAT_R32G32_SFLOAT;
+  attributeDescriptions[1].offset = offsetof(Vertex, textureCoordinate);
+
+  std::vector<VkVertexInputBindingDescription> bindingDescription(1);
+  bindingDescription[0].binding = 0;
+  bindingDescription[0].stride = sizeof(Vertex);
+  bindingDescription[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+  const vulkan_wrappers::Pipeline vulkanPipeline{
+      vulkanDevice.device,         vulkanPhysicalDevice,
+      vulkanSurface.surface,       vulkanPipelineLayout.pipelineLayout,
+      vulkanRenderPass.renderPass, vertexShaderCodePath,
+      fragmentShaderCodePath,      glfwWindow.window,
+      attributeDescriptions,       bindingDescription};
+
+  const auto playerDrawables{
+      drawables(vulkanDevice.device, vulkanPhysicalDevice,
+                vulkanCommandPool.commandPool, graphicsQueue, playerObjects)};
+
+  const auto worldDrawables{drawables(vulkanDevice.device, vulkanPhysicalDevice,
+                                      vulkanCommandPool.commandPool,
+                                      graphicsQueue, worldObjects)};
+
+  const auto scene{readScene("/home/seth/Documents/CesiumMan.gltf")};
+  const auto animatingTextureVulkanImages{
+      textureImages(vulkanDevice.device, vulkanPhysicalDevice,
+                    vulkanCommandPool.commandPool, graphicsQueue, scene)};
+
+  const auto animatingDescriptorPool{graphics::animatingDescriptorPool(
+      vulkanDevice.device, animatingTextureVulkanImages, scene)};
 
   // // The pipeline layout uses three sets:
   // // Set 0 = Scene matrices (VS)
@@ -1240,50 +1042,257 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
   // // Set 2 = Material texture (FS)
 
   const auto jointMatricesVulkanBuffersWithMemory{
-      inverseBindMatricesBuffersWithMemory(device, physicalDevice, scene)};
-  const auto jointMatricesSetLayout{
-      animatingJointMatricesDescriptorSetLayout(device)};
-  const auto jointMatricesDescriptorSets{inverseBindMatricesDescriptorSets(
-      device, descriptorPool, jointMatricesSetLayout,
-      jointMatricesVulkanBuffersWithMemory)};
+      inverseBindMatricesBuffersWithMemory(vulkanDevice.device,
+                                           vulkanPhysicalDevice, scene)};
+  const auto jointMatricesDescriptorSetLayout{
+      graphics::jointMatricesDescriptorSetLayout(vulkanDevice.device)};
+  const auto jointMatricesDescriptorSets{graphics::jointMatricesDescriptorSets(
+      vulkanDevice.device, animatingDescriptorPool,
+      jointMatricesDescriptorSetLayout, jointMatricesVulkanBuffersWithMemory)};
 
-  const auto samplerSetLayout{
-      animatingCombinedImageSamplerDescriptorSetLayout(device)};
+  const auto animatingCombinedImageSamplerDescriptorSetLayout{
+      graphics::animatingCombinedImageSamplerDescriptorSetLayout(
+          vulkanDevice.device)};
 
-  const vulkan_wrappers::Sampler vulkanTextureSampler{device, physicalDevice,
-                                                      1};
-  const auto textureDescriptorSets{animatingTextureDescriptorSets(
-      device, descriptorPool, vulkanTextureSampler, samplerSetLayout,
-      textureVulkanImages)};
+  const vulkan_wrappers::Sampler animatingTextureSampler{
+      vulkanDevice.device, vulkanPhysicalDevice, 1};
+  const auto animatingTextureDescriptorSets{
+      graphics::animatingTextureDescriptorSets(
+          vulkanDevice.device, animatingDescriptorPool, animatingTextureSampler,
+          animatingCombinedImageSamplerDescriptorSetLayout,
+          animatingTextureVulkanImages)};
 
-  const auto uboSetLayout{animatingUniformBufferDescriptorSetLayout(device)};
+  const auto animatingUniformBufferDescriptorSetLayout{
+      graphics::animatingUniformBufferDescriptorSetLayout(vulkanDevice.device)};
 
-  const auto vulkanPipelineLayout{animatingPipelineLayout(
-      device, uboSetLayout, samplerSetLayout, jointMatricesSetLayout)};
+  const auto animatingPipelineLayout{graphics::animatingPipelineLayout(
+      vulkanDevice.device, animatingUniformBufferDescriptorSetLayout,
+      animatingCombinedImageSamplerDescriptorSetLayout,
+      jointMatricesDescriptorSetLayout)};
 
-  const auto vertexBufferWithMemory{bufferWithMemory(
-      device, physicalDevice, commandPool, copyQueue,
+  const auto animatingVertexBuffer{bufferWithMemory(
+      vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
+      graphicsQueue,
       VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-      scene.vertexBuffer.data(),
-      scene.vertexBuffer.size() * sizeof(AnimatingVertex))};
+      scene.vertices.data(), scene.vertices.size() * sizeof(AnimatingVertex))};
 
-  const auto indexBufferWithMemory{bufferWithMemory(
-      device, physicalDevice, commandPool, copyQueue,
+  const auto animatingIndexBuffer{bufferWithMemory(
+      vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
+      graphicsQueue,
       VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-      scene.indexBuffer.data(), scene.indexBuffer.size() * sizeof(uint32_t))};
+      scene.vertexIndices.data(),
+      scene.vertexIndices.size() * sizeof(uint32_t))};
 
-  const auto animatingUniformBufferWithMemory{uniformBufferWithMemory(
-      device, physicalDevice, sizeof(AnimatingUniformBufferObject))};
-  auto *const uboDescriptorSet{animatingUniformBufferDescriptorSet(
-      device, animatingUniformBufferWithMemory, descriptorPool, uboSetLayout)};
+  const auto animatingUniformBufferWithMemory{
+      uniformBufferWithMemory(vulkanDevice.device, vulkanPhysicalDevice,
+                              sizeof(AnimatingUniformBufferObject))};
+  auto *const animatingUniformBufferDescriptorSet{
+      graphics::animatingUniformBufferDescriptorSet(
+          vulkanDevice.device, animatingUniformBufferWithMemory,
+          animatingDescriptorPool, animatingUniformBufferDescriptorSetLayout)};
 
-  const auto pipeline{animatingPipeline(
-      device, physicalDevice, surface, renderPass, window, vertexShaderCodePath,
-      fragmentShaderCodePath, vulkanPipelineLayout)};
+  const auto animatingPipeline{graphics::animatingPipeline(
+      vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface,
+      vulkanRenderPass.renderPass, glfwWindow.window, vertexShaderCodePath,
+      fragmentShaderCodePath, animatingPipelineLayout)};
 
   // Calculate initial pose
   for (const auto &node : scene.nodes)
-    updateJoints(node.get(), device);
+    updateJoints(node.get(), vulkanDevice.device);
+
+  for (auto i{0U}; i < vulkanDrawCommandBuffers.commandBuffers.size(); i++) {
+    throwIfFailsToBegin(vulkanDrawCommandBuffers.commandBuffers[i]);
+    beginRenderPass(vulkanPhysicalDevice, vulkanSurface.surface,
+                    vulkanFrameBuffers.at(i).framebuffer,
+                    vulkanDrawCommandBuffers.commandBuffers[i],
+                    glfwWindow.window, vulkanRenderPass.renderPass);
+    vkCmdBindPipeline(vulkanDrawCommandBuffers.commandBuffers[i],
+                      VK_PIPELINE_BIND_POINT_GRAPHICS, vulkanPipeline.pipeline);
+    draw(playerObjects, playerDrawables, vulkanPipelineLayout,
+         playerTextureImageDescriptors,
+         vulkanDrawCommandBuffers.commandBuffers[i], i);
+    draw(worldObjects, worldDrawables, vulkanPipelineLayout,
+         worldTextureImageDescriptors,
+         vulkanDrawCommandBuffers.commandBuffers[i], i);
+    vkCmdBindPipeline(vulkanDrawCommandBuffers.commandBuffers[i],
+                      VK_PIPELINE_BIND_POINT_GRAPHICS,
+                      animatingPipeline.pipeline);
+    {
+      std::array<VkDescriptorSet, 1> descriptorSets{
+          animatingUniformBufferDescriptorSet};
+      vkCmdBindDescriptorSets(vulkanDrawCommandBuffers.commandBuffers[i],
+                              VK_PIPELINE_BIND_POINT_GRAPHICS,
+                              animatingPipelineLayout.pipelineLayout, 0,
+                              descriptorSets.size(), descriptorSets.data(), 0,
+                              nullptr);
+    }
+    {
+      std::array<VkDeviceSize, 1> offsets{0};
+      vkCmdBindVertexBuffers(vulkanDrawCommandBuffers.commandBuffers[i], 0, 1,
+                             &animatingVertexBuffer.buffer.buffer,
+                             offsets.data());
+    }
+    vkCmdBindIndexBuffer(vulkanDrawCommandBuffers.commandBuffers[i],
+                         animatingIndexBuffer.buffer.buffer, 0,
+                         VK_INDEX_TYPE_UINT32);
+    for (const auto &node : scene.nodes)
+      drawNode(vulkanDrawCommandBuffers.commandBuffers[i],
+               animatingPipelineLayout.pipelineLayout, *node, scene);
+    vkCmdEndRenderPass(vulkanDrawCommandBuffers.commandBuffers[i]);
+    throwOnError(
+        [&]() {
+          return vkEndCommandBuffer(vulkanDrawCommandBuffers.commandBuffers[i]);
+        },
+        "failed to record command buffer!");
+  }
+
+  VkQueue presentQueue{nullptr};
+  vkGetDeviceQueue(vulkanDevice.device,
+                   presentSupportingQueueFamilyIndex(vulkanPhysicalDevice,
+                                                     vulkanSurface.surface),
+                   0, &presentQueue);
+  const auto maxFramesInFlight{2};
+  std::vector<vulkan_wrappers::Fence> vulkanInFlightFences;
+  generate_n(back_inserter(vulkanInFlightFences), maxFramesInFlight,
+             [&vulkanDevice]() {
+               return vulkan_wrappers::Fence{vulkanDevice.device};
+             });
+  const auto vulkanImageAvailableSemaphores{
+      semaphores(vulkanDevice.device, maxFramesInFlight)};
+  const auto vulkanRenderFinishedSemaphores{
+      semaphores(vulkanDevice.device, maxFramesInFlight)};
+  std::vector<VkFence> imagesInFlight(swapChainImages.size(), VK_NULL_HANDLE);
+  const auto swapChainExtent{swapExtent(
+      vulkanPhysicalDevice, vulkanSurface.surface, glfwWindow.window)};
+
+  auto recreatingSwapChain{false};
+  auto currentFrame{0U};
+  FixedPointVector3D playerVelocity{};
+  RationalNumber verticalVelocity{0, 1};
+  auto jumpState{JumpState::grounded};
+  auto worldOrigin = glm::vec3{0.F, 0.F, 0.F};
+  glfwCallback.camera.yaw = -90;
+  glfwCallback.camera.pitch = 15;
+  FixedPointVector3D playerDisplacement{1000, 0, -500};
+  while (!recreatingSwapChain) {
+    if (glfwWindowShouldClose(glfwWindow.window) != 0) {
+      break;
+    }
+
+    glfwPollEvents();
+    {
+      constexpr auto playerRunAcceleration{2};
+      constexpr auto playerJumpAcceleration{6};
+      const RationalNumber gravity{-1, 4};
+      if (pressing(glfwWindow.window, GLFW_KEY_A)) {
+        playerVelocity.x += playerRunAcceleration;
+      }
+      if (pressing(glfwWindow.window, GLFW_KEY_D)) {
+        playerVelocity.x -= playerRunAcceleration;
+      }
+      if (pressing(glfwWindow.window, GLFW_KEY_W)) {
+        playerVelocity.z += playerRunAcceleration;
+      }
+      if (pressing(glfwWindow.window, GLFW_KEY_S)) {
+        playerVelocity.z -= playerRunAcceleration;
+      }
+      if (pressing(glfwWindow.window, GLFW_KEY_SPACE) &&
+          jumpState == JumpState::grounded) {
+        jumpState = JumpState::started;
+        verticalVelocity += playerJumpAcceleration;
+      }
+      verticalVelocity += gravity;
+      if (glfwGetKey(glfwWindow.window, GLFW_KEY_SPACE) != GLFW_PRESS &&
+          jumpState == JumpState::started) {
+        jumpState = JumpState::released;
+        if (verticalVelocity.numerator > 0)
+          verticalVelocity = {0, 1};
+      }
+      constexpr auto playerMaxGroundSpeed{4};
+      constexpr auto groundFriction{1};
+      playerVelocity.x = withFriction(
+          clamp(playerVelocity.x, playerMaxGroundSpeed), groundFriction);
+      playerVelocity.z = withFriction(
+          clamp(playerVelocity.z, playerMaxGroundSpeed), groundFriction);
+      playerDisplacement.x += playerVelocity.x;
+      playerDisplacement.z += playerVelocity.z;
+      playerDisplacement.y += round(verticalVelocity);
+      if (playerDisplacement.y < 0) {
+        jumpState = JumpState::grounded;
+        playerDisplacement.y = 0;
+        verticalVelocity = {0, 1};
+      }
+    }
+    vkWaitForFences(vulkanDevice.device, 1,
+                    &vulkanInFlightFences[currentFrame].fence, VK_TRUE,
+                    UINT64_MAX);
+
+    uint32_t imageIndex{0};
+    {
+      const auto result{vkAcquireNextImageKHR(
+          vulkanDevice.device, vulkanSwapchain.swapChain, UINT64_MAX,
+          vulkanImageAvailableSemaphores[currentFrame].semaphore,
+          VK_NULL_HANDLE, &imageIndex)};
+
+      if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+        prepareForSwapChainRecreation(vulkanDevice.device, glfwWindow.window);
+        recreatingSwapChain = true;
+        continue;
+      }
+      if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
+        throw std::runtime_error("failed to acquire swap chain image!");
+    }
+
+    const auto projection =
+        glm::perspective(glm::radians(45.F),
+                         static_cast<float>(swapChainExtent.width) /
+                             static_cast<float>(swapChainExtent.height),
+                         100.F, 10000.F);
+    const glm::vec3 playerPosition{playerDisplacement.x * 3.F,
+                                   playerDisplacement.y * 3.F,
+                                   playerDisplacement.z * 3.F};
+    const auto view = glm::lookAt(
+        playerPosition +
+            600.F * glm::normalize(glm::vec3{
+                        std::cos(glm::radians(glfwCallback.camera.yaw)) *
+                            std::cos(glm::radians(glfwCallback.camera.pitch)),
+                        std::sin(glm::radians(glfwCallback.camera.pitch)),
+                        std::sin(glm::radians(glfwCallback.camera.yaw)) *
+                            std::cos(glm::radians(glfwCallback.camera.pitch))}),
+        playerPosition, glm::vec3(0, 1, 0));
+    updateUniformBuffer(vulkanDevice,
+                        playerUniformBuffersWithMemory[imageIndex].memory, view,
+                        projection, playerPosition, 20, -90.F);
+    updateUniformBuffer(vulkanDevice,
+                        worldUniformBuffersWithMemory[imageIndex].memory, view,
+                        projection, worldOrigin);
+
+    if (imagesInFlight[imageIndex] != VK_NULL_HANDLE)
+      vkWaitForFences(vulkanDevice.device, 1, &imagesInFlight[imageIndex],
+                      VK_TRUE, UINT64_MAX);
+
+    imagesInFlight[imageIndex] = vulkanInFlightFences[currentFrame].fence;
+    submit(vulkanDevice, graphicsQueue,
+           vulkanImageAvailableSemaphores[currentFrame].semaphore,
+           vulkanRenderFinishedSemaphores[currentFrame].semaphore,
+           vulkanInFlightFences[currentFrame].fence,
+           vulkanDrawCommandBuffers.commandBuffers[imageIndex]);
+    {
+      const auto result{
+          present(presentQueue, vulkanSwapchain, imageIndex,
+                  vulkanRenderFinishedSemaphores[currentFrame].semaphore)};
+      if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR ||
+          glfwCallback.frameBufferResized) {
+        glfwCallback.frameBufferResized = false;
+        prepareForSwapChainRecreation(vulkanDevice.device, glfwWindow.window);
+        recreatingSwapChain = true;
+      } else if (result != VK_SUCCESS)
+        throw std::runtime_error("failed to present swap chain image!");
+    }
+    if (++currentFrame == maxFramesInFlight)
+      currentFrame = 0;
+  }
+  vkDeviceWaitIdle(vulkanDevice.device);
 }
 } // namespace sbash64::graphics
 

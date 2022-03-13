@@ -84,8 +84,8 @@ struct Scene {
   std::vector<Image> images;
   std::vector<Material> materials;
   std::vector<int> textureIndices;
-  std::vector<uint32_t> indexBuffer;
-  std::vector<AnimatingVertex> vertexBuffer;
+  std::vector<uint32_t> vertexIndices;
+  std::vector<AnimatingVertex> vertices;
   std::vector<std::unique_ptr<Node>> nodes;
   std::vector<Skin> skins;
   std::vector<Animation> animations;
