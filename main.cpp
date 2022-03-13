@@ -386,6 +386,14 @@ static auto pressing(GLFWwindow *window, int key) -> bool {
   return glfwGetKey(window, key) == GLFW_PRESS;
 }
 
+static auto descriptorSet(const Skin &skin) -> VkDescriptorSet {
+  throw std::runtime_error{"unimplemented"};
+}
+
+static auto descriptorSet(const Image &image) -> VkDescriptorSet {
+  throw std::runtime_error{"unimplemented"};
+}
+
 static void drawNode(VkCommandBuffer commandBuffer,
                      VkPipelineLayout pipelineLayout, const Node &node,
                      const Scene &scene) {
@@ -404,19 +412,23 @@ static void drawNode(VkCommandBuffer commandBuffer,
                        VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4),
                        &nodeMatrix);
     // Bind SSBO with skin data for this node to set 1
+    std::array<VkDescriptorSet, 1> skinDescriptorSets{
+        descriptorSet(scene.skins[node.skin])};
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            pipelineLayout, 1, 1,
-                            &scene.skins[node.skin].descriptorSet, 0, nullptr);
+                            pipelineLayout, 1, skinDescriptorSets.size(),
+                            skinDescriptorSets.data(), 0, nullptr);
     for (const auto &primitive : node.mesh.primitives) {
       if (primitive.indexCount > 0) {
         // Get the texture index for this primitive
         const auto index =
             scene.textureIndices[scene.materials[primitive.materialIndex]
                                      .baseColorTextureIndex];
+        std::array<VkDescriptorSet, 1> imageDescriptorSets{
+            descriptorSet(scene.images[index])};
         // Bind the descriptor for the current primitive's texture to set 2
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                pipelineLayout, 2, 1,
-                                &scene.images[index].descriptorSet, 0, nullptr);
+                                pipelineLayout, 2, imageDescriptorSets.size(),
+                                imageDescriptorSets.data(), 0, nullptr);
         vkCmdDrawIndexed(commandBuffer, primitive.indexCount, 1,
                          primitive.firstIndex, 0, 0);
       }

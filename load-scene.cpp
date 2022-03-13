@@ -33,7 +33,7 @@ auto span(const tinygltf::Model &model, const tinygltf::Primitive &primitive,
   return {};
 }
 
-static void loadNode(std::vector<std::unique_ptr<Node>> &nodes,
+static void loadNode(std::vector<std::unique_ptr<Node>> &rootNodes,
                      std::vector<uint32_t> &indexBuffer,
                      std::vector<AnimatingVertex> &vertexBuffer,
                      const tinygltf::Model &gltfModel, Node *parent,
@@ -59,7 +59,8 @@ static void loadNode(std::vector<std::unique_ptr<Node>> &nodes,
     node->matrix = glm::make_mat4x4(gltfNode.matrix.data());
 
   for (const auto child : gltfNode.children)
-    loadNode(nodes, indexBuffer, vertexBuffer, gltfModel, node.get(), child);
+    loadNode(rootNodes, indexBuffer, vertexBuffer, gltfModel, node.get(),
+             child);
 
   // If the node contains mesh data, we load vertices and indices from the
   // buffers In glTF this is done via accessors and buffer views
@@ -130,11 +131,10 @@ static void loadNode(std::vector<std::unique_ptr<Node>> &nodes,
     }
   }
 
-  if (parent != nullptr) {
+  if (parent != nullptr)
     parent->children.push_back(std::move(node));
-  } else {
-    nodes.push_back(std::move(node));
-  }
+  else
+    rootNodes.push_back(std::move(node));
 }
 
 static auto findNode(Node *parent, uint32_t index) -> Node * {
