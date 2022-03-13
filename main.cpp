@@ -1138,43 +1138,23 @@ static auto textureImages(VkDevice device, VkPhysicalDevice physicalDevice,
   return vulkanImages;
 }
 
-static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
-                     VkQueue copyQueue, VkCommandPool commandPool,
-                     VkSurfaceKHR surface, VkRenderPass renderPass,
-                     GLFWwindow *window,
-                     const std::string &vertexShaderCodePath,
-                     const std::string &fragmentShaderCodePath) {
-  const auto scene{readScene("/home/seth/Documents/CesiumMan.gltf")};
-  const auto textureVulkanImages{
-      textureImages(device, physicalDevice, commandPool, copyQueue, scene)};
-
-  const auto descriptorPool{
-      animatingDescriptorPool(device, textureVulkanImages, scene)};
-
-  // // The pipeline layout uses three sets:
-  // // Set 0 = Scene matrices (VS)
-  // // Set 1 = Joint matrices (VS)
-  // // Set 2 = Material texture (FS)
-
-  const auto jointMatricesVulkanBuffersWithMemory{
-      inverseBindMatricesBuffersWithMemory(device, physicalDevice, scene)};
-  const auto jointMatricesSetLayout{
-      animatingJointMatricesDescriptorSetLayout(device)};
-
+static auto inverseBindMatricesDescriptorSets(
+    VkDevice device, const vulkan_wrappers::DescriptorPool &descriptorPool,
+    const vulkan_wrappers::DescriptorSetLayout &setLayout,
+    const std::vector<VulkanBufferWithMemory> &buffersWithMemory)
+    -> std::vector<VkDescriptorSet> {
   std::vector<VkDescriptorSet> jointMatricesDescriptorSets;
   transform(
-      jointMatricesVulkanBuffersWithMemory.begin(),
-      jointMatricesVulkanBuffersWithMemory.end(),
+      buffersWithMemory.begin(), buffersWithMemory.end(),
       back_inserter(jointMatricesDescriptorSets),
       [&device, &descriptorPool,
-       &jointMatricesSetLayout](const VulkanBufferWithMemory &buffer) {
+       &setLayout](const VulkanBufferWithMemory &buffer) {
         VkDescriptorSetAllocateInfo descriptorSetAllocateInfo{};
         descriptorSetAllocateInfo.sType =
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
         descriptorSetAllocateInfo.descriptorPool =
             descriptorPool.descriptorPool;
-        descriptorSetAllocateInfo.pSetLayouts =
-            &jointMatricesSetLayout.descriptorSetLayout;
+        descriptorSetAllocateInfo.pSetLayouts = &setLayout.descriptorSetLayout;
         descriptorSetAllocateInfo.descriptorSetCount = 1;
 
         VkDescriptorSet descriptorSet = nullptr;
@@ -1197,48 +1177,84 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
         vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0, nullptr);
         return descriptorSet;
       });
+  return jointMatricesDescriptorSets;
+}
+
+static auto animatingTextureDescriptorSets(
+    VkDevice device, const vulkan_wrappers::DescriptorPool &descriptorPool,
+    const vulkan_wrappers::Sampler &sampler,
+    const vulkan_wrappers::DescriptorSetLayout &setLayout,
+    const std::vector<VulkanImage> &images) -> std::vector<VkDescriptorSet> {
+  std::vector<VkDescriptorSet> descriptorSets;
+  transform(
+      images.begin(), images.end(), back_inserter(descriptorSets),
+      [&device, &descriptorPool, &setLayout,
+       &sampler](const VulkanImage &image) {
+        VkDescriptorSetAllocateInfo descriptorSetAllocateInfo{};
+        descriptorSetAllocateInfo.sType =
+            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        descriptorSetAllocateInfo.descriptorPool =
+            descriptorPool.descriptorPool;
+        descriptorSetAllocateInfo.pSetLayouts = &setLayout.descriptorSetLayout;
+        descriptorSetAllocateInfo.descriptorSetCount = 1;
+        VkDescriptorSet descriptorSet = nullptr;
+        vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo,
+                                 &descriptorSet);
+
+        VkWriteDescriptorSet writeDescriptorSet{};
+        writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writeDescriptorSet.dstSet = descriptorSet;
+        writeDescriptorSet.descriptorType =
+            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writeDescriptorSet.dstBinding = 0;
+
+        VkDescriptorImageInfo descriptor;
+        descriptor.sampler = sampler.sampler;
+        descriptor.imageView = image.view.view;
+        descriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+        writeDescriptorSet.pImageInfo = &descriptor;
+        writeDescriptorSet.descriptorCount = 1;
+        vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0, nullptr);
+        return descriptorSet;
+      });
+  return descriptorSets;
+}
+
+static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
+                     VkQueue copyQueue, VkCommandPool commandPool,
+                     VkSurfaceKHR surface, VkRenderPass renderPass,
+                     GLFWwindow *window,
+                     const std::string &vertexShaderCodePath,
+                     const std::string &fragmentShaderCodePath) {
+  const auto scene{readScene("/home/seth/Documents/CesiumMan.gltf")};
+  const auto textureVulkanImages{
+      textureImages(device, physicalDevice, commandPool, copyQueue, scene)};
+
+  const auto descriptorPool{
+      animatingDescriptorPool(device, textureVulkanImages, scene)};
+
+  // // The pipeline layout uses three sets:
+  // // Set 0 = Scene matrices (VS)
+  // // Set 1 = Joint matrices (VS)
+  // // Set 2 = Material texture (FS)
+
+  const auto jointMatricesVulkanBuffersWithMemory{
+      inverseBindMatricesBuffersWithMemory(device, physicalDevice, scene)};
+  const auto jointMatricesSetLayout{
+      animatingJointMatricesDescriptorSetLayout(device)};
+  const auto jointMatricesDescriptorSets{inverseBindMatricesDescriptorSets(
+      device, descriptorPool, jointMatricesSetLayout,
+      jointMatricesVulkanBuffersWithMemory)};
 
   const auto samplerSetLayout{
       animatingCombinedImageSamplerDescriptorSetLayout(device)};
 
-  // Descriptor sets for glTF model materials
   const vulkan_wrappers::Sampler vulkanTextureSampler{device, physicalDevice,
                                                       1};
-  std::vector<VkDescriptorSet> textureDescriptorSets;
-  transform(textureVulkanImages.begin(), textureVulkanImages.end(),
-            back_inserter(jointMatricesDescriptorSets),
-            [&device, &descriptorPool, &samplerSetLayout,
-             &vulkanTextureSampler](const VulkanImage &image) {
-              VkDescriptorSetAllocateInfo descriptorSetAllocateInfo{};
-              descriptorSetAllocateInfo.sType =
-                  VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-              descriptorSetAllocateInfo.descriptorPool =
-                  descriptorPool.descriptorPool;
-              descriptorSetAllocateInfo.pSetLayouts =
-                  &samplerSetLayout.descriptorSetLayout;
-              descriptorSetAllocateInfo.descriptorSetCount = 1;
-              VkDescriptorSet descriptorSet = nullptr;
-              vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo,
-                                       &descriptorSet);
-
-              VkWriteDescriptorSet writeDescriptorSet{};
-              writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-              writeDescriptorSet.dstSet = descriptorSet;
-              writeDescriptorSet.descriptorType =
-                  VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-              writeDescriptorSet.dstBinding = 0;
-
-              VkDescriptorImageInfo descriptor;
-              descriptor.sampler = vulkanTextureSampler.sampler;
-              descriptor.imageView = image.view.view;
-              descriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-              writeDescriptorSet.pImageInfo = &descriptor;
-              writeDescriptorSet.descriptorCount = 1;
-              vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0,
-                                     nullptr);
-              return descriptorSet;
-            });
+  const auto textureDescriptorSets{animatingTextureDescriptorSets(
+      device, descriptorPool, vulkanTextureSampler, samplerSetLayout,
+      textureVulkanImages)};
 
   const auto uboSetLayout{animatingUniformBufferDescriptorSetLayout(device)};
 
