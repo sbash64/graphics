@@ -259,8 +259,8 @@ struct DeviceMemory {
 };
 
 struct DescriptorSetLayout {
-  explicit DescriptorSetLayout(
-      VkDevice, const std::vector<VkDescriptorSetLayoutBinding> &);
+  DescriptorSetLayout(VkDevice,
+                      const std::vector<VkDescriptorSetLayoutBinding> &);
   ~DescriptorSetLayout();
 
   DescriptorSetLayout(DescriptorSetLayout &&) = delete;

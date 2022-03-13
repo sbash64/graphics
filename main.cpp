@@ -836,8 +836,8 @@ static void updateJoints(Node *node, VkDevice device) {
       jointMatrices[i] = inverseTransform * jointMatrices[i];
     }
     // Update ssbo
-    sbash64::graphics::copy(device, deviceMemory(node), jointMatrices.data(),
-                            jointMatrices.size() * sizeof(glm::mat4));
+    copy(device, deviceMemory(node), jointMatrices.data(),
+         jointMatrices.size() * sizeof(glm::mat4));
   }
   for (const auto &child : node->children)
     updateJoints(child.get(), device);
@@ -849,40 +849,38 @@ vulkanImage(const void *buffer, VkDeviceSize bufferSize, VkFormat format,
             VkPhysicalDevice physicalDevice, VkCommandPool commandPool,
             VkQueue copyQueue,
             VkImageUsageFlags imageUsageFlags = VK_IMAGE_USAGE_SAMPLED_BIT)
-    -> sbash64::graphics::VulkanImage {
-  const sbash64::graphics::vulkan_wrappers::Buffer stagingBuffer{
+    -> VulkanImage {
+  const vulkan_wrappers::Buffer stagingBuffer{
       device, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, bufferSize};
 
-  const auto stagingMemory{sbash64::graphics::bufferMemory(
-      device, physicalDevice, stagingBuffer.buffer,
-      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-          VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
+  const auto stagingMemory{
+      bufferMemory(device, physicalDevice, stagingBuffer.buffer,
+                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                       VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
 
-  sbash64::graphics::copy(device, stagingMemory.memory, buffer, bufferSize);
+  copy(device, stagingMemory.memory, buffer, bufferSize);
 
   const uint32_t mipLevels = 1;
-  sbash64::graphics::vulkan_wrappers::Image image{
-      device,
-      width,
-      height,
-      format,
-      VK_IMAGE_TILING_OPTIMAL,
-      imageUsageFlags | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-      mipLevels,
-      VK_SAMPLE_COUNT_1_BIT};
+  vulkan_wrappers::Image image{device,
+                               width,
+                               height,
+                               format,
+                               VK_IMAGE_TILING_OPTIMAL,
+                               imageUsageFlags |
+                                   VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                               mipLevels,
+                               VK_SAMPLE_COUNT_1_BIT};
 
-  sbash64::graphics::copyBufferToImage(device, commandPool, copyQueue,
-                                       stagingBuffer.buffer, image.image, width,
-                                       height);
+  copyBufferToImage(device, commandPool, copyQueue, stagingBuffer.buffer,
+                    image.image, width, height);
 
-  auto deviceMemory{
-      sbash64::graphics::imageMemory(device, physicalDevice, image.image,
-                                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
+  auto deviceMemory{imageMemory(device, physicalDevice, image.image,
+                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
 
-  sbash64::graphics::vulkan_wrappers::ImageView imageView{
-      device, image.image, format, VK_IMAGE_ASPECT_COLOR_BIT, mipLevels};
-  return sbash64::graphics::VulkanImage{std::move(image), std::move(imageView),
-                                        std::move(deviceMemory)};
+  vulkan_wrappers::ImageView imageView{device, image.image, format,
+                                       VK_IMAGE_ASPECT_COLOR_BIT, mipLevels};
+  return VulkanImage{std::move(image), std::move(imageView),
+                     std::move(deviceMemory)};
 }
 
 static void updateAnimation(Animation &animation,
@@ -986,12 +984,46 @@ animatingPipeline(VkDevice device, VkPhysicalDevice physicalDevice,
           bindingDescription};
 }
 
+static auto animatingJointMatricesDescriptorSetLayout(VkDevice device)
+    -> vulkan_wrappers::DescriptorSetLayout {
+  VkDescriptorSetLayoutBinding jointMatricesLayoutBinding{};
+  jointMatricesLayoutBinding.binding = 0;
+  jointMatricesLayoutBinding.descriptorCount = 1;
+  jointMatricesLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+  jointMatricesLayoutBinding.pImmutableSamplers = nullptr;
+  jointMatricesLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+  return {device, {jointMatricesLayoutBinding}};
+}
+
+static auto animatingSamplerDescriptorSetLayout(VkDevice device)
+    -> vulkan_wrappers::DescriptorSetLayout {
+  VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+  samplerLayoutBinding.binding = 0;
+  samplerLayoutBinding.descriptorCount = 1;
+  samplerLayoutBinding.descriptorType =
+      VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  samplerLayoutBinding.pImmutableSamplers = nullptr;
+  samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+  return {device, {samplerLayoutBinding}};
+}
+
+static auto animatingUniformBufferObjectDescriptorSetLayout(VkDevice device)
+    -> vulkan_wrappers::DescriptorSetLayout {
+  VkDescriptorSetLayoutBinding layoutBinding{};
+  layoutBinding.binding = 0;
+  layoutBinding.descriptorCount = 1;
+  layoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  layoutBinding.pImmutableSamplers = nullptr;
+  layoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+  return {device, {layoutBinding}};
+}
+
 static auto animatingUniformBufferObjectDescriptorSet(
-    VkDevice device,
-    const sbash64::graphics::VulkanBufferWithMemory &bufferWithMemory,
-    const sbash64::graphics::vulkan_wrappers::DescriptorPool &descriptorPool,
-    const sbash64::graphics::vulkan_wrappers::DescriptorSetLayout &setLayout)
-    -> VkDescriptorSet {
+    VkDevice device, const VulkanBufferWithMemory &bufferWithMemory,
+    const vulkan_wrappers::DescriptorPool &descriptorPool,
+    const vulkan_wrappers::DescriptorSetLayout &setLayout) -> VkDescriptorSet {
   VkDescriptorSetAllocateInfo descriptorSetAllocateInfo{};
   descriptorSetAllocateInfo.sType =
       VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -1026,7 +1058,7 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
                      const std::string &vertexShaderCodePath,
                      const std::string &fragmentShaderCodePath) {
   const auto scene{readScene("/home/seth/Documents/CesiumMan.gltf")};
-  std::vector<sbash64::graphics::VulkanImage> vulkanImages;
+  std::vector<VulkanImage> vulkanImages;
   transform(
       scene.images.begin(), scene.images.end(), back_inserter(vulkanImages),
       [device, physicalDevice, commandPool, copyQueue](const Image &image) {
@@ -1035,8 +1067,7 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
                            device, physicalDevice, commandPool, copyQueue);
       });
 
-  std::vector<sbash64::graphics::VulkanBufferWithMemory>
-      jointsVulkanBuffersWithMemory;
+  std::vector<VulkanBufferWithMemory> jointsVulkanBuffersWithMemory;
   for (const auto &skin : scene.skins)
     if (!skin.inverseBindMatrices.empty()) {
       // Store inverse bind matrices for this skin in a shader storage
@@ -1045,43 +1076,41 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
 
       const VkDeviceSize bufferSize{sizeof(glm::mat4) *
                                     skin.inverseBindMatrices.size()};
-      sbash64::graphics::vulkan_wrappers::Buffer jointsVulkanBuffer{
+      vulkan_wrappers::Buffer jointsVulkanBuffer{
           device, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, bufferSize};
-      auto memory{sbash64::graphics::bufferMemory(
-          device, physicalDevice, jointsVulkanBuffer.buffer,
-          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-              VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
-      sbash64::graphics::copy(device, memory.memory,
-                              skin.inverseBindMatrices.data(), bufferSize);
+      auto memory{bufferMemory(device, physicalDevice,
+                               jointsVulkanBuffer.buffer,
+                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                   VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
+      copy(device, memory.memory, skin.inverseBindMatrices.data(), bufferSize);
       // VK_CHECK_RESULT(skins[i].ssbo.map());
-      jointsVulkanBuffersWithMemory.push_back(
-          sbash64::graphics::VulkanBufferWithMemory{
-              std::move(jointsVulkanBuffer), std::move(memory)});
+      jointsVulkanBuffersWithMemory.push_back(VulkanBufferWithMemory{
+          std::move(jointsVulkanBuffer), std::move(memory)});
     }
 
   // Calculate initial pose
   for (const auto &node : scene.nodes)
     updateJoints(node.get(), device);
 
-  const auto vertexBufferWithMemory{sbash64::graphics::bufferWithMemory(
+  const auto vertexBufferWithMemory{bufferWithMemory(
       device, physicalDevice, commandPool, copyQueue,
       VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
       scene.vertexBuffer.data(),
       scene.vertexBuffer.size() * sizeof(AnimatingVertex))};
 
-  const auto indexBufferWithMemory{sbash64::graphics::bufferWithMemory(
+  const auto indexBufferWithMemory{bufferWithMemory(
       device, physicalDevice, commandPool, copyQueue,
       VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
       scene.indexBuffer.data(), scene.indexBuffer.size() * sizeof(uint32_t))};
 
-  sbash64::graphics::vulkan_wrappers::Buffer animatingUniformBuffer{
+  vulkan_wrappers::Buffer animatingUniformBuffer{
       device, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
       sizeof(AnimatingUniformBufferObject)};
-  auto animatingUniformBufferMemory{sbash64::graphics::bufferMemory(
-      device, physicalDevice, animatingUniformBuffer.buffer,
-      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-          VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
-  sbash64::graphics::VulkanBufferWithMemory animatingUniformBufferWithMemory{
+  auto animatingUniformBufferMemory{
+      bufferMemory(device, physicalDevice, animatingUniformBuffer.buffer,
+                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                       VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
+  VulkanBufferWithMemory animatingUniformBufferWithMemory{
       std::move(animatingUniformBuffer),
       std::move(animatingUniformBufferMemory)};
 
@@ -1118,31 +1147,24 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
                         return count + size.descriptorCount;
                       })};
 
-  sbash64::graphics::vulkan_wrappers::DescriptorPool descriptorPool{
-      device, poolSizes, maxSetCount};
+  vulkan_wrappers::DescriptorPool descriptorPool{device, poolSizes,
+                                                 maxSetCount};
 
   // // The pipeline layout uses three sets:
   // // Set 0 = Scene matrices (VS)
   // // Set 1 = Joint matrices (VS)
   // // Set 2 = Material texture (FS)
 
-  VkDescriptorSetLayoutBinding jointMatricesLayoutBinding{};
-  jointMatricesLayoutBinding.binding = 0;
-  jointMatricesLayoutBinding.descriptorCount = 1;
-  jointMatricesLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-  jointMatricesLayoutBinding.pImmutableSamplers = nullptr;
-  jointMatricesLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-  const sbash64::graphics::vulkan_wrappers::DescriptorSetLayout
-      jointMatricesSetLayout{device, {jointMatricesLayoutBinding}};
+  const auto jointMatricesSetLayout{
+      animatingJointMatricesDescriptorSetLayout(device)};
 
   // Descriptor set for glTF model skin joint matrices
   std::vector<VkDescriptorSet> skinDescriptorSets;
   transform(
       jointsVulkanBuffersWithMemory.begin(),
       jointsVulkanBuffersWithMemory.end(), back_inserter(skinDescriptorSets),
-      [&device, &descriptorPool, &jointMatricesSetLayout](
-          const sbash64::graphics::VulkanBufferWithMemory &buffer) {
+      [&device, &descriptorPool,
+       &jointMatricesSetLayout](const VulkanBufferWithMemory &buffer) {
         VkDescriptorSetAllocateInfo descriptorSetAllocateInfo{};
         descriptorSetAllocateInfo.sType =
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -1173,65 +1195,49 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
         return descriptorSet;
       });
 
-  VkDescriptorSetLayoutBinding samplerLayoutBinding{};
-  samplerLayoutBinding.binding = 0;
-  samplerLayoutBinding.descriptorCount = 1;
-  samplerLayoutBinding.descriptorType =
-      VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-  samplerLayoutBinding.pImmutableSamplers = nullptr;
-  samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-  const sbash64::graphics::vulkan_wrappers::DescriptorSetLayout
-      samplerSetLayout{device, {samplerLayoutBinding}};
+  const auto samplerSetLayout{animatingSamplerDescriptorSetLayout(device)};
 
   // Descriptor sets for glTF model materials
-  const sbash64::graphics::vulkan_wrappers::Sampler vulkanTextureSampler{
-      device, physicalDevice, 1};
+  const vulkan_wrappers::Sampler vulkanTextureSampler{device, physicalDevice,
+                                                      1};
   std::vector<VkDescriptorSet> textureDescriptorSets;
-  transform(
-      vulkanImages.begin(), vulkanImages.end(),
-      back_inserter(skinDescriptorSets),
-      [&device, &descriptorPool, &samplerSetLayout,
-       &vulkanTextureSampler](const sbash64::graphics::VulkanImage &image) {
-        VkDescriptorSetAllocateInfo descriptorSetAllocateInfo{};
-        descriptorSetAllocateInfo.sType =
-            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        descriptorSetAllocateInfo.descriptorPool =
-            descriptorPool.descriptorPool;
-        descriptorSetAllocateInfo.pSetLayouts =
-            &samplerSetLayout.descriptorSetLayout;
-        descriptorSetAllocateInfo.descriptorSetCount = 1;
-        VkDescriptorSet descriptorSet = nullptr;
-        vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo,
-                                 &descriptorSet);
+  transform(vulkanImages.begin(), vulkanImages.end(),
+            back_inserter(skinDescriptorSets),
+            [&device, &descriptorPool, &samplerSetLayout,
+             &vulkanTextureSampler](const VulkanImage &image) {
+              VkDescriptorSetAllocateInfo descriptorSetAllocateInfo{};
+              descriptorSetAllocateInfo.sType =
+                  VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+              descriptorSetAllocateInfo.descriptorPool =
+                  descriptorPool.descriptorPool;
+              descriptorSetAllocateInfo.pSetLayouts =
+                  &samplerSetLayout.descriptorSetLayout;
+              descriptorSetAllocateInfo.descriptorSetCount = 1;
+              VkDescriptorSet descriptorSet = nullptr;
+              vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo,
+                                       &descriptorSet);
 
-        VkWriteDescriptorSet writeDescriptorSet{};
-        writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writeDescriptorSet.dstSet = descriptorSet;
-        writeDescriptorSet.descriptorType =
-            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writeDescriptorSet.dstBinding = 0;
+              VkWriteDescriptorSet writeDescriptorSet{};
+              writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+              writeDescriptorSet.dstSet = descriptorSet;
+              writeDescriptorSet.descriptorType =
+                  VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+              writeDescriptorSet.dstBinding = 0;
 
-        VkDescriptorImageInfo descriptor;
-        descriptor.sampler = vulkanTextureSampler.sampler;
-        descriptor.imageView = image.view.view;
-        descriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+              VkDescriptorImageInfo descriptor;
+              descriptor.sampler = vulkanTextureSampler.sampler;
+              descriptor.imageView = image.view.view;
+              descriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-        writeDescriptorSet.pImageInfo = &descriptor;
-        writeDescriptorSet.descriptorCount = 1;
-        vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0, nullptr);
-        return descriptorSet;
-      });
+              writeDescriptorSet.pImageInfo = &descriptor;
+              writeDescriptorSet.descriptorCount = 1;
+              vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0,
+                                     nullptr);
+              return descriptorSet;
+            });
 
-  VkDescriptorSetLayoutBinding uboLayoutBinding{};
-  uboLayoutBinding.binding = 0;
-  uboLayoutBinding.descriptorCount = 1;
-  uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  uboLayoutBinding.pImmutableSamplers = nullptr;
-  uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-  const sbash64::graphics::vulkan_wrappers::DescriptorSetLayout uboSetLayout{
-      device, {uboLayoutBinding}};
+  const auto uboSetLayout{
+      animatingUniformBufferObjectDescriptorSetLayout(device)};
 
   // We will use push constants to push the local matrices of a primitive to the
   // vertex shader
@@ -1240,7 +1246,7 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
   pushConstantRange.offset = 0;
   pushConstantRange.size = sizeof(glm::mat4);
 
-  const sbash64::graphics::vulkan_wrappers::PipelineLayout vulkanPipelineLayout{
+  const vulkan_wrappers::PipelineLayout vulkanPipelineLayout{
       device,
       {uboSetLayout.descriptorSetLayout, samplerSetLayout.descriptorSetLayout,
        jointMatricesSetLayout.descriptorSetLayout},
