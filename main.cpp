@@ -941,6 +941,84 @@ struct AnimatingUniformBufferObject {
   alignas(16) glm::mat4 view;
 };
 
+auto animatingPipeline(
+    VkDevice &device, VkPhysicalDevice &physicalDevice, VkSurfaceKHR &surface,
+    VkRenderPass &renderPass, GLFWwindow *&window,
+    const std::string &vertexShaderCodePath,
+    const std::string &fragmentShaderCodePath,
+    const vulkan_wrappers::PipelineLayout &vulkanPipelineLayout)
+    -> vulkan_wrappers::Pipeline {
+  std::vector<VkVertexInputAttributeDescription> attributeDescriptions(4);
+  attributeDescriptions[0].binding = 0;
+  attributeDescriptions[0].location = 0;
+  attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+  attributeDescriptions[0].offset = offsetof(AnimatingVertex, pos);
+
+  attributeDescriptions[1].binding = 0;
+  attributeDescriptions[1].location = 1;
+  attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+  attributeDescriptions[1].offset = offsetof(AnimatingVertex, uv);
+
+  attributeDescriptions[2].binding = 0;
+  attributeDescriptions[2].location = 2;
+  attributeDescriptions[2].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+  attributeDescriptions[2].offset = offsetof(AnimatingVertex, jointIndices);
+
+  attributeDescriptions[3].binding = 0;
+  attributeDescriptions[3].location = 3;
+  attributeDescriptions[3].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+  attributeDescriptions[3].offset = offsetof(AnimatingVertex, jointWeights);
+
+  std::vector<VkVertexInputBindingDescription> bindingDescription(1);
+  bindingDescription[0].binding = 0;
+  bindingDescription[0].stride = sizeof(AnimatingVertex);
+  bindingDescription[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+  return {device,
+          physicalDevice,
+          surface,
+          vulkanPipelineLayout.pipelineLayout,
+          renderPass,
+          vertexShaderCodePath,
+          fragmentShaderCodePath,
+          window,
+          attributeDescriptions,
+          bindingDescription};
+}
+
+auto animatingUniformBufferObjectDescriptorSet(
+    VkDevice device,
+    const sbash64::graphics::VulkanBufferWithMemory &bufferWithMemory,
+    const sbash64::graphics::vulkan_wrappers::DescriptorPool &descriptorPool,
+    const sbash64::graphics::vulkan_wrappers::DescriptorSetLayout &setLayout)
+    -> VkDescriptorSet {
+  VkDescriptorSetAllocateInfo descriptorSetAllocateInfo{};
+  descriptorSetAllocateInfo.sType =
+      VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+  descriptorSetAllocateInfo.descriptorPool = descriptorPool.descriptorPool;
+  descriptorSetAllocateInfo.pSetLayouts = &setLayout.descriptorSetLayout;
+  descriptorSetAllocateInfo.descriptorSetCount = 1;
+
+  VkDescriptorSet descriptorSet = nullptr;
+  vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo, &descriptorSet);
+
+  VkWriteDescriptorSet writeDescriptorSet{};
+  writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+  writeDescriptorSet.dstSet = descriptorSet;
+  writeDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  writeDescriptorSet.dstBinding = 0;
+
+  VkDescriptorBufferInfo descriptorBufferInfo;
+  descriptorBufferInfo.buffer = bufferWithMemory.buffer.buffer;
+  descriptorBufferInfo.offset = 0;
+  descriptorBufferInfo.range = VK_WHOLE_SIZE;
+
+  writeDescriptorSet.pBufferInfo = &descriptorBufferInfo;
+  writeDescriptorSet.descriptorCount = 1;
+  vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0, nullptr);
+  return descriptorSet;
+}
+
 static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
                      VkQueue copyQueue, VkCommandPool commandPool,
                      VkSurfaceKHR surface, VkRenderPass renderPass,
@@ -1048,33 +1126,12 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
   // // Set 1 = Joint matrices (VS)
   // // Set 2 = Material texture (FS)
 
-  VkDescriptorSetLayoutBinding uboLayoutBinding{};
-  uboLayoutBinding.binding = 0;
-  uboLayoutBinding.descriptorCount = 1;
-  uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  uboLayoutBinding.pImmutableSamplers = nullptr;
-  uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-  VkDescriptorSetLayoutBinding samplerLayoutBinding{};
-  samplerLayoutBinding.binding = 0;
-  samplerLayoutBinding.descriptorCount = 1;
-  samplerLayoutBinding.descriptorType =
-      VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-  samplerLayoutBinding.pImmutableSamplers = nullptr;
-  samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
   VkDescriptorSetLayoutBinding jointMatricesLayoutBinding{};
-  samplerLayoutBinding.binding = 0;
-  samplerLayoutBinding.descriptorCount = 1;
-  samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-  samplerLayoutBinding.pImmutableSamplers = nullptr;
-  samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-  const sbash64::graphics::vulkan_wrappers::DescriptorSetLayout uboSetLayout{
-      device, {uboLayoutBinding}};
-
-  const sbash64::graphics::vulkan_wrappers::DescriptorSetLayout
-      samplerSetLayout{device, {samplerLayoutBinding}};
+  jointMatricesLayoutBinding.binding = 0;
+  jointMatricesLayoutBinding.descriptorCount = 1;
+  jointMatricesLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+  jointMatricesLayoutBinding.pImmutableSamplers = nullptr;
+  jointMatricesLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
   const sbash64::graphics::vulkan_wrappers::DescriptorSetLayout
       jointMatricesSetLayout{device, {jointMatricesLayoutBinding}};
@@ -1116,6 +1173,17 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
         return descriptorSet;
       });
 
+  VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+  samplerLayoutBinding.binding = 0;
+  samplerLayoutBinding.descriptorCount = 1;
+  samplerLayoutBinding.descriptorType =
+      VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  samplerLayoutBinding.pImmutableSamplers = nullptr;
+  samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+  const sbash64::graphics::vulkan_wrappers::DescriptorSetLayout
+      samplerSetLayout{device, {samplerLayoutBinding}};
+
   // Descriptor sets for glTF model materials
   const sbash64::graphics::vulkan_wrappers::Sampler vulkanTextureSampler{
       device, physicalDevice, 1};
@@ -1155,6 +1223,16 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
         return descriptorSet;
       });
 
+  VkDescriptorSetLayoutBinding uboLayoutBinding{};
+  uboLayoutBinding.binding = 0;
+  uboLayoutBinding.descriptorCount = 1;
+  uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  uboLayoutBinding.pImmutableSamplers = nullptr;
+  uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+  const sbash64::graphics::vulkan_wrappers::DescriptorSetLayout uboSetLayout{
+      device, {uboLayoutBinding}};
+
   // We will use push constants to push the local matrices of a primitive to the
   // vertex shader
   VkPushConstantRange pushConstantRange{};
@@ -1169,69 +1247,12 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
       {pushConstantRange}};
 
   // Descriptor set for scene matrices
-  VkDescriptorSetAllocateInfo descriptorSetAllocateInfo{};
-  descriptorSetAllocateInfo.sType =
-      VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-  descriptorSetAllocateInfo.descriptorPool = descriptorPool.descriptorPool;
-  descriptorSetAllocateInfo.pSetLayouts = &uboSetLayout.descriptorSetLayout;
-  descriptorSetAllocateInfo.descriptorSetCount = 1;
+  const auto uboDescriptorSet{animatingUniformBufferObjectDescriptorSet(
+      device, animatingUniformBufferWithMemory, descriptorPool, uboSetLayout)};
 
-  VkDescriptorSet uboDescriptorSet = nullptr;
-  vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo,
-                           &uboDescriptorSet);
-
-  VkWriteDescriptorSet writeDescriptorSet{};
-  writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-  writeDescriptorSet.dstSet = uboDescriptorSet;
-  writeDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  writeDescriptorSet.dstBinding = 0;
-
-  VkDescriptorBufferInfo descriptorBufferInfo;
-  descriptorBufferInfo.buffer = animatingUniformBufferWithMemory.buffer.buffer;
-  descriptorBufferInfo.offset = 0;
-  descriptorBufferInfo.range = VK_WHOLE_SIZE;
-
-  writeDescriptorSet.pBufferInfo = &descriptorBufferInfo;
-  writeDescriptorSet.descriptorCount = 1;
-  vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0, nullptr);
-
-  std::vector<VkVertexInputAttributeDescription> attributeDescriptions(4);
-  attributeDescriptions[0].binding = 0;
-  attributeDescriptions[0].location = 0;
-  attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-  attributeDescriptions[0].offset = offsetof(AnimatingVertex, pos);
-
-  attributeDescriptions[1].binding = 0;
-  attributeDescriptions[1].location = 1;
-  attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-  attributeDescriptions[1].offset = offsetof(AnimatingVertex, uv);
-
-  attributeDescriptions[2].binding = 0;
-  attributeDescriptions[2].location = 2;
-  attributeDescriptions[2].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-  attributeDescriptions[2].offset = offsetof(AnimatingVertex, jointIndices);
-
-  attributeDescriptions[3].binding = 0;
-  attributeDescriptions[3].location = 3;
-  attributeDescriptions[3].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-  attributeDescriptions[3].offset = offsetof(AnimatingVertex, jointWeights);
-
-  std::vector<VkVertexInputBindingDescription> bindingDescription(1);
-  bindingDescription[0].binding = 0;
-  bindingDescription[0].stride = sizeof(AnimatingVertex);
-  bindingDescription[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-  const sbash64::graphics::vulkan_wrappers::Pipeline animatingPipeline{
-      device,
-      physicalDevice,
-      surface,
-      vulkanPipelineLayout.pipelineLayout,
-      renderPass,
-      vertexShaderCodePath,
-      fragmentShaderCodePath,
-      window,
-      attributeDescriptions,
-      bindingDescription};
+  const auto pipeline{animatingPipeline(
+      device, physicalDevice, surface, renderPass, window, vertexShaderCodePath,
+      fragmentShaderCodePath, vulkanPipelineLayout)};
 }
 } // namespace sbash64::graphics
 
