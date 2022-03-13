@@ -288,9 +288,9 @@ static void draw(const std::vector<Object> &objects,
 }
 
 static auto uniformBufferWithMemory(VkDevice device,
-                                    VkPhysicalDevice physicalDevice)
+                                    VkPhysicalDevice physicalDevice,
+                                    VkDeviceSize bufferSize)
     -> VulkanBufferWithMemory {
-  VkDeviceSize bufferSize{sizeof(UniformBufferObject)};
   vulkan_wrappers::Buffer buffer{device, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
                                  bufferSize};
   auto memory{bufferMemory(device, physicalDevice, buffer.buffer,
@@ -335,7 +335,8 @@ uniformBuffersWithMemory(VkDevice device, VkPhysicalDevice physicalDevice,
   std::vector<VulkanBufferWithMemory> uniformBuffersWithMemory;
   generate_n(back_inserter(uniformBuffersWithMemory), swapChainImages.size(),
              [device, physicalDevice]() {
-               return uniformBufferWithMemory(device, physicalDevice);
+               return uniformBufferWithMemory(device, physicalDevice,
+                                              sizeof(UniformBufferObject));
              });
   return uniformBuffersWithMemory;
 }
@@ -992,11 +993,10 @@ static auto animatingJointMatricesDescriptorSetLayout(VkDevice device)
   jointMatricesLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
   jointMatricesLayoutBinding.pImmutableSamplers = nullptr;
   jointMatricesLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
   return {device, {jointMatricesLayoutBinding}};
 }
 
-static auto animatingSamplerDescriptorSetLayout(VkDevice device)
+static auto animatingCombinedImageSamplerDescriptorSetLayout(VkDevice device)
     -> vulkan_wrappers::DescriptorSetLayout {
   VkDescriptorSetLayoutBinding samplerLayoutBinding{};
   samplerLayoutBinding.binding = 0;
@@ -1005,11 +1005,10 @@ static auto animatingSamplerDescriptorSetLayout(VkDevice device)
       VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
   samplerLayoutBinding.pImmutableSamplers = nullptr;
   samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
   return {device, {samplerLayoutBinding}};
 }
 
-static auto animatingUniformBufferObjectDescriptorSetLayout(VkDevice device)
+static auto animatingUniformBufferDescriptorSetLayout(VkDevice device)
     -> vulkan_wrappers::DescriptorSetLayout {
   VkDescriptorSetLayoutBinding layoutBinding{};
   layoutBinding.binding = 0;
@@ -1020,7 +1019,7 @@ static auto animatingUniformBufferObjectDescriptorSetLayout(VkDevice device)
   return {device, {layoutBinding}};
 }
 
-static auto animatingUniformBufferObjectDescriptorSet(
+static auto animatingUniformBufferDescriptorSet(
     VkDevice device, const VulkanBufferWithMemory &bufferWithMemory,
     const vulkan_wrappers::DescriptorPool &descriptorPool,
     const vulkan_wrappers::DescriptorSetLayout &setLayout) -> VkDescriptorSet {
@@ -1051,74 +1050,10 @@ static auto animatingUniformBufferObjectDescriptorSet(
   return descriptorSet;
 }
 
-static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
-                     VkQueue copyQueue, VkCommandPool commandPool,
-                     VkSurfaceKHR surface, VkRenderPass renderPass,
-                     GLFWwindow *window,
-                     const std::string &vertexShaderCodePath,
-                     const std::string &fragmentShaderCodePath) {
-  const auto scene{readScene("/home/seth/Documents/CesiumMan.gltf")};
-  std::vector<VulkanImage> vulkanImages;
-  transform(
-      scene.images.begin(), scene.images.end(), back_inserter(vulkanImages),
-      [device, physicalDevice, commandPool, copyQueue](const Image &image) {
-        return vulkanImage(image.buffer.data(), image.buffer.size(),
-                           VK_FORMAT_R8G8B8A8_UNORM, image.width, image.height,
-                           device, physicalDevice, commandPool, copyQueue);
-      });
-
-  std::vector<VulkanBufferWithMemory> jointsVulkanBuffersWithMemory;
-  for (const auto &skin : scene.skins)
-    if (!skin.inverseBindMatrices.empty()) {
-      // Store inverse bind matrices for this skin in a shader storage
-      // buffer object To keep this sample simple, we create a host visible
-      // shader storage buffer
-
-      const VkDeviceSize bufferSize{sizeof(glm::mat4) *
-                                    skin.inverseBindMatrices.size()};
-      vulkan_wrappers::Buffer jointsVulkanBuffer{
-          device, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, bufferSize};
-      auto memory{bufferMemory(device, physicalDevice,
-                               jointsVulkanBuffer.buffer,
-                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                   VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
-      copy(device, memory.memory, skin.inverseBindMatrices.data(), bufferSize);
-      // VK_CHECK_RESULT(skins[i].ssbo.map());
-      jointsVulkanBuffersWithMemory.push_back(VulkanBufferWithMemory{
-          std::move(jointsVulkanBuffer), std::move(memory)});
-    }
-
-  // Calculate initial pose
-  for (const auto &node : scene.nodes)
-    updateJoints(node.get(), device);
-
-  const auto vertexBufferWithMemory{bufferWithMemory(
-      device, physicalDevice, commandPool, copyQueue,
-      VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-      scene.vertexBuffer.data(),
-      scene.vertexBuffer.size() * sizeof(AnimatingVertex))};
-
-  const auto indexBufferWithMemory{bufferWithMemory(
-      device, physicalDevice, commandPool, copyQueue,
-      VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-      scene.indexBuffer.data(), scene.indexBuffer.size() * sizeof(uint32_t))};
-
-  vulkan_wrappers::Buffer animatingUniformBuffer{
-      device, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-      sizeof(AnimatingUniformBufferObject)};
-  auto animatingUniformBufferMemory{
-      bufferMemory(device, physicalDevice, animatingUniformBuffer.buffer,
-                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                       VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
-  VulkanBufferWithMemory animatingUniformBufferWithMemory{
-      std::move(animatingUniformBuffer),
-      std::move(animatingUniformBufferMemory)};
-
-  /*
-          This sample uses separate descriptor sets (and layouts) for the
-     matrices and materials (textures)
-  */
-
+static auto
+animatingDescriptorPool(VkDevice device,
+                        const std::vector<VulkanImage> &textureImages,
+                        const Scene &scene) -> vulkan_wrappers::DescriptorPool {
   VkDescriptorPoolSize uniformBufferDescriptorPoolSize{};
   uniformBufferDescriptorPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
   uniformBufferDescriptorPoolSize.descriptorCount = 1;
@@ -1127,7 +1062,7 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
   imageSamplerDescriptorPoolSize.type =
       VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
   imageSamplerDescriptorPoolSize.descriptorCount =
-      static_cast<uint32_t>(vulkanImages.size());
+      static_cast<uint32_t>(textureImages.size());
 
   VkDescriptorPoolSize storageBufferDescriptorPoolSize{};
   storageBufferDescriptorPoolSize.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
@@ -1146,23 +1081,91 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
                       [](uint32_t count, const VkDescriptorPoolSize &size) {
                         return count + size.descriptorCount;
                       })};
+  return {device, poolSizes, maxSetCount};
+}
 
-  vulkan_wrappers::DescriptorPool descriptorPool{device, poolSizes,
-                                                 maxSetCount};
+static auto animatingPipelineLayout(
+    VkDevice device, const vulkan_wrappers::DescriptorSetLayout &uboSetLayout,
+    const vulkan_wrappers::DescriptorSetLayout &samplerSetLayout,
+    const vulkan_wrappers::DescriptorSetLayout &jointMatricesSetLayout)
+    -> vulkan_wrappers::PipelineLayout {
+  // We will use push constants to push the local matrices of a primitive to the
+  // vertex shader
+  VkPushConstantRange pushConstantRange{};
+  pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+  pushConstantRange.offset = 0;
+  pushConstantRange.size = sizeof(glm::mat4);
+  return {device,
+          {uboSetLayout.descriptorSetLayout,
+           samplerSetLayout.descriptorSetLayout,
+           jointMatricesSetLayout.descriptorSetLayout},
+          {pushConstantRange}};
+}
+
+static auto inverseBindMatricesBuffersWithMemory(
+    VkDevice device, VkPhysicalDevice physicalDevice, const Scene &scene)
+    -> std::vector<VulkanBufferWithMemory> {
+  std::vector<VulkanBufferWithMemory> buffersWithMemory;
+  for (const auto &skin : scene.skins)
+    if (!skin.inverseBindMatrices.empty()) {
+      const VkDeviceSize bufferSize{sizeof(glm::mat4) *
+                                    skin.inverseBindMatrices.size()};
+      vulkan_wrappers::Buffer jointsVulkanBuffer{
+          device, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, bufferSize};
+      auto memory{bufferMemory(device, physicalDevice,
+                               jointsVulkanBuffer.buffer,
+                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                   VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
+      copy(device, memory.memory, skin.inverseBindMatrices.data(), bufferSize);
+      // VK_CHECK_RESULT(skins[i].ssbo.map());
+      buffersWithMemory.push_back(VulkanBufferWithMemory{
+          std::move(jointsVulkanBuffer), std::move(memory)});
+    }
+  return buffersWithMemory;
+}
+
+static auto textureImages(VkDevice device, VkPhysicalDevice physicalDevice,
+                          VkCommandPool commandPool, VkQueue copyQueue,
+                          const Scene &scene) -> std::vector<VulkanImage> {
+  std::vector<VulkanImage> vulkanImages;
+  transform(
+      scene.images.begin(), scene.images.end(), back_inserter(vulkanImages),
+      [device, physicalDevice, commandPool, copyQueue](const Image &image) {
+        return vulkanImage(image.buffer.data(), image.buffer.size(),
+                           VK_FORMAT_R8G8B8A8_UNORM, image.width, image.height,
+                           device, physicalDevice, commandPool, copyQueue);
+      });
+  return vulkanImages;
+}
+
+static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
+                     VkQueue copyQueue, VkCommandPool commandPool,
+                     VkSurfaceKHR surface, VkRenderPass renderPass,
+                     GLFWwindow *window,
+                     const std::string &vertexShaderCodePath,
+                     const std::string &fragmentShaderCodePath) {
+  const auto scene{readScene("/home/seth/Documents/CesiumMan.gltf")};
+  const auto textureVulkanImages{
+      textureImages(device, physicalDevice, commandPool, copyQueue, scene)};
+
+  const auto descriptorPool{
+      animatingDescriptorPool(device, textureVulkanImages, scene)};
 
   // // The pipeline layout uses three sets:
   // // Set 0 = Scene matrices (VS)
   // // Set 1 = Joint matrices (VS)
   // // Set 2 = Material texture (FS)
 
+  const auto jointMatricesVulkanBuffersWithMemory{
+      inverseBindMatricesBuffersWithMemory(device, physicalDevice, scene)};
   const auto jointMatricesSetLayout{
       animatingJointMatricesDescriptorSetLayout(device)};
 
-  // Descriptor set for glTF model skin joint matrices
-  std::vector<VkDescriptorSet> skinDescriptorSets;
+  std::vector<VkDescriptorSet> jointMatricesDescriptorSets;
   transform(
-      jointsVulkanBuffersWithMemory.begin(),
-      jointsVulkanBuffersWithMemory.end(), back_inserter(skinDescriptorSets),
+      jointMatricesVulkanBuffersWithMemory.begin(),
+      jointMatricesVulkanBuffersWithMemory.end(),
+      back_inserter(jointMatricesDescriptorSets),
       [&device, &descriptorPool,
        &jointMatricesSetLayout](const VulkanBufferWithMemory &buffer) {
         VkDescriptorSetAllocateInfo descriptorSetAllocateInfo{};
@@ -1195,14 +1198,15 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
         return descriptorSet;
       });
 
-  const auto samplerSetLayout{animatingSamplerDescriptorSetLayout(device)};
+  const auto samplerSetLayout{
+      animatingCombinedImageSamplerDescriptorSetLayout(device)};
 
   // Descriptor sets for glTF model materials
   const vulkan_wrappers::Sampler vulkanTextureSampler{device, physicalDevice,
                                                       1};
   std::vector<VkDescriptorSet> textureDescriptorSets;
-  transform(vulkanImages.begin(), vulkanImages.end(),
-            back_inserter(skinDescriptorSets),
+  transform(textureVulkanImages.begin(), textureVulkanImages.end(),
+            back_inserter(jointMatricesDescriptorSets),
             [&device, &descriptorPool, &samplerSetLayout,
              &vulkanTextureSampler](const VulkanImage &image) {
               VkDescriptorSetAllocateInfo descriptorSetAllocateInfo{};
@@ -1236,29 +1240,34 @@ static void loadGltf(VkDevice device, VkPhysicalDevice physicalDevice,
               return descriptorSet;
             });
 
-  const auto uboSetLayout{
-      animatingUniformBufferObjectDescriptorSetLayout(device)};
+  const auto uboSetLayout{animatingUniformBufferDescriptorSetLayout(device)};
 
-  // We will use push constants to push the local matrices of a primitive to the
-  // vertex shader
-  VkPushConstantRange pushConstantRange{};
-  pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-  pushConstantRange.offset = 0;
-  pushConstantRange.size = sizeof(glm::mat4);
+  const auto vulkanPipelineLayout{animatingPipelineLayout(
+      device, uboSetLayout, samplerSetLayout, jointMatricesSetLayout)};
 
-  const vulkan_wrappers::PipelineLayout vulkanPipelineLayout{
-      device,
-      {uboSetLayout.descriptorSetLayout, samplerSetLayout.descriptorSetLayout,
-       jointMatricesSetLayout.descriptorSetLayout},
-      {pushConstantRange}};
+  const auto vertexBufferWithMemory{bufferWithMemory(
+      device, physicalDevice, commandPool, copyQueue,
+      VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+      scene.vertexBuffer.data(),
+      scene.vertexBuffer.size() * sizeof(AnimatingVertex))};
 
-  // Descriptor set for scene matrices
-  const auto uboDescriptorSet{animatingUniformBufferObjectDescriptorSet(
+  const auto indexBufferWithMemory{bufferWithMemory(
+      device, physicalDevice, commandPool, copyQueue,
+      VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+      scene.indexBuffer.data(), scene.indexBuffer.size() * sizeof(uint32_t))};
+
+  const auto animatingUniformBufferWithMemory{uniformBufferWithMemory(
+      device, physicalDevice, sizeof(AnimatingUniformBufferObject))};
+  auto *const uboDescriptorSet{animatingUniformBufferDescriptorSet(
       device, animatingUniformBufferWithMemory, descriptorPool, uboSetLayout)};
 
   const auto pipeline{animatingPipeline(
       device, physicalDevice, surface, renderPass, window, vertexShaderCodePath,
       fragmentShaderCodePath, vulkanPipelineLayout)};
+
+  // Calculate initial pose
+  for (const auto &node : scene.nodes)
+    updateJoints(node.get(), device);
 }
 } // namespace sbash64::graphics
 
