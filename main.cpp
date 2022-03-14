@@ -451,39 +451,27 @@ static auto getNodeMatrix(Node *node) -> glm::mat4 {
   return nodeMatrix;
 }
 
-static auto joints(Node *) -> std::vector<Node *> {
-  throw std::runtime_error{"not implemented"};
-}
-
-static auto hasSkin(Node *) -> bool {
-  throw std::runtime_error{"not implemented"};
-}
-
-static auto inverseBindMatrices(Node *) -> std::vector<glm::mat4> {
-  throw std::runtime_error{"not implemented"};
-}
-
-static auto deviceMemory(Node *) -> VkDeviceMemory {
-  throw std::runtime_error{"not implemented"};
-}
-
-static void updateJoints(Node *node, VkDevice device) {
-  if (hasSkin(node)) {
+static void updateJoints(
+    Node *node, VkDevice device,
+    const std::map<int, VulkanBufferWithMemory> &jointBuffersWithMemory,
+    const Scene &scene) {
+  if (node->skin > -1) {
     glm::mat4 inverseTransform = glm::inverse(getNodeMatrix(node));
-    auto joints{graphics::joints(node)};
+    const auto joints{scene.skins.at(node->skin).joints};
     size_t numJoints = joints.size();
-    auto inverseBindMatrices{graphics::inverseBindMatrices(node)};
+    const auto inverseBindMatrices{
+        scene.skins.at(node->skin).inverseBindMatrices};
     std::vector<glm::mat4> jointMatrices(numJoints);
     for (size_t i = 0; i < numJoints; i++) {
       jointMatrices[i] = getNodeMatrix(joints[i]) * inverseBindMatrices[i];
       jointMatrices[i] = inverseTransform * jointMatrices[i];
     }
     // Update ssbo
-    copy(device, deviceMemory(node), jointMatrices.data(),
-         jointMatrices.size() * sizeof(glm::mat4));
+    copy(device, jointBuffersWithMemory.at(node->skin).memory.memory,
+         jointMatrices.data(), jointMatrices.size() * sizeof(glm::mat4));
   }
   for (const auto &child : node->children)
-    updateJoints(child.get(), device);
+    updateJoints(child.get(), device, jointBuffersWithMemory, scene);
 }
 
 static auto
@@ -526,9 +514,10 @@ vulkanImage(const void *buffer, VkDeviceSize bufferSize, VkFormat format,
                      std::move(deviceMemory)};
 }
 
-static void updateAnimation(Animation &animation,
-                            const std::vector<std::unique_ptr<Node>> &nodes,
-                            VkDevice device, float deltaTime) {
+static void updateAnimation(
+    Animation &animation, const std::vector<std::unique_ptr<Node>> &nodes,
+    const std::map<int, VulkanBufferWithMemory> &jointBuffersWithMemory,
+    const Scene &scene, VkDevice device, float deltaTime) {
   animation.currentTime += deltaTime;
   if (animation.currentTime > animation.end) {
     animation.currentTime -= animation.end;
@@ -574,7 +563,7 @@ static void updateAnimation(Animation &animation,
     }
   }
   for (const auto &node : nodes)
-    updateJoints(node.get(), device);
+    updateJoints(node.get(), device, jointBuffersWithMemory, scene);
 }
 
 struct AnimatingUniformBufferObject {
@@ -1075,7 +1064,8 @@ static void run(const std::string &vertexShaderCodePath,
 
   // Calculate initial pose
   for (const auto &node : scene.nodes)
-    updateJoints(node.get(), vulkanDevice.device);
+    updateJoints(node.get(), vulkanDevice.device,
+                 jointMatricesVulkanBuffersWithMemory, scene);
 
   for (auto i{0U}; i < vulkanDrawCommandBuffers.commandBuffers.size(); i++) {
     throwIfFailsToBegin(vulkanDrawCommandBuffers.commandBuffers[i]);
