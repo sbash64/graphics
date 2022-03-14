@@ -515,16 +515,17 @@ vulkanImage(const void *buffer, VkDeviceSize bufferSize, VkFormat format,
 }
 
 static void updateAnimation(
-    Animation &animation, const std::vector<std::unique_ptr<Node>> &nodes,
+    float &currentTime,
     const std::map<int, VulkanBufferWithMemory> &jointBuffersWithMemory,
     const Scene &scene, VkDevice device, float deltaTime) {
-  animation.currentTime += deltaTime;
-  if (animation.currentTime > animation.end) {
-    animation.currentTime -= animation.end;
+  const auto animation{scene.animations.at(0)};
+  currentTime += deltaTime;
+  if (currentTime > animation.end) {
+    currentTime -= animation.end;
   }
 
-  for (auto &channel : animation.channels) {
-    AnimationSampler &sampler = animation.samplers[channel.samplerIndex];
+  for (const auto &channel : animation.channels) {
+    const auto &sampler = animation.samplers[channel.samplerIndex];
     for (size_t i = 0; i < sampler.inputs.size() - 1; i++) {
       if (sampler.interpolation != "LINEAR") {
         std::cout << "This sample only supports linear interpolations\n";
@@ -532,9 +533,9 @@ static void updateAnimation(
       }
 
       // Get the input keyframe values for the current time stamp
-      if ((animation.currentTime >= sampler.inputs[i]) &&
-          (animation.currentTime <= sampler.inputs[i + 1])) {
-        float a = (animation.currentTime - sampler.inputs[i]) /
+      if ((currentTime >= sampler.inputs[i]) &&
+          (currentTime <= sampler.inputs[i + 1])) {
+        float a = (currentTime - sampler.inputs[i]) /
                   (sampler.inputs[i + 1] - sampler.inputs[i]);
         if (channel.path == "translation") {
           channel.node->translation =
@@ -562,7 +563,7 @@ static void updateAnimation(
       }
     }
   }
-  for (const auto &node : nodes)
+  for (const auto &node : scene.nodes)
     updateJoints(node.get(), device, jointBuffersWithMemory, scene);
 }
 
@@ -1134,6 +1135,8 @@ static void run(const std::string &vertexShaderCodePath,
   const auto swapChainExtent{swapExtent(
       vulkanPhysicalDevice, vulkanSurface.surface, glfwWindow.window)};
 
+  auto animationTime{0.f};
+
   auto recreatingSwapChain{false};
   auto currentFrame{0U};
   FixedPointVector3D playerVelocity{};
@@ -1192,6 +1195,10 @@ static void run(const std::string &vertexShaderCodePath,
         verticalVelocity = {0, 1};
       }
     }
+
+    updateAnimation(animationTime, jointMatricesVulkanBuffersWithMemory, scene,
+                    vulkanDevice.device, 1.f / 60);
+
     vkWaitForFences(vulkanDevice.device, 1,
                     &vulkanInFlightFences[currentFrame].fence, VK_TRUE,
                     UINT64_MAX);
@@ -1235,6 +1242,11 @@ static void run(const std::string &vertexShaderCodePath,
     updateUniformBuffer(vulkanDevice,
                         worldUniformBuffersWithMemory[imageIndex].memory, view,
                         projection, worldOrigin);
+    AnimatingUniformBufferObject animatingUBO{};
+    animatingUBO.projection = projection;
+    animatingUBO.view = view;
+    copy(vulkanDevice.device, animatingUniformBufferWithMemory.memory.memory,
+         &animatingUBO, sizeof(animatingUBO));
 
     if (imagesInFlight[imageIndex] != VK_NULL_HANDLE)
       vkWaitForFences(vulkanDevice.device, 1, &imagesInFlight[imageIndex],

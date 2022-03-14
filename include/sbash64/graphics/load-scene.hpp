@@ -71,7 +71,6 @@ struct Animation {
   std::vector<AnimationChannel> channels;
   float start = std::numeric_limits<float>::max();
   float end = std::numeric_limits<float>::min();
-  float currentTime = 0.0F;
 };
 
 struct Image {
