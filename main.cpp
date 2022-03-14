@@ -1,9 +1,11 @@
+#include <map>
 #include <sbash64/graphics/glfw-wrappers.hpp>
 #include <sbash64/graphics/load-object.hpp>
 #include <sbash64/graphics/load-scene.hpp>
 #include <sbash64/graphics/stbi-wrappers.hpp>
 #include <sbash64/graphics/vulkan-wrappers.hpp>
 
+#include <utility>
 #include <vulkan/vulkan_core.h>
 
 #include <glm/glm.hpp>
@@ -387,14 +389,10 @@ static auto pressing(GLFWwindow *window, int key) -> bool {
   return glfwGetKey(window, key) == GLFW_PRESS;
 }
 
-static auto descriptorSet(const Skin &skin) -> VkDescriptorSet {
-  throw std::runtime_error{"unimplemented"};
-}
-
 static void
 drawNode(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout,
          const std::vector<VkDescriptorSet> &textureDescriptorSets,
-         const std::vector<VkDescriptorSet> &jointMatricesDescriptorSets,
+         const std::map<int, VkDescriptorSet> &jointMatricesDescriptorSets,
          const Node &node, const Scene &scene) {
   if (!node.mesh.primitives.empty()) {
     // Pass the node's matrix via push constants
@@ -412,7 +410,7 @@ drawNode(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout,
                        &nodeMatrix);
     // Bind SSBO with skin data for this node to set 1
     std::array<VkDescriptorSet, 1> skinDescriptorSets{
-        descriptorSet(scene.skins[node.skin])};
+        jointMatricesDescriptorSets.at(node.skin)};
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                             pipelineLayout, 1, skinDescriptorSets.size(),
                             skinDescriptorSets.data(), 0, nullptr);
@@ -748,8 +746,9 @@ static auto animatingPipelineLayout(
 
 static auto inverseBindMatricesBuffersWithMemory(
     VkDevice device, VkPhysicalDevice physicalDevice, const Scene &scene)
-    -> std::vector<VulkanBufferWithMemory> {
-  std::vector<VulkanBufferWithMemory> buffersWithMemory;
+    -> std::map<int, VulkanBufferWithMemory> {
+  std::map<int, VulkanBufferWithMemory> buffersWithMemory;
+  int i{0};
   for (const auto &skin : scene.skins)
     if (!skin.inverseBindMatrices.empty()) {
       const VkDeviceSize bufferSize{sizeof(glm::mat4) *
@@ -762,8 +761,10 @@ static auto inverseBindMatricesBuffersWithMemory(
                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
       copy(device, memory.memory, skin.inverseBindMatrices.data(), bufferSize);
       // VK_CHECK_RESULT(skins[i].ssbo.map());
-      buffersWithMemory.push_back(VulkanBufferWithMemory{
-          std::move(jointsVulkanBuffer), std::move(memory)});
+      buffersWithMemory.emplace(
+          i, VulkanBufferWithMemory{std::move(jointsVulkanBuffer),
+                                    std::move(memory)});
+      ++i;
     }
   return buffersWithMemory;
 }
@@ -785,14 +786,15 @@ static auto textureImages(VkDevice device, VkPhysicalDevice physicalDevice,
 static auto jointMatricesDescriptorSets(
     VkDevice device, const vulkan_wrappers::DescriptorPool &descriptorPool,
     const vulkan_wrappers::DescriptorSetLayout &setLayout,
-    const std::vector<VulkanBufferWithMemory> &buffersWithMemory)
-    -> std::vector<VkDescriptorSet> {
-  std::vector<VkDescriptorSet> jointMatricesDescriptorSets;
+    const std::map<int, VulkanBufferWithMemory> &buffersWithMemory)
+    -> std::map<int, VkDescriptorSet> {
+  std::map<int, VkDescriptorSet> jointMatricesDescriptorSets;
   transform(
       buffersWithMemory.begin(), buffersWithMemory.end(),
-      back_inserter(jointMatricesDescriptorSets),
+      inserter(jointMatricesDescriptorSets,
+               jointMatricesDescriptorSets.begin()),
       [&device, &descriptorPool,
-       &setLayout](const VulkanBufferWithMemory &buffer) {
+       &setLayout](const std::pair<const int, VulkanBufferWithMemory> &buffer) {
         VkDescriptorSetAllocateInfo descriptorSetAllocateInfo{};
         descriptorSetAllocateInfo.sType =
             VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -812,14 +814,14 @@ static auto jointMatricesDescriptorSets(
         writeDescriptorSet.dstBinding = 0;
 
         VkDescriptorBufferInfo descriptorBufferInfo;
-        descriptorBufferInfo.buffer = buffer.buffer.buffer;
+        descriptorBufferInfo.buffer = buffer.second.buffer.buffer;
         descriptorBufferInfo.offset = 0;
         descriptorBufferInfo.range = VK_WHOLE_SIZE;
 
         writeDescriptorSet.pBufferInfo = &descriptorBufferInfo;
         writeDescriptorSet.descriptorCount = 1;
         vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0, nullptr);
-        return descriptorSet;
+        return std::make_pair(buffer.first, descriptorSet);
       });
   return jointMatricesDescriptorSets;
 }
