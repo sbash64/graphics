@@ -391,13 +391,11 @@ static auto descriptorSet(const Skin &skin) -> VkDescriptorSet {
   throw std::runtime_error{"unimplemented"};
 }
 
-static auto descriptorSet(const Image &image) -> VkDescriptorSet {
-  throw std::runtime_error{"unimplemented"};
-}
-
-static void drawNode(VkCommandBuffer commandBuffer,
-                     VkPipelineLayout pipelineLayout, const Node &node,
-                     const Scene &scene) {
+static void
+drawNode(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout,
+         const std::vector<VkDescriptorSet> &textureDescriptorSets,
+         const std::vector<VkDescriptorSet> &jointMatricesDescriptorSets,
+         const Node &node, const Scene &scene) {
   if (!node.mesh.primitives.empty()) {
     // Pass the node's matrix via push constants
     // Traverse the node hierarchy to the top-most parent to get the final
@@ -420,12 +418,10 @@ static void drawNode(VkCommandBuffer commandBuffer,
                             skinDescriptorSets.data(), 0, nullptr);
     for (const auto &primitive : node.mesh.primitives) {
       if (primitive.indexCount > 0) {
-        // Get the texture index for this primitive
-        const auto index =
-            scene.textureIndices[scene.materials[primitive.materialIndex]
-                                     .baseColorTextureIndex];
         std::array<VkDescriptorSet, 1> imageDescriptorSets{
-            descriptorSet(scene.images[index])};
+            textureDescriptorSets.at(scene.textureIndices.at(
+                scene.materials.at(primitive.materialIndex)
+                    .baseColorTextureIndex))};
         // Bind the descriptor for the current primitive's texture to set 2
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 pipelineLayout, 2, imageDescriptorSets.size(),
@@ -436,7 +432,8 @@ static void drawNode(VkCommandBuffer commandBuffer,
     }
   }
   for (const auto &child : node.children) {
-    drawNode(commandBuffer, pipelineLayout, *child, scene);
+    drawNode(commandBuffer, pipelineLayout, textureDescriptorSets,
+             jointMatricesDescriptorSets, *child, scene);
   }
 }
 
@@ -444,28 +441,6 @@ static auto getLocalMatrix(const Node &node) -> glm::mat4 {
   return glm::translate(glm::mat4(1.0F), node.translation) *
          glm::mat4(node.rotation) * glm::scale(glm::mat4(1.0F), node.scale) *
          node.matrix;
-}
-
-static auto findNode(Node *parent, uint32_t index) -> Node * {
-  if (parent->index == index)
-    return parent;
-  for (auto &child : parent->children) {
-    Node *node = findNode(child.get(), index);
-    if (node != nullptr) {
-      return node;
-    }
-  }
-  return nullptr;
-}
-
-static auto nodeFromIndex(const std::vector<std::unique_ptr<Node>> &nodes,
-                          uint32_t index) -> Node * {
-  for (const auto &node : nodes) {
-    auto *maybeFound = findNode(node.get(), index);
-    if (maybeFound != nullptr)
-      return maybeFound;
-  }
-  return nullptr;
 }
 
 static auto getNodeMatrix(Node *node) -> glm::mat4 {
@@ -1137,7 +1112,9 @@ static void run(const std::string &vertexShaderCodePath,
                          VK_INDEX_TYPE_UINT32);
     for (const auto &node : scene.nodes)
       drawNode(vulkanDrawCommandBuffers.commandBuffers[i],
-               animatingPipelineLayout.pipelineLayout, *node, scene);
+               animatingPipelineLayout.pipelineLayout,
+               animatingTextureDescriptorSets, jointMatricesDescriptorSets,
+               *node, scene);
     vkCmdEndRenderPass(vulkanDrawCommandBuffers.commandBuffers[i]);
     throwOnError(
         [&]() {
