@@ -26,6 +26,6 @@ void main() {
 		inJointWeights.y * jointMatrices[int(inJointIndices.y)] +
 		inJointWeights.z * jointMatrices[int(inJointIndices.z)] +
 		inJointWeights.w * jointMatrices[int(inJointIndices.w)];
-    gl_Position = ubo.mvp * skinMat * vec4(inPosition, 1.0);
+    gl_Position = ubo.projection * ubo.view * primitive.model * skinMat * vec4(inPosition, 1.0);
     fragTexCoord = inTexCoord;
 }

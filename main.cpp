@@ -502,11 +502,16 @@ vulkanImage(const void *buffer, VkDeviceSize bufferSize, VkFormat format,
                                mipLevels,
                                VK_SAMPLE_COUNT_1_BIT};
 
-  copyBufferToImage(device, commandPool, copyQueue, stagingBuffer.buffer,
-                    image.image, width, height);
-
   auto deviceMemory{imageMemory(device, physicalDevice, image.image,
                                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
+
+  transitionImageLayout(device, commandPool, copyQueue, image.image,
+                        VK_IMAGE_LAYOUT_UNDEFINED,
+                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, mipLevels);
+  copyBufferToImage(device, commandPool, copyQueue, stagingBuffer.buffer,
+                    image.image, width, height);
+  generateMipmaps(device, physicalDevice, commandPool, copyQueue, image.image,
+                  VK_FORMAT_R8G8B8A8_SRGB, width, height, mipLevels);
 
   vulkan_wrappers::ImageView imageView{device, image.image, format,
                                        VK_IMAGE_ASPECT_COLOR_BIT, mipLevels};
@@ -615,40 +620,6 @@ animatingPipeline(VkDevice device, VkPhysicalDevice physicalDevice,
           window,
           attributeDescriptions,
           bindingDescription};
-}
-
-static auto jointMatricesDescriptorSetLayout(VkDevice device)
-    -> vulkan_wrappers::DescriptorSetLayout {
-  VkDescriptorSetLayoutBinding jointMatricesLayoutBinding{};
-  jointMatricesLayoutBinding.binding = 0;
-  jointMatricesLayoutBinding.descriptorCount = 1;
-  jointMatricesLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-  jointMatricesLayoutBinding.pImmutableSamplers = nullptr;
-  jointMatricesLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-  return {device, {jointMatricesLayoutBinding}};
-}
-
-static auto animatingCombinedImageSamplerDescriptorSetLayout(VkDevice device)
-    -> vulkan_wrappers::DescriptorSetLayout {
-  VkDescriptorSetLayoutBinding samplerLayoutBinding{};
-  samplerLayoutBinding.binding = 0;
-  samplerLayoutBinding.descriptorCount = 1;
-  samplerLayoutBinding.descriptorType =
-      VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-  samplerLayoutBinding.pImmutableSamplers = nullptr;
-  samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-  return {device, {samplerLayoutBinding}};
-}
-
-static auto animatingUniformBufferDescriptorSetLayout(VkDevice device)
-    -> vulkan_wrappers::DescriptorSetLayout {
-  VkDescriptorSetLayoutBinding layoutBinding{};
-  layoutBinding.binding = 0;
-  layoutBinding.descriptorCount = 1;
-  layoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  layoutBinding.pImmutableSamplers = nullptr;
-  layoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-  return {device, {layoutBinding}};
 }
 
 static auto animatingUniformBufferDescriptorSet(
@@ -859,6 +830,8 @@ static auto animatingTextureDescriptorSets(
 
 static void run(const std::string &vertexShaderCodePath,
                 const std::string &fragmentShaderCodePath,
+                const std::string &animatingVertexShaderCodePath,
+                const std::string &animatingFragmentShaderCodePath,
                 const std::string &playerObjectPath,
                 const std::string &worldObjectPath) {
   const glfw_wrappers::Init glfwInitialization;
@@ -1011,15 +984,53 @@ static void run(const std::string &vertexShaderCodePath,
   const auto jointMatricesVulkanBuffersWithMemory{
       inverseBindMatricesBuffersWithMemory(vulkanDevice.device,
                                            vulkanPhysicalDevice, scene)};
-  const auto jointMatricesDescriptorSetLayout{
-      graphics::jointMatricesDescriptorSetLayout(vulkanDevice.device)};
+
+  VkDescriptorSetLayoutBinding
+      animatingUniformBufferDescriptorSetLayoutBinding{};
+  animatingUniformBufferDescriptorSetLayoutBinding.binding = 0;
+  animatingUniformBufferDescriptorSetLayoutBinding.descriptorCount = 1;
+  animatingUniformBufferDescriptorSetLayoutBinding.descriptorType =
+      VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  animatingUniformBufferDescriptorSetLayoutBinding.pImmutableSamplers = nullptr;
+  animatingUniformBufferDescriptorSetLayoutBinding.stageFlags =
+      VK_SHADER_STAGE_VERTEX_BIT;
+
+  VkDescriptorSetLayoutBinding jointMatricesDescriptorSetLayoutBinding{};
+  jointMatricesDescriptorSetLayoutBinding.binding = 0;
+  jointMatricesDescriptorSetLayoutBinding.descriptorCount = 1;
+  jointMatricesDescriptorSetLayoutBinding.descriptorType =
+      VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+  jointMatricesDescriptorSetLayoutBinding.pImmutableSamplers = nullptr;
+  jointMatricesDescriptorSetLayoutBinding.stageFlags =
+      VK_SHADER_STAGE_VERTEX_BIT;
+
+  VkDescriptorSetLayoutBinding
+      animatingCombinedImageSamplerDescriptorSetLayoutBinding{};
+  animatingCombinedImageSamplerDescriptorSetLayoutBinding.binding = 0;
+  animatingCombinedImageSamplerDescriptorSetLayoutBinding.descriptorCount = 1;
+  animatingCombinedImageSamplerDescriptorSetLayoutBinding.descriptorType =
+      VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  animatingCombinedImageSamplerDescriptorSetLayoutBinding.pImmutableSamplers =
+      nullptr;
+  animatingCombinedImageSamplerDescriptorSetLayoutBinding.stageFlags =
+      VK_SHADER_STAGE_FRAGMENT_BIT;
+
+  const vulkan_wrappers::DescriptorSetLayout
+      animatingUniformBufferDescriptorSetLayout{
+          vulkanDevice.device,
+          {animatingUniformBufferDescriptorSetLayoutBinding}};
+
+  const vulkan_wrappers::DescriptorSetLayout jointMatricesDescriptorSetLayout{
+      vulkanDevice.device, {jointMatricesDescriptorSetLayoutBinding}};
+
+  const vulkan_wrappers::DescriptorSetLayout
+      animatingCombinedImageSamplerDescriptorSetLayout{
+          vulkanDevice.device,
+          {animatingCombinedImageSamplerDescriptorSetLayoutBinding}};
+
   const auto jointMatricesDescriptorSets{graphics::jointMatricesDescriptorSets(
       vulkanDevice.device, animatingDescriptorPool,
       jointMatricesDescriptorSetLayout, jointMatricesVulkanBuffersWithMemory)};
-
-  const auto animatingCombinedImageSamplerDescriptorSetLayout{
-      graphics::animatingCombinedImageSamplerDescriptorSetLayout(
-          vulkanDevice.device)};
 
   const vulkan_wrappers::Sampler animatingTextureSampler{
       vulkanDevice.device, vulkanPhysicalDevice, 1};
@@ -1029,13 +1040,16 @@ static void run(const std::string &vertexShaderCodePath,
           animatingCombinedImageSamplerDescriptorSetLayout,
           animatingTextureVulkanImages)};
 
-  const auto animatingUniformBufferDescriptorSetLayout{
-      graphics::animatingUniformBufferDescriptorSetLayout(vulkanDevice.device)};
-
-  const auto animatingPipelineLayout{graphics::animatingPipelineLayout(
-      vulkanDevice.device, animatingUniformBufferDescriptorSetLayout,
-      animatingCombinedImageSamplerDescriptorSetLayout,
-      jointMatricesDescriptorSetLayout)};
+  VkPushConstantRange pushConstantRange{};
+  pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+  pushConstantRange.offset = 0;
+  pushConstantRange.size = sizeof(glm::mat4);
+  const vulkan_wrappers::PipelineLayout animatingPipelineLayout{
+      vulkanDevice.device,
+      {animatingUniformBufferDescriptorSetLayout.descriptorSetLayout,
+       jointMatricesDescriptorSetLayout.descriptorSetLayout,
+       animatingCombinedImageSamplerDescriptorSetLayout.descriptorSetLayout},
+      {pushConstantRange}};
 
   const auto animatingVertexBuffer{bufferWithMemory(
       vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
@@ -1060,8 +1074,9 @@ static void run(const std::string &vertexShaderCodePath,
 
   const auto animatingPipeline{graphics::animatingPipeline(
       vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface,
-      vulkanRenderPass.renderPass, glfwWindow.window, vertexShaderCodePath,
-      fragmentShaderCodePath, animatingPipelineLayout)};
+      vulkanRenderPass.renderPass, glfwWindow.window,
+      animatingVertexShaderCodePath, animatingFragmentShaderCodePath,
+      animatingPipelineLayout)};
 
   // Calculate initial pose
   for (const auto &node : scene.nodes)
@@ -1280,11 +1295,11 @@ static void run(const std::string &vertexShaderCodePath,
 int main(int argc, char *argv[]) {
   const std::span<char *> arguments{
       argv, static_cast<std::span<char *>::size_type>(argc)};
-  if (arguments.size() < 5)
+  if (arguments.size() < 7)
     return EXIT_FAILURE;
   try {
     sbash64::graphics::run(arguments[1], arguments[2], arguments[3],
-                           arguments[4]);
+                           arguments[4], arguments[5], arguments[6]);
   } catch (const std::exception &e) {
     std::cerr << e.what() << '\n';
     return EXIT_FAILURE;
