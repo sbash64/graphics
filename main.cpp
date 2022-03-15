@@ -1260,6 +1260,7 @@ static void run(const std::string &vertexShaderCodePath,
                         projection, worldOrigin);
     AnimatingUniformBufferObject animatingUBO{};
     animatingUBO.projection = projection;
+    animatingUBO.projection[1][1] *= -1;
     animatingUBO.view = view;
     copy(vulkanDevice.device, animatingUniformBufferWithMemory.memory.memory,
          &animatingUBO, sizeof(animatingUBO));
