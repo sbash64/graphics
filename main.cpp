@@ -398,7 +398,8 @@ drawNode(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout,
     // Pass the node's matrix via push constants
     // Traverse the node hierarchy to the top-most parent to get the final
     // matrix of the current node
-    auto nodeMatrix = node.matrix;
+    auto nodeMatrix =
+        node.matrix * glm::scale(glm::vec3{1000.f, 1000.f, 1000.f});
     const auto *currentParent = node.parent;
     while (currentParent != nullptr) {
       nodeMatrix = currentParent->matrix * nodeMatrix;
