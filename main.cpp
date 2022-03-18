@@ -1,11 +1,9 @@
-#include <map>
 #include <sbash64/graphics/glfw-wrappers.hpp>
 #include <sbash64/graphics/load-object.hpp>
 #include <sbash64/graphics/load-scene.hpp>
 #include <sbash64/graphics/stbi-wrappers.hpp>
 #include <sbash64/graphics/vulkan-wrappers.hpp>
 
-#include <utility>
 #include <vulkan/vulkan_core.h>
 
 #include <glm/glm.hpp>
@@ -23,10 +21,12 @@
 #include <functional>
 #include <iostream>
 #include <iterator>
+#include <map>
 #include <numeric>
 #include <span>
 #include <stdexcept>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace sbash64::graphics {
@@ -687,24 +687,6 @@ animatingDescriptorPool(VkDevice device,
   return {device, poolSizes, maxSetCount};
 }
 
-static auto animatingPipelineLayout(
-    VkDevice device, const vulkan_wrappers::DescriptorSetLayout &uboSetLayout,
-    const vulkan_wrappers::DescriptorSetLayout &samplerSetLayout,
-    const vulkan_wrappers::DescriptorSetLayout &jointMatricesSetLayout)
-    -> vulkan_wrappers::PipelineLayout {
-  // We will use push constants to push the local matrices of a primitive to the
-  // vertex shader
-  VkPushConstantRange pushConstantRange{};
-  pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-  pushConstantRange.offset = 0;
-  pushConstantRange.size = sizeof(glm::mat4);
-  return {device,
-          {uboSetLayout.descriptorSetLayout,
-           samplerSetLayout.descriptorSetLayout,
-           jointMatricesSetLayout.descriptorSetLayout},
-          {pushConstantRange}};
-}
-
 static auto inverseBindMatricesBuffersWithMemory(
     VkDevice device, VkPhysicalDevice physicalDevice, const Scene &scene)
     -> std::map<int, VulkanBufferWithMemory> {
@@ -833,7 +815,8 @@ static void run(const std::string &vertexShaderCodePath,
                 const std::string &animatingVertexShaderCodePath,
                 const std::string &animatingFragmentShaderCodePath,
                 const std::string &playerObjectPath,
-                const std::string &worldObjectPath) {
+                const std::string &worldObjectPath,
+                const std::string &animatingScenePath) {
   const glfw_wrappers::Init glfwInitialization;
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
   const glfw_wrappers::Window glfwWindow{1280, 960};
@@ -968,18 +951,13 @@ static void run(const std::string &vertexShaderCodePath,
                                       vulkanCommandPool.commandPool,
                                       graphicsQueue, worldObjects)};
 
-  const auto scene{readScene("/home/seth/Documents/CesiumMan.gltf")};
+  const auto scene{readScene(animatingScenePath)};
   const auto animatingTextureVulkanImages{
       textureImages(vulkanDevice.device, vulkanPhysicalDevice,
                     vulkanCommandPool.commandPool, graphicsQueue, scene)};
 
   const auto animatingDescriptorPool{graphics::animatingDescriptorPool(
       vulkanDevice.device, animatingTextureVulkanImages, scene)};
-
-  // // The pipeline layout uses three sets:
-  // // Set 0 = Scene matrices (VS)
-  // // Set 1 = Joint matrices (VS)
-  // // Set 2 = Material texture (FS)
 
   const auto jointMatricesVulkanBuffersWithMemory{
       inverseBindMatricesBuffersWithMemory(vulkanDevice.device,
@@ -1296,11 +1274,12 @@ static void run(const std::string &vertexShaderCodePath,
 int main(int argc, char *argv[]) {
   const std::span<char *> arguments{
       argv, static_cast<std::span<char *>::size_type>(argc)};
-  if (arguments.size() < 7)
+  if (arguments.size() < 8)
     return EXIT_FAILURE;
   try {
     sbash64::graphics::run(arguments[1], arguments[2], arguments[3],
-                           arguments[4], arguments[5], arguments[6]);
+                           arguments[4], arguments[5], arguments[6],
+                           arguments[7]);
   } catch (const std::exception &e) {
     std::cerr << e.what() << '\n';
     return EXIT_FAILURE;
