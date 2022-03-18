@@ -360,20 +360,6 @@ auto bufferWithMemory(VkDevice device, VkPhysicalDevice physicalDevice,
                       VkCommandPool commandPool, VkQueue graphicsQueue,
                       VkBufferUsageFlags usageFlags, const void *source,
                       size_t size) -> VulkanBufferWithMemory;
-
-struct VulkanDescriptor {
-  vulkan_wrappers::DescriptorPool pool;
-  std::vector<VkDescriptorSet> sets;
-};
-
-auto descriptor(
-    VkDescriptorPool, const vulkan_wrappers::Device &vulkanDevice,
-    const vulkan_wrappers::ImageView &vulkanTextureImageView,
-    const vulkan_wrappers::Sampler &vulkanTextureSampler,
-    const vulkan_wrappers::DescriptorSetLayout &vulkanDescriptorSetLayout,
-    const std::vector<VkImage> &swapChainImages,
-    const std::vector<VulkanBufferWithMemory> &vulkanUniformBuffers,
-    VkDeviceSize bufferObjectSize) -> std::vector<VkDescriptorSet>;
 } // namespace sbash64::graphics
 
 #endif

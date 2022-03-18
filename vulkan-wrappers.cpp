@@ -1261,68 +1261,6 @@ auto swapChainImageViews(VkDevice device, VkPhysicalDevice physicalDevice,
   return swapChainImageViews;
 }
 
-auto descriptor(
-    VkDescriptorPool descriptorPool,
-    const vulkan_wrappers::Device &vulkanDevice,
-    const vulkan_wrappers::ImageView &vulkanTextureImageView,
-    const vulkan_wrappers::Sampler &vulkanTextureSampler,
-    const vulkan_wrappers::DescriptorSetLayout &vulkanDescriptorSetLayout,
-    const std::vector<VkImage> &swapChainImages,
-    const std::vector<VulkanBufferWithMemory> &vulkanUniformBuffers,
-    VkDeviceSize bufferObjectSize) -> std::vector<VkDescriptorSet> {
-  std::vector<VkDescriptorSet> descriptorSets(swapChainImages.size());
-  std::vector<VkDescriptorSetLayout> layouts(
-      swapChainImages.size(), vulkanDescriptorSetLayout.descriptorSetLayout);
-
-  VkDescriptorSetAllocateInfo allocInfo{};
-  allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-  allocInfo.descriptorPool = descriptorPool;
-  allocInfo.descriptorSetCount = static_cast<uint32_t>(swapChainImages.size());
-  allocInfo.pSetLayouts = layouts.data();
-
-  throwOnError(
-      [&]() {
-        // no deallocate needed here per tutorial
-        return vkAllocateDescriptorSets(vulkanDevice.device, &allocInfo,
-                                        descriptorSets.data());
-      },
-      "failed to allocate descriptor sets!");
-
-  for (auto i{0U}; i < swapChainImages.size(); i++) {
-    VkDescriptorBufferInfo bufferInfo{};
-    bufferInfo.buffer = vulkanUniformBuffers[i].buffer.buffer;
-    bufferInfo.offset = 0;
-    bufferInfo.range = bufferObjectSize;
-
-    VkDescriptorImageInfo imageInfo{};
-    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    imageInfo.imageView = vulkanTextureImageView.view;
-    imageInfo.sampler = vulkanTextureSampler.sampler;
-
-    std::array<VkWriteDescriptorSet, 2> descriptorWrite{};
-    descriptorWrite[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrite[0].dstSet = descriptorSets[i];
-    descriptorWrite[0].dstBinding = 0;
-    descriptorWrite[0].dstArrayElement = 0;
-    descriptorWrite[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    descriptorWrite[0].descriptorCount = 1;
-    descriptorWrite[0].pBufferInfo = &bufferInfo;
-
-    descriptorWrite[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrite[1].dstSet = descriptorSets[i];
-    descriptorWrite[1].dstBinding = 1;
-    descriptorWrite[1].dstArrayElement = 0;
-    descriptorWrite[1].descriptorType =
-        VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    descriptorWrite[1].descriptorCount = 1;
-    descriptorWrite[1].pImageInfo = &imageInfo;
-
-    vkUpdateDescriptorSets(vulkanDevice.device, descriptorWrite.size(),
-                           descriptorWrite.data(), 0, nullptr);
-  }
-  return descriptorSets;
-}
-
 auto present(VkQueue presentQueue, const vulkan_wrappers::Swapchain &swapchain,
              uint32_t imageIndex, VkSemaphore signalSemaphore) -> VkResult {
   VkPresentInfoKHR presentInfo{};
