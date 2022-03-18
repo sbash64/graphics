@@ -343,6 +343,15 @@ uniformBuffersWithMemory(VkDevice device, VkPhysicalDevice physicalDevice,
   return uniformBuffersWithMemory;
 }
 
+struct VulkanDescriptorSets {
+  std::vector<VkDescriptorSet> sets;
+};
+
+struct VulkanDescriptors {
+  VulkanDescriptorSets sets;
+  vulkan_wrappers::DescriptorPool pool;
+};
+
 static auto descriptors(
     const vulkan_wrappers::Device &vulkanDevice,
     const vulkan_wrappers::Sampler &vulkanTextureSampler,
@@ -352,16 +361,31 @@ static auto descriptors(
     const std::vector<VulkanImage> &playerTextureImages)
     -> std::vector<VulkanDescriptor> {
   std::vector<VulkanDescriptor> descriptors;
-  transform(playerTextureImages.begin(), playerTextureImages.end(),
-            back_inserter(descriptors),
-            [&vulkanDevice, &vulkanTextureSampler, &vulkanDescriptorSetLayout,
-             &swapChainImages,
-             &vulkanUniformBuffers](const VulkanImage &image) {
-              return graphics::descriptor(
-                  vulkanDevice, image.view, vulkanTextureSampler,
-                  vulkanDescriptorSetLayout, swapChainImages,
-                  vulkanUniformBuffers, sizeof(UniformBufferObject));
-            });
+  transform(
+      playerTextureImages.begin(), playerTextureImages.end(),
+      back_inserter(descriptors),
+      [&vulkanDevice, &vulkanTextureSampler, &vulkanDescriptorSetLayout,
+       &swapChainImages, &vulkanUniformBuffers](const VulkanImage &image) {
+        std::vector<VkDescriptorPoolSize> poolSize(2);
+        poolSize[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        poolSize[0].descriptorCount =
+            static_cast<uint32_t>(swapChainImages.size());
+        poolSize[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        poolSize[1].descriptorCount =
+            static_cast<uint32_t>(swapChainImages.size());
+
+        vulkan_wrappers::DescriptorPool vulkanDescriptorPool{
+            vulkanDevice.device, poolSize,
+            static_cast<uint32_t>(swapChainImages.size())};
+
+        auto descriptorSets{graphics::descriptor(
+            vulkanDescriptorPool.descriptorPool, vulkanDevice, image.view,
+            vulkanTextureSampler, vulkanDescriptorSetLayout, swapChainImages,
+            vulkanUniformBuffers, sizeof(UniformBufferObject))};
+
+        return VulkanDescriptor{std::move(vulkanDescriptorPool),
+                                std::move(descriptorSets)};
+      });
   return descriptors;
 }
 

@@ -1262,31 +1262,21 @@ auto swapChainImageViews(VkDevice device, VkPhysicalDevice physicalDevice,
 }
 
 auto descriptor(
+    VkDescriptorPool descriptorPool,
     const vulkan_wrappers::Device &vulkanDevice,
     const vulkan_wrappers::ImageView &vulkanTextureImageView,
     const vulkan_wrappers::Sampler &vulkanTextureSampler,
     const vulkan_wrappers::DescriptorSetLayout &vulkanDescriptorSetLayout,
     const std::vector<VkImage> &swapChainImages,
     const std::vector<VulkanBufferWithMemory> &vulkanUniformBuffers,
-    VkDeviceSize bufferObjectSize) -> VulkanDescriptor {
-
-  std::vector<VkDescriptorPoolSize> poolSize(2);
-  poolSize[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  poolSize[0].descriptorCount = static_cast<uint32_t>(swapChainImages.size());
-  poolSize[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-  poolSize[1].descriptorCount = static_cast<uint32_t>(swapChainImages.size());
-
-  vulkan_wrappers::DescriptorPool vulkanDescriptorPool{
-      vulkanDevice.device, poolSize,
-      static_cast<uint32_t>(swapChainImages.size())};
-
+    VkDeviceSize bufferObjectSize) -> std::vector<VkDescriptorSet> {
   std::vector<VkDescriptorSet> descriptorSets(swapChainImages.size());
   std::vector<VkDescriptorSetLayout> layouts(
       swapChainImages.size(), vulkanDescriptorSetLayout.descriptorSetLayout);
 
   VkDescriptorSetAllocateInfo allocInfo{};
   allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-  allocInfo.descriptorPool = vulkanDescriptorPool.descriptorPool;
+  allocInfo.descriptorPool = descriptorPool;
   allocInfo.descriptorSetCount = static_cast<uint32_t>(swapChainImages.size());
   allocInfo.pSetLayouts = layouts.data();
 
@@ -1330,8 +1320,7 @@ auto descriptor(
     vkUpdateDescriptorSets(vulkanDevice.device, descriptorWrite.size(),
                            descriptorWrite.data(), 0, nullptr);
   }
-  return VulkanDescriptor{std::move(vulkanDescriptorPool),
-                          std::move(descriptorSets)};
+  return descriptorSets;
 }
 
 auto present(VkQueue presentQueue, const vulkan_wrappers::Swapchain &swapchain,

@@ -367,13 +367,13 @@ struct VulkanDescriptor {
 };
 
 auto descriptor(
-    const vulkan_wrappers::Device &vulkanDevice,
+    VkDescriptorPool, const vulkan_wrappers::Device &vulkanDevice,
     const vulkan_wrappers::ImageView &vulkanTextureImageView,
     const vulkan_wrappers::Sampler &vulkanTextureSampler,
     const vulkan_wrappers::DescriptorSetLayout &vulkanDescriptorSetLayout,
     const std::vector<VkImage> &swapChainImages,
     const std::vector<VulkanBufferWithMemory> &vulkanUniformBuffers,
-    VkDeviceSize bufferObjectSize) -> VulkanDescriptor;
+    VkDeviceSize bufferObjectSize) -> std::vector<VkDescriptorSet>;
 } // namespace sbash64::graphics
 
 #endif
