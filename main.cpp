@@ -266,10 +266,19 @@ static void updateUniformBuffer(const vulkan_wrappers::Device &device,
   copy(device.device, memory.memory, &ubo, sizeof(ubo));
 }
 
+struct VulkanDescriptorSets {
+  std::vector<VkDescriptorSet> sets;
+};
+
+struct VulkanDescriptors {
+  std::vector<VulkanDescriptorSets> sets;
+  vulkan_wrappers::DescriptorPool pool;
+};
+
 static void draw(const std::vector<Object> &objects,
                  const std::vector<VulkanDrawable> &drawables,
                  const vulkan_wrappers::PipelineLayout &pipelineLayout,
-                 const std::vector<VulkanDescriptor> &descriptors,
+                 const VulkanDescriptors &descriptors,
                  VkCommandBuffer commandBuffer, unsigned int i) {
   for (auto j{0U}; j < drawables.size(); ++j) {
     std::array<VkBuffer, 1> vertexBuffers = {
@@ -282,7 +291,7 @@ static void draw(const std::vector<Object> &objects,
                          VK_INDEX_TYPE_UINT32);
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                             pipelineLayout.pipelineLayout, 0, 1,
-                            &descriptors.at(j).sets[i], 0, nullptr);
+                            &descriptors.sets.at(j).sets[i], 0, nullptr);
     vkCmdDrawIndexed(commandBuffer,
                      static_cast<uint32_t>(objects.at(j).indices.size()), 1, 0,
                      0, 0);
@@ -343,50 +352,38 @@ uniformBuffersWithMemory(VkDevice device, VkPhysicalDevice physicalDevice,
   return uniformBuffersWithMemory;
 }
 
-struct VulkanDescriptorSets {
-  std::vector<VkDescriptorSet> sets;
-};
-
-struct VulkanDescriptors {
-  VulkanDescriptorSets sets;
-  vulkan_wrappers::DescriptorPool pool;
-};
-
 static auto descriptors(
     const vulkan_wrappers::Device &vulkanDevice,
     const vulkan_wrappers::Sampler &vulkanTextureSampler,
     const vulkan_wrappers::DescriptorSetLayout &vulkanDescriptorSetLayout,
     const std::vector<VkImage> &swapChainImages,
     const std::vector<VulkanBufferWithMemory> &vulkanUniformBuffers,
-    const std::vector<VulkanImage> &playerTextureImages)
-    -> std::vector<VulkanDescriptor> {
-  std::vector<VulkanDescriptor> descriptors;
-  transform(
-      playerTextureImages.begin(), playerTextureImages.end(),
-      back_inserter(descriptors),
-      [&vulkanDevice, &vulkanTextureSampler, &vulkanDescriptorSetLayout,
-       &swapChainImages, &vulkanUniformBuffers](const VulkanImage &image) {
-        std::vector<VkDescriptorPoolSize> poolSize(2);
-        poolSize[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        poolSize[0].descriptorCount =
-            static_cast<uint32_t>(swapChainImages.size());
-        poolSize[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        poolSize[1].descriptorCount =
-            static_cast<uint32_t>(swapChainImages.size());
+    const std::vector<VulkanImage> &playerTextureImages) -> VulkanDescriptors {
+  std::vector<VulkanDescriptorSets> sets;
+  std::vector<VkDescriptorPoolSize> poolSize(2);
+  poolSize[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  poolSize[0].descriptorCount = static_cast<uint32_t>(
+      swapChainImages.size() * playerTextureImages.size());
+  poolSize[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+  poolSize[1].descriptorCount = static_cast<uint32_t>(
+      swapChainImages.size() * playerTextureImages.size());
 
-        vulkan_wrappers::DescriptorPool vulkanDescriptorPool{
-            vulkanDevice.device, poolSize,
-            static_cast<uint32_t>(swapChainImages.size())};
-
-        auto descriptorSets{graphics::descriptor(
-            vulkanDescriptorPool.descriptorPool, vulkanDevice, image.view,
-            vulkanTextureSampler, vulkanDescriptorSetLayout, swapChainImages,
-            vulkanUniformBuffers, sizeof(UniformBufferObject))};
-
-        return VulkanDescriptor{std::move(vulkanDescriptorPool),
-                                std::move(descriptorSets)};
-      });
-  return descriptors;
+  vulkan_wrappers::DescriptorPool vulkanDescriptorPool{
+      vulkanDevice.device, poolSize,
+      static_cast<uint32_t>(swapChainImages.size() *
+                            playerTextureImages.size())};
+  transform(playerTextureImages.begin(), playerTextureImages.end(),
+            back_inserter(sets),
+            [&vulkanDescriptorPool, &vulkanDevice, &vulkanTextureSampler,
+             &vulkanDescriptorSetLayout, &swapChainImages,
+             &vulkanUniformBuffers](const VulkanImage &image) {
+              return VulkanDescriptorSets{graphics::descriptor(
+                  vulkanDescriptorPool.descriptorPool, vulkanDevice, image.view,
+                  vulkanTextureSampler, vulkanDescriptorSetLayout,
+                  swapChainImages, vulkanUniformBuffers,
+                  sizeof(UniformBufferObject))};
+            });
+  return VulkanDescriptors{std::move(sets), std::move(vulkanDescriptorPool)};
 }
 
 static auto textureImagePaths(const std::string &objectPath,
