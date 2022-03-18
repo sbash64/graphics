@@ -1,8 +1,8 @@
-#include <cstddef>
 #include <sbash64/graphics/load-object.hpp>
 #include <sbash64/graphics/vulkan-wrappers.hpp>
 
 #include <algorithm>
+#include <cstddef>
 #include <fstream>
 #include <set>
 #include <stdexcept>
@@ -320,9 +320,10 @@ PipelineLayout::PipelineLayout(
   VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
   pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 
-  pipelineLayoutInfo.setLayoutCount = setLayouts.size();
+  pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(setLayouts.size());
   pipelineLayoutInfo.pSetLayouts = setLayouts.data();
-  pipelineLayoutInfo.pushConstantRangeCount = pushConstantRanges.size();
+  pipelineLayoutInfo.pushConstantRangeCount =
+      static_cast<uint32_t>(pushConstantRanges.size());
   pipelineLayoutInfo.pPushConstantRanges = pushConstantRanges.data();
   throwOnError(
       [&]() {
@@ -456,9 +457,10 @@ Pipeline::Pipeline(
   vertexInputInfo.sType =
       VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
 
-  vertexInputInfo.vertexBindingDescriptionCount = bindingDescription.size();
+  vertexInputInfo.vertexBindingDescriptionCount =
+      static_cast<uint32_t>(bindingDescription.size());
   vertexInputInfo.vertexAttributeDescriptionCount =
-      attributeDescriptions.size();
+      static_cast<uint32_t>(attributeDescriptions.size());
   vertexInputInfo.pVertexBindingDescriptions = bindingDescription.data();
   vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
 
@@ -747,7 +749,7 @@ DescriptorPool::DescriptorPool(
     : device{device} {
   VkDescriptorPoolCreateInfo poolInfo{};
   poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-  poolInfo.poolSizeCount = poolSize.size();
+  poolInfo.poolSizeCount = static_cast<uint32_t>(poolSize.size());
   poolInfo.pPoolSizes = poolSize.data();
   poolInfo.maxSets = maxSets;
 

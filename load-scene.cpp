@@ -209,7 +209,7 @@ static auto materials(const tinygltf::Model &gltfModel)
   return materials;
 }
 
-auto loadScene(const tinygltf::Model &gltfModel) -> Scene {
+static auto loadScene(const tinygltf::Model &gltfModel) -> Scene {
   // Images can be stored inside the glTF (which is the case for the sample
   // model), so instead of directly loading them from disk, we fetch them
   // from the glTF loader and upload the buffers
