@@ -256,13 +256,10 @@ static void updateUniformBuffer(const vulkan_wrappers::Device &device,
                                 const vulkan_wrappers::DeviceMemory &memory,
                                 glm::mat4 view, glm::mat4 perspective,
                                 glm::vec3 translation, float scale = 1,
-                                float rotationAngleDegrees = 0,
                                 float rotationXAngleDegrees = 0) {
   UniformBufferObject ubo{};
   perspective[1][1] *= -1;
   ubo.mvp = perspective * view * glm::translate(glm::mat4{1.F}, translation) *
-            glm::rotate(glm::mat4{1.F}, glm::radians(rotationAngleDegrees),
-                        glm::vec3{0.F, 1.F, 0.F}) *
             glm::rotate(glm::mat4{1.F}, glm::radians(rotationXAngleDegrees),
                         glm::vec3{1.F, 0.F, 0.F}) *
             glm::scale(glm::vec3{scale, scale, scale});
@@ -333,53 +330,50 @@ static auto drawables(VkDevice device, VkPhysicalDevice physicalDevice,
   return drawables;
 }
 
-static auto descriptors(
-    VkDescriptorPool descriptorPool,
-    const vulkan_wrappers::Device &vulkanDevice,
-    const vulkan_wrappers::Sampler &vulkanTextureSampler,
-    const vulkan_wrappers::DescriptorSetLayout &vulkanDescriptorSetLayout,
-    const std::vector<VulkanImage> &playerTextureImages)
-    -> std::vector<VkDescriptorSet> {
+static auto combinedImageSamplerDescriptorSets(
+    VkDescriptorPool descriptorPool, const vulkan_wrappers::Device &device,
+    const vulkan_wrappers::Sampler &sampler,
+    const vulkan_wrappers::DescriptorSetLayout &descriptorSetLayout,
+    const std::vector<VulkanImage> &images) -> std::vector<VkDescriptorSet> {
   std::vector<VkDescriptorSet> sets;
-  transform(playerTextureImages.begin(), playerTextureImages.end(),
-            back_inserter(sets),
-            [descriptorPool, &vulkanDevice, &vulkanTextureSampler,
-             &vulkanDescriptorSetLayout](const VulkanImage &image) {
+  transform(images.begin(), images.end(), back_inserter(sets),
+            [descriptorPool, &device, &sampler,
+             &descriptorSetLayout](const VulkanImage &image) {
               VkDescriptorSet descriptorSet = nullptr;
 
               VkDescriptorSetAllocateInfo allocInfo{};
               allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
               allocInfo.descriptorPool = descriptorPool;
               allocInfo.descriptorSetCount = 1;
-              allocInfo.pSetLayouts =
-                  &vulkanDescriptorSetLayout.descriptorSetLayout;
+              allocInfo.pSetLayouts = &descriptorSetLayout.descriptorSetLayout;
 
               throwOnError(
                   [&]() {
-                    // no deallocate needed here per tutorial
-                    return vkAllocateDescriptorSets(vulkanDevice.device,
-                                                    &allocInfo, &descriptorSet);
+                    // deallocated by pool
+                    return vkAllocateDescriptorSets(device.device, &allocInfo,
+                                                    &descriptorSet);
                   },
                   "failed to allocate descriptor sets!");
 
               VkDescriptorImageInfo imageInfo{};
               imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
               imageInfo.imageView = image.view.view;
-              imageInfo.sampler = vulkanTextureSampler.sampler;
+              imageInfo.sampler = sampler.sampler;
 
-              VkWriteDescriptorSet descriptorWrite{};
+              std::array<VkWriteDescriptorSet, 1> descriptorWrite{};
 
-              descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-              descriptorWrite.dstSet = descriptorSet;
-              descriptorWrite.dstBinding = 0;
-              descriptorWrite.dstArrayElement = 0;
-              descriptorWrite.descriptorType =
+              descriptorWrite.at(0).sType =
+                  VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+              descriptorWrite.at(0).dstSet = descriptorSet;
+              descriptorWrite.at(0).dstBinding = 0;
+              descriptorWrite.at(0).dstArrayElement = 0;
+              descriptorWrite.at(0).descriptorType =
                   VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-              descriptorWrite.descriptorCount = 1;
-              descriptorWrite.pImageInfo = &imageInfo;
+              descriptorWrite.at(0).descriptorCount = 1;
+              descriptorWrite.at(0).pImageInfo = &imageInfo;
 
-              vkUpdateDescriptorSets(vulkanDevice.device, 1, &descriptorWrite,
-                                     0, nullptr);
+              vkUpdateDescriptorSets(device.device, descriptorWrite.size(),
+                                     descriptorWrite.data(), 0, nullptr);
               return descriptorSet;
             });
   return sets;
@@ -494,12 +488,10 @@ static void updateJoints(
     updateJoints(child.get(), device, jointBuffersWithMemory, scene);
 }
 
-static auto
-vulkanImage(const void *buffer, VkDeviceSize bufferSize, VkFormat format,
-            uint32_t width, uint32_t height, VkDevice device,
-            VkPhysicalDevice physicalDevice, VkCommandPool commandPool,
-            VkQueue copyQueue,
-            VkImageUsageFlags imageUsageFlags = VK_IMAGE_USAGE_SAMPLED_BIT)
+static auto vulkanImage(const void *buffer, VkDeviceSize bufferSize,
+                        VkFormat format, uint32_t width, uint32_t height,
+                        VkDevice device, VkPhysicalDevice physicalDevice,
+                        VkCommandPool commandPool, VkQueue copyQueue)
     -> VulkanImage {
   const vulkan_wrappers::Buffer stagingBuffer{
       device, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, bufferSize};
@@ -511,16 +503,19 @@ vulkanImage(const void *buffer, VkDeviceSize bufferSize, VkFormat format,
 
   copy(device, stagingMemory.memory, buffer, bufferSize);
 
-  const uint32_t mipLevels = 1;
-  vulkan_wrappers::Image image{device,
-                               width,
-                               height,
-                               format,
-                               VK_IMAGE_TILING_OPTIMAL,
-                               imageUsageFlags |
-                                   VK_IMAGE_USAGE_TRANSFER_DST_BIT,
-                               mipLevels,
-                               VK_SAMPLE_COUNT_1_BIT};
+  const auto mipLevels{
+      static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) +
+      1};
+  vulkan_wrappers::Image image{
+      device,
+      width,
+      height,
+      format,
+      VK_IMAGE_TILING_OPTIMAL,
+      static_cast<uint32_t>(VK_IMAGE_USAGE_TRANSFER_SRC_BIT) |
+          VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+      mipLevels,
+      VK_SAMPLE_COUNT_1_BIT};
 
   auto deviceMemory{imageMemory(device, physicalDevice, image.image,
                                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
@@ -982,7 +977,7 @@ static void run(const std::string &stationaryVertexShaderCodePath,
           stationaryUniformBufferDescriptorSetLayout.descriptorSetLayout,
           vulkanDevice.device, worldUniformBufferWithMemory.buffer.buffer)};
 
-  const auto worldTextureImageDescriptors{descriptors(
+  const auto worldTextureImageDescriptors{combinedImageSamplerDescriptorSets(
       worldDescriptorPool.descriptorPool, vulkanDevice, vulkanTextureSampler,
       stationaryCombinedImageSamplerDescriptorSetLayout, worldTextureImages)};
 
@@ -1304,7 +1299,7 @@ static void run(const std::string &stationaryVertexShaderCodePath,
     updateUniformBuffer(vulkanDevice, worldUniformBufferWithMemory.memory, view,
                         projection, worldOrigin, 0.1);
     updateUniformBuffer(vulkanDevice, animatingUniformBufferWithMemory.memory,
-                        view, projection, playerPosition, 2000.F, 0.F, -90.F);
+                        view, projection, playerPosition, 2000.F, -90.F);
 
     if (imagesInFlight[imageIndex] != VK_NULL_HANDLE)
       vkWaitForFences(vulkanDevice.device, 1, &imagesInFlight[imageIndex],
