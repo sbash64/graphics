@@ -866,7 +866,6 @@ static void run(const std::string &stationaryVertexShaderCodePath,
                 const std::string &stationaryFragmentShaderCodePath,
                 const std::string &animatingVertexShaderCodePath,
                 const std::string &animatingFragmentShaderCodePath,
-                const std::string &playerObjectPath,
                 const std::string &worldObjectPath,
                 const std::string &animatingScenePath) {
   const glfw_wrappers::Init glfwInitialization;
@@ -1338,12 +1337,11 @@ static void run(const std::string &stationaryVertexShaderCodePath,
 int main(int argc, char *argv[]) {
   const std::span<char *> arguments{
       argv, static_cast<std::span<char *>::size_type>(argc)};
-  if (arguments.size() < 8)
+  if (arguments.size() < 7)
     return EXIT_FAILURE;
   try {
     sbash64::graphics::run(arguments[1], arguments[2], arguments[3],
-                           arguments[4], arguments[5], arguments[6],
-                           arguments[7]);
+                           arguments[4], arguments[5], arguments[6]);
   } catch (const std::exception &e) {
     std::cerr << e.what() << '\n';
     return EXIT_FAILURE;
