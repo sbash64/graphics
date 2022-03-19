@@ -256,12 +256,15 @@ static void updateUniformBuffer(const vulkan_wrappers::Device &device,
                                 const vulkan_wrappers::DeviceMemory &memory,
                                 glm::mat4 view, glm::mat4 perspective,
                                 glm::vec3 translation, float scale = 1,
-                                float rotationAngleDegrees = 0) {
+                                float rotationAngleDegrees = 0,
+                                float rotationXAngleDegrees = 0) {
   UniformBufferObject ubo{};
   perspective[1][1] *= -1;
   ubo.mvp = perspective * view * glm::translate(glm::mat4{1.F}, translation) *
             glm::rotate(glm::mat4{1.F}, glm::radians(rotationAngleDegrees),
                         glm::vec3{0.F, 1.F, 0.F}) *
+            glm::rotate(glm::mat4{1.F}, glm::radians(rotationXAngleDegrees),
+                        glm::vec3{1.F, 0.F, 0.F}) *
             glm::scale(glm::vec3{scale, scale, scale});
   copy(device.device, memory.memory, &ubo, sizeof(ubo));
 }
@@ -415,7 +418,7 @@ drawNode(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout,
     // Pass the node's matrix via push constants
     // Traverse the node hierarchy to the top-most parent to get the final
     // matrix of the current node
-    auto nodeMatrix = node.matrix * glm::scale(glm::vec3{500.f, 500.f, 500.f});
+    auto nodeMatrix = node.matrix;
     const auto *currentParent = node.parent;
     while (currentParent != nullptr) {
       nodeMatrix = currentParent->matrix * nodeMatrix;
@@ -588,11 +591,6 @@ static void updateAnimation(
   for (const auto &node : scene.nodes)
     updateJoints(node.get(), device, jointBuffersWithMemory, scene);
 }
-
-struct AnimatingUniformBufferObject {
-  alignas(16) glm::mat4 projection;
-  alignas(16) glm::mat4 view;
-};
 
 static auto
 animatingPipeline(VkDevice device, VkPhysicalDevice physicalDevice,
@@ -1152,9 +1150,8 @@ static void run(const std::string &stationaryVertexShaderCodePath,
       scene.vertexIndices.data(),
       scene.vertexIndices.size() * sizeof(uint32_t))};
 
-  const auto animatingUniformBufferWithMemory{
-      uniformBufferWithMemory(vulkanDevice.device, vulkanPhysicalDevice,
-                              sizeof(AnimatingUniformBufferObject))};
+  const auto animatingUniformBufferWithMemory{uniformBufferWithMemory(
+      vulkanDevice.device, vulkanPhysicalDevice, sizeof(UniformBufferObject))};
   auto *const animatingUniformBufferDescriptorSet{
       graphics::animatingUniformBufferDescriptorSet(
           vulkanDevice.device, animatingUniformBufferWithMemory,
@@ -1335,29 +1332,25 @@ static void run(const std::string &stationaryVertexShaderCodePath,
         glm::perspective(glm::radians(45.F),
                          static_cast<float>(swapChainExtent.width) /
                              static_cast<float>(swapChainExtent.height),
-                         100.F, 10000.F);
-    const glm::vec3 playerPosition{playerDisplacement.x * 3.F,
-                                   playerDisplacement.y * 3.F,
-                                   playerDisplacement.z * 3.F};
+                         10.F, 1000.F);
+    const glm::vec3 playerPosition{playerDisplacement.x * .3F,
+                                   playerDisplacement.y * .3F,
+                                   playerDisplacement.z * .3F};
     const auto view = glm::lookAt(
         playerPosition +
-            600.F * glm::normalize(glm::vec3{
-                        std::cos(glm::radians(glfwCallback.camera.yaw)) *
-                            std::cos(glm::radians(glfwCallback.camera.pitch)),
-                        std::sin(glm::radians(glfwCallback.camera.pitch)),
-                        std::sin(glm::radians(glfwCallback.camera.yaw)) *
-                            std::cos(glm::radians(glfwCallback.camera.pitch))}),
+            60.F * glm::normalize(glm::vec3{
+                       std::cos(glm::radians(glfwCallback.camera.yaw)) *
+                           std::cos(glm::radians(glfwCallback.camera.pitch)),
+                       std::sin(glm::radians(glfwCallback.camera.pitch)),
+                       std::sin(glm::radians(glfwCallback.camera.yaw)) *
+                           std::cos(glm::radians(glfwCallback.camera.pitch))}),
         playerPosition, glm::vec3(0, 1, 0));
     updateUniformBuffer(vulkanDevice, playerUniformBufferWithMemory.memory,
-                        view, projection, playerPosition, 20, -90.F);
+                        view, projection, playerPosition, 2, -90.F);
     updateUniformBuffer(vulkanDevice, worldUniformBufferWithMemory.memory, view,
-                        projection, worldOrigin);
-    AnimatingUniformBufferObject animatingUBO{};
-    animatingUBO.projection = projection;
-    animatingUBO.projection[1][1] *= -1;
-    animatingUBO.view = view;
-    copy(vulkanDevice.device, animatingUniformBufferWithMemory.memory.memory,
-         &animatingUBO, sizeof(animatingUBO));
+                        projection, worldOrigin, 0.1);
+    updateUniformBuffer(vulkanDevice, animatingUniformBufferWithMemory.memory,
+                        view, projection, worldOrigin, 5000.F, 0.F, -90.F);
 
     if (imagesInFlight[imageIndex] != VK_NULL_HANDLE)
       vkWaitForFences(vulkanDevice.device, 1, &imagesInFlight[imageIndex],
