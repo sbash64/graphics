@@ -1291,15 +1291,16 @@ static void run(const std::string &stationaryVertexShaderCodePath,
     const glm::vec3 playerPosition{playerDisplacement.x * .3F,
                                    playerDisplacement.y * .3F,
                                    playerDisplacement.z * .3F};
+    const auto playerCameraFocus{playerPosition + glm::vec3{0, 15.F, 0}};
     const auto view = glm::lookAt(
-        playerPosition +
-            100.F * glm::normalize(glm::vec3{
-                        std::cos(glm::radians(glfwCallback.camera.yaw)) *
-                            std::cos(glm::radians(glfwCallback.camera.pitch)),
-                        std::sin(glm::radians(glfwCallback.camera.pitch)),
-                        std::sin(glm::radians(glfwCallback.camera.yaw)) *
-                            std::cos(glm::radians(glfwCallback.camera.pitch))}),
-        playerPosition, glm::vec3(0, 1, 0));
+        playerCameraFocus +
+            60.F * glm::normalize(glm::vec3{
+                       std::cos(glm::radians(glfwCallback.camera.yaw)) *
+                           std::cos(glm::radians(glfwCallback.camera.pitch)),
+                       std::sin(glm::radians(glfwCallback.camera.pitch)),
+                       std::sin(glm::radians(glfwCallback.camera.yaw)) *
+                           std::cos(glm::radians(glfwCallback.camera.pitch))}),
+        playerCameraFocus, glm::vec3(0, 1, 0));
     updateUniformBuffer(vulkanDevice, worldUniformBufferWithMemory.memory, view,
                         projection, worldOrigin, 0.1);
     updateUniformBuffer(vulkanDevice, animatingUniformBufferWithMemory.memory,
