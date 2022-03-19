@@ -270,6 +270,9 @@ static auto textureImage(VkDevice device, VkPhysicalDevice physicalDevice,
                           VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
   const auto imageSize{
       static_cast<VkDeviceSize>(stbiImage.width * stbiImage.height * 4)};
+  transitionImageLayout(device, commandPool, graphicsQueue, image.image,
+                        VK_IMAGE_LAYOUT_UNDEFINED,
+                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, mipLevels);
   const vulkan_wrappers::Buffer stagingBuffer{
       device, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, imageSize};
   const auto stagingMemory{
@@ -277,9 +280,6 @@ static auto textureImage(VkDevice device, VkPhysicalDevice physicalDevice,
                    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                        VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
   copy(device, stagingMemory.memory, stbiImage.pixels, imageSize);
-  transitionImageLayout(device, commandPool, graphicsQueue, image.image,
-                        VK_IMAGE_LAYOUT_UNDEFINED,
-                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, mipLevels);
   copyBufferToImage(device, commandPool, graphicsQueue, stagingBuffer.buffer,
                     image.image, static_cast<uint32_t>(stbiImage.width),
                     static_cast<uint32_t>(stbiImage.height));
@@ -296,15 +296,6 @@ static auto vulkanImage(const void *buffer, VkDeviceSize bufferSize,
                         VkDevice device, VkPhysicalDevice physicalDevice,
                         VkCommandPool commandPool, VkQueue copyQueue)
     -> VulkanImage {
-  const vulkan_wrappers::Buffer stagingBuffer{
-      device, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, bufferSize};
-
-  const auto stagingMemory{
-      bufferMemory(device, physicalDevice, stagingBuffer.buffer,
-                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                       VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
-
-  copy(device, stagingMemory.memory, buffer, bufferSize);
 
   const auto mipLevels{
       static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) +
@@ -326,11 +317,17 @@ static auto vulkanImage(const void *buffer, VkDeviceSize bufferSize,
   transitionImageLayout(device, commandPool, copyQueue, image.image,
                         VK_IMAGE_LAYOUT_UNDEFINED,
                         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, mipLevels);
+  const vulkan_wrappers::Buffer stagingBuffer{
+      device, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, bufferSize};
+  const auto stagingMemory{
+      bufferMemory(device, physicalDevice, stagingBuffer.buffer,
+                   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                       VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
+  copy(device, stagingMemory.memory, buffer, bufferSize);
   copyBufferToImage(device, commandPool, copyQueue, stagingBuffer.buffer,
                     image.image, width, height);
   generateMipmaps(device, physicalDevice, commandPool, copyQueue, image.image,
                   VK_FORMAT_R8G8B8A8_SRGB, width, height, mipLevels);
-
   vulkan_wrappers::ImageView imageView{device, image.image, format,
                                        VK_IMAGE_ASPECT_COLOR_BIT, mipLevels};
   return VulkanImage{std::move(image), std::move(imageView),
