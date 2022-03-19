@@ -920,8 +920,6 @@ static void run(const std::string &stationaryVertexShaderCodePath,
                                                    imageView.view},
                                                   glfwWindow.window};
             });
-  const auto playerUniformBufferWithMemory{uniformBufferWithMemory(
-      vulkanDevice.device, vulkanPhysicalDevice, sizeof(UniformBufferObject))};
   const auto worldUniformBufferWithMemory{uniformBufferWithMemory(
       vulkanDevice.device, vulkanPhysicalDevice, sizeof(UniformBufferObject))};
   const vulkan_wrappers::Sampler vulkanTextureSampler{vulkanDevice.device,
@@ -962,32 +960,6 @@ static void run(const std::string &stationaryVertexShaderCodePath,
       stationaryCombinedImageSamplerDescriptorSetLayout{
           vulkanDevice.device,
           {stationaryCombinedImageSamplerDescriptorSetLayoutBinding}};
-
-  const auto playerObjects{readTexturedObjects(playerObjectPath)};
-  const auto playerTextureImages{textureImages(
-      vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
-      graphicsQueue, textureImagePaths(playerObjectPath, playerObjects))};
-
-  std::vector<VkDescriptorPoolSize> playerDescriptorPoolSizes(2);
-  playerDescriptorPoolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  playerDescriptorPoolSizes[0].descriptorCount = 1;
-  playerDescriptorPoolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-  playerDescriptorPoolSizes[1].descriptorCount =
-      static_cast<uint32_t>(playerTextureImages.size());
-
-  vulkan_wrappers::DescriptorPool playerDescriptorPool{
-      vulkanDevice.device, playerDescriptorPoolSizes,
-      static_cast<uint32_t>(1 + playerTextureImages.size())};
-
-  auto *const playerUniformBufferDescriptorSet{
-      stationaryUniformBufferDescriptorSet(
-          playerDescriptorPool.descriptorPool,
-          stationaryUniformBufferDescriptorSetLayout.descriptorSetLayout,
-          vulkanDevice.device, playerUniformBufferWithMemory.buffer.buffer)};
-
-  const auto playerTextureImageDescriptors{descriptors(
-      playerDescriptorPool.descriptorPool, vulkanDevice, vulkanTextureSampler,
-      stationaryCombinedImageSamplerDescriptorSetLayout, playerTextureImages)};
 
   const auto worldObjects{readTexturedObjects(worldObjectPath)};
   const auto worldTextureImages{textureImages(
@@ -1050,10 +1022,6 @@ static void run(const std::string &stationaryVertexShaderCodePath,
       glfwWindow.window,
       attributeDescriptions,
       bindingDescription};
-
-  const auto playerDrawables{
-      drawables(vulkanDevice.device, vulkanPhysicalDevice,
-                vulkanCommandPool.commandPool, graphicsQueue, playerObjects)};
 
   const auto worldDrawables{drawables(vulkanDevice.device, vulkanPhysicalDevice,
                                       vulkanCommandPool.commandPool,
@@ -1118,11 +1086,9 @@ static void run(const std::string &stationaryVertexShaderCodePath,
       vulkanDevice.device, animatingDescriptorPool,
       jointMatricesDescriptorSetLayout, jointMatricesVulkanBuffersWithMemory)};
 
-  const vulkan_wrappers::Sampler animatingTextureSampler{
-      vulkanDevice.device, vulkanPhysicalDevice, 1};
   const auto animatingTextureDescriptorSets{
       graphics::animatingTextureDescriptorSets(
-          vulkanDevice.device, animatingDescriptorPool, animatingTextureSampler,
+          vulkanDevice.device, animatingDescriptorPool, vulkanTextureSampler,
           animatingCombinedImageSamplerDescriptorSetLayout,
           animatingTextureVulkanImages)};
 
@@ -1177,16 +1143,6 @@ static void run(const std::string &stationaryVertexShaderCodePath,
                     vulkanRenderPass.renderPass);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                       stationaryVulkanPipeline.pipeline);
-    {
-      std::array<VkDescriptorSet, 1> descriptorSets{
-          playerUniformBufferDescriptorSet};
-      vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                              vulkanPipelineLayout.pipelineLayout, 0,
-                              descriptorSets.size(), descriptorSets.data(), 0,
-                              nullptr);
-    }
-    draw(playerObjects, playerDrawables, vulkanPipelineLayout,
-         playerTextureImageDescriptors, commandBuffer);
     {
       std::array<VkDescriptorSet, 1> descriptorSets{
           worldUniformBufferDescriptorSet};
@@ -1338,19 +1294,17 @@ static void run(const std::string &stationaryVertexShaderCodePath,
                                    playerDisplacement.z * .3F};
     const auto view = glm::lookAt(
         playerPosition +
-            60.F * glm::normalize(glm::vec3{
-                       std::cos(glm::radians(glfwCallback.camera.yaw)) *
-                           std::cos(glm::radians(glfwCallback.camera.pitch)),
-                       std::sin(glm::radians(glfwCallback.camera.pitch)),
-                       std::sin(glm::radians(glfwCallback.camera.yaw)) *
-                           std::cos(glm::radians(glfwCallback.camera.pitch))}),
+            100.F * glm::normalize(glm::vec3{
+                        std::cos(glm::radians(glfwCallback.camera.yaw)) *
+                            std::cos(glm::radians(glfwCallback.camera.pitch)),
+                        std::sin(glm::radians(glfwCallback.camera.pitch)),
+                        std::sin(glm::radians(glfwCallback.camera.yaw)) *
+                            std::cos(glm::radians(glfwCallback.camera.pitch))}),
         playerPosition, glm::vec3(0, 1, 0));
-    updateUniformBuffer(vulkanDevice, playerUniformBufferWithMemory.memory,
-                        view, projection, playerPosition, 2, -90.F);
     updateUniformBuffer(vulkanDevice, worldUniformBufferWithMemory.memory, view,
                         projection, worldOrigin, 0.1);
     updateUniformBuffer(vulkanDevice, animatingUniformBufferWithMemory.memory,
-                        view, projection, worldOrigin, 5000.F, 0.F, -90.F);
+                        view, projection, playerPosition, 2000.F, 0.F, -90.F);
 
     if (imagesInFlight[imageIndex] != VK_NULL_HANDLE)
       vkWaitForFences(vulkanDevice.device, 1, &imagesInFlight[imageIndex],
