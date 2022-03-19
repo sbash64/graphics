@@ -239,7 +239,8 @@ static void draw(const std::vector<Object> &objects,
 
 static auto textureImage(VkDevice device, VkPhysicalDevice physicalDevice,
                          VkCommandPool commandPool, VkQueue graphicsQueue,
-                         const std::string &path) -> VulkanImage {
+                         VkFormat format, const std::string &path)
+    -> VulkanImage {
   const stbi_wrappers::Image stbiImage{path};
   const auto mipLevels{static_cast<uint32_t>(std::floor(std::log2(
                            std::max(stbiImage.width, stbiImage.height)))) +
@@ -248,7 +249,7 @@ static auto textureImage(VkDevice device, VkPhysicalDevice physicalDevice,
       device,
       static_cast<uint32_t>(stbiImage.width),
       static_cast<uint32_t>(stbiImage.height),
-      VK_FORMAT_R8G8B8A8_SRGB,
+      format,
       VK_IMAGE_TILING_OPTIMAL,
       static_cast<uint32_t>(VK_IMAGE_USAGE_TRANSFER_SRC_BIT) |
           VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
@@ -272,9 +273,9 @@ static auto textureImage(VkDevice device, VkPhysicalDevice physicalDevice,
                     image.image, static_cast<uint32_t>(stbiImage.width),
                     static_cast<uint32_t>(stbiImage.height));
   generateMipmaps(device, physicalDevice, commandPool, graphicsQueue,
-                  image.image, VK_FORMAT_R8G8B8A8_SRGB, stbiImage.width,
-                  stbiImage.height, mipLevels);
-  vulkan_wrappers::ImageView view{device, image.image, VK_FORMAT_R8G8B8A8_SRGB,
+                  image.image, format, stbiImage.width, stbiImage.height,
+                  mipLevels);
+  vulkan_wrappers::ImageView view{device, image.image, format,
                                   VK_IMAGE_ASPECT_COLOR_BIT, mipLevels};
   return VulkanImage{std::move(image), std::move(view), std::move(memory)};
 }
@@ -331,7 +332,7 @@ static auto textureImages(VkDevice device, VkPhysicalDevice physicalDevice,
             [device, physicalDevice, commandPool,
              graphicsQueue](const std::string &path) {
               return textureImage(device, physicalDevice, commandPool,
-                                  graphicsQueue, path);
+                                  graphicsQueue, VK_FORMAT_R8G8B8A8_SRGB, path);
             });
   return textureImages;
 }
