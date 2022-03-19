@@ -120,7 +120,7 @@ static void updateCameraAndMouse(GlfwCallback *callback, float x, float y) {
   const auto dy{callback->mouse.position.y - y};
   const auto dx{callback->mouse.position.x - x};
   if (callback->mouse.leftPressed) {
-    const auto sensitivity = 0.5F;
+    const auto sensitivity{0.5F};
     callback->camera.yaw += dx * sensitivity;
     callback->camera.pitch =
         std::clamp(callback->camera.pitch + dy * sensitivity, 1.F, 179.F);
@@ -337,7 +337,7 @@ static auto combinedImageSamplerDescriptorSets(
   transform(images.begin(), images.end(), back_inserter(sets),
             [descriptorPool, &device, &sampler,
              &descriptorSetLayout](const VulkanImage &image) {
-              VkDescriptorSet descriptorSet = nullptr;
+              VkDescriptorSet descriptorSet{nullptr};
 
               VkDescriptorSetAllocateInfo allocInfo{};
               allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -417,33 +417,35 @@ drawNode(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout,
   if (!node.mesh.primitives.empty()) {
     // Traverse the node hierarchy to the top-most parent to get the final
     // matrix of the current node
-    auto nodeMatrix = node.matrix;
+    auto nodeMatrix{node.matrix};
     const auto *currentParent = node.parent;
     while (currentParent != nullptr) {
       nodeMatrix = currentParent->matrix * nodeMatrix;
       currentParent = currentParent->parent;
     }
     vkCmdPushConstants(commandBuffer, pipelineLayout,
-                       VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4),
+                       VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(nodeMatrix),
                        &nodeMatrix);
-    std::array<VkDescriptorSet, 1> skinDescriptorSets{
-        jointMatricesDescriptorSets.at(node.skin)};
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            pipelineLayout, 1, skinDescriptorSets.size(),
-                            skinDescriptorSets.data(), 0, nullptr);
-    for (const auto &primitive : node.mesh.primitives) {
+    {
+      std::array<VkDescriptorSet, 1> descriptorSets{
+          jointMatricesDescriptorSets.at(node.skin)};
+      const auto set{1U};
+      vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                              pipelineLayout, set, descriptorSets.size(),
+                              descriptorSets.data(), 0, nullptr);
+    }
+    for (const auto &primitive : node.mesh.primitives)
       if (primitive.indexCount > 0) {
-        std::array<VkDescriptorSet, 1> imageDescriptorSets{
-            textureDescriptorSets.at(scene.textureIndices.at(
-                scene.materials.at(primitive.materialIndex)
-                    .baseColorTextureIndex))};
+        std::array<VkDescriptorSet, 1> descriptorSets{textureDescriptorSets.at(
+            scene.textureIndices.at(scene.materials.at(primitive.materialIndex)
+                                        .baseColorTextureIndex))};
+        const auto set{2U};
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                pipelineLayout, 2, imageDescriptorSets.size(),
-                                imageDescriptorSets.data(), 0, nullptr);
+                                pipelineLayout, set, descriptorSets.size(),
+                                descriptorSets.data(), 0, nullptr);
         vkCmdDrawIndexed(commandBuffer, primitive.indexCount, 1,
                          primitive.firstIndex, 0, 0);
       }
-    }
   }
   for (const auto &child : node.children)
     drawNode(commandBuffer, pipelineLayout, textureDescriptorSets,
@@ -457,7 +459,7 @@ static auto getLocalMatrix(const Node &node) -> glm::mat4 {
 }
 
 static auto getNodeMatrix(Node *node) -> glm::mat4 {
-  auto nodeMatrix = getLocalMatrix(*node);
+  auto nodeMatrix{getLocalMatrix(*node)};
   auto *currentParent = node->parent;
   while (currentParent != nullptr) {
     nodeMatrix = getLocalMatrix(*currentParent) * nodeMatrix;
@@ -471,19 +473,19 @@ static void updateJoints(
     const std::map<int, VulkanBufferWithMemory> &jointBuffersWithMemory,
     const Scene &scene) {
   if (node->skin > -1) {
-    glm::mat4 inverseTransform = glm::inverse(getNodeMatrix(node));
+    auto inverseTransform{glm::inverse(getNodeMatrix(node))};
     const auto joints{scene.skins.at(node->skin).joints};
-    size_t numJoints = joints.size();
+    auto numJoints{joints.size()};
     const auto inverseBindMatrices{
         scene.skins.at(node->skin).inverseBindMatrices};
     std::vector<glm::mat4> jointMatrices(numJoints);
-    for (size_t i = 0; i < numJoints; i++) {
+    for (auto i{0}; i < numJoints; i++) {
       jointMatrices[i] = getNodeMatrix(joints[i]) * inverseBindMatrices[i];
       jointMatrices[i] = inverseTransform * jointMatrices[i];
     }
-    // Update ssbo
     copy(device, jointBuffersWithMemory.at(node->skin).memory.memory,
-         jointMatrices.data(), jointMatrices.size() * sizeof(glm::mat4));
+         jointMatrices.data(),
+         jointMatrices.size() * sizeof(decltype(jointMatrices)::value_type));
   }
   for (const auto &child : node->children)
     updateJoints(child.get(), device, jointBuffersWithMemory, scene);
@@ -501,7 +503,7 @@ static void updateAnimation(
 
   for (const auto &channel : animation.channels) {
     const auto &sampler = animation.samplers[channel.samplerIndex];
-    for (size_t i = 0; i < sampler.inputs.size() - 1; i++) {
+    for (auto i{0}; i < sampler.inputs.size() - 1; i++) {
       if (sampler.interpolation != "LINEAR") {
         std::cout << "This sample only supports linear interpolations\n";
         continue;
@@ -598,7 +600,7 @@ static auto animatingUniformBufferDescriptorSet(
   descriptorSetAllocateInfo.pSetLayouts = &setLayout.descriptorSetLayout;
   descriptorSetAllocateInfo.descriptorSetCount = 1;
 
-  VkDescriptorSet descriptorSet = nullptr;
+  VkDescriptorSet descriptorSet{nullptr};
   vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo, &descriptorSet);
 
   VkWriteDescriptorSet writeDescriptorSet{};
@@ -691,7 +693,7 @@ static auto jointMatricesDescriptorSets(
         descriptorSetAllocateInfo.pSetLayouts = &setLayout.descriptorSetLayout;
         descriptorSetAllocateInfo.descriptorSetCount = 1;
 
-        VkDescriptorSet descriptorSet = nullptr;
+        VkDescriptorSet descriptorSet{nullptr};
         vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo,
                                  &descriptorSet);
 
@@ -731,7 +733,7 @@ static auto animatingTextureDescriptorSets(
             descriptorPool.descriptorPool;
         descriptorSetAllocateInfo.pSetLayouts = &setLayout.descriptorSetLayout;
         descriptorSetAllocateInfo.descriptorSetCount = 1;
-        VkDescriptorSet descriptorSet = nullptr;
+        VkDescriptorSet descriptorSet{nullptr};
         vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo,
                                  &descriptorSet);
 
@@ -758,7 +760,7 @@ static auto animatingTextureDescriptorSets(
 static auto stationaryUniformBufferDescriptorSet(
     VkDescriptorPool descriptorPool, VkDescriptorSetLayout descriptorSetLayout,
     VkDevice device, VkBuffer buffer) -> VkDescriptorSet {
-  VkDescriptorSet uniformBufferDescriptorSet = nullptr;
+  VkDescriptorSet uniformBufferDescriptorSet{nullptr};
 
   VkDescriptorSetAllocateInfo allocInfo{};
   allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -1137,7 +1139,7 @@ static void run(const std::string &stationaryVertexShaderCodePath,
   FixedPointVector3D playerVelocity{};
   RationalNumber verticalVelocity{0, 1};
   auto jumpState{JumpState::grounded};
-  auto worldOrigin = glm::vec3{0.F, 0.F, 0.F};
+  auto worldOrigin{glm::vec3{0.F, 0.F, 0.F}};
   glfwCallback.camera.yaw = -90;
   glfwCallback.camera.pitch = 15;
   FixedPointVector3D playerDisplacement{1000, 0, -500};
