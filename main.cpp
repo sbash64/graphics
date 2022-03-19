@@ -473,16 +473,13 @@ static void updateJoints(
     const std::map<int, VulkanBufferWithMemory> &jointBuffersWithMemory,
     const Scene &scene) {
   if (node->skin > -1) {
-    auto inverseTransform{glm::inverse(getNodeMatrix(node))};
+    const auto inverseTransform{glm::inverse(getNodeMatrix(node))};
     const auto joints{scene.skins.at(node->skin).joints};
-    auto numJoints{joints.size()};
-    const auto inverseBindMatrices{
-        scene.skins.at(node->skin).inverseBindMatrices};
-    std::vector<glm::mat4> jointMatrices(numJoints);
-    for (auto i{0}; i < numJoints; i++) {
-      jointMatrices[i] = getNodeMatrix(joints[i]) * inverseBindMatrices[i];
-      jointMatrices[i] = inverseTransform * jointMatrices[i];
-    }
+    std::vector<glm::mat4> jointMatrices(joints.size());
+    for (auto i{0}; i < jointMatrices.size(); i++)
+      jointMatrices.at(i) =
+          inverseTransform * getNodeMatrix(joints.at(i)) *
+          scene.skins.at(node->skin).inverseBindMatrices.at(i);
     copy(device, jointBuffersWithMemory.at(node->skin).memory.memory,
          jointMatrices.data(),
          jointMatrices.size() * sizeof(decltype(jointMatrices)::value_type));
@@ -491,54 +488,45 @@ static void updateJoints(
     updateJoints(child.get(), device, jointBuffersWithMemory, scene);
 }
 
+static auto quaternion(glm::vec4 v) -> glm::quat {
+  glm::quat quat;
+  quat.x = v.x;
+  quat.y = v.y;
+  quat.z = v.z;
+  quat.w = v.w;
+  return quat;
+}
+
 static void updateAnimation(
     float &currentTime,
     const std::map<int, VulkanBufferWithMemory> &jointBuffersWithMemory,
     const Scene &scene, VkDevice device, float deltaTime) {
   const auto animation{scene.animations.at(0)};
   currentTime += deltaTime;
-  if (currentTime > animation.end) {
+  if (currentTime > animation.end)
     currentTime -= animation.end;
-  }
 
   for (const auto &channel : animation.channels) {
     const auto &sampler = animation.samplers[channel.samplerIndex];
-    for (auto i{0}; i < sampler.inputs.size() - 1; i++) {
-      if (sampler.interpolation != "LINEAR") {
-        std::cout << "This sample only supports linear interpolations\n";
-        continue;
-      }
-
+    if (sampler.interpolation != "LINEAR")
+      continue;
+    for (auto i{0U}; i < sampler.inputs.size() - 1; i++)
       // Get the input keyframe values for the current time stamp
-      if ((currentTime >= sampler.inputs[i]) &&
-          (currentTime <= sampler.inputs[i + 1])) {
-        float a = (currentTime - sampler.inputs[i]) /
-                  (sampler.inputs[i + 1] - sampler.inputs[i]);
-        if (channel.path == "translation") {
+      if (currentTime >= sampler.inputs[i] &&
+          currentTime <= sampler.inputs[i + 1]) {
+        const auto a = (currentTime - sampler.inputs[i]) /
+                       (sampler.inputs[i + 1] - sampler.inputs[i]);
+        if (channel.path == "translation")
           channel.node->translation =
               glm::mix(sampler.outputsVec4[i], sampler.outputsVec4[i + 1], a);
-        }
-        if (channel.path == "rotation") {
-          glm::quat q1;
-          q1.x = sampler.outputsVec4[i].x;
-          q1.y = sampler.outputsVec4[i].y;
-          q1.z = sampler.outputsVec4[i].z;
-          q1.w = sampler.outputsVec4[i].w;
-
-          glm::quat q2;
-          q2.x = sampler.outputsVec4[i + 1].x;
-          q2.y = sampler.outputsVec4[i + 1].y;
-          q2.z = sampler.outputsVec4[i + 1].z;
-          q2.w = sampler.outputsVec4[i + 1].w;
-
-          channel.node->rotation = glm::normalize(glm::slerp(q1, q2, a));
-        }
-        if (channel.path == "scale") {
+        else if (channel.path == "rotation")
+          channel.node->rotation = glm::normalize(
+              glm::slerp(quaternion(sampler.outputsVec4[i]),
+                         quaternion(sampler.outputsVec4[i + 1]), a));
+        else if (channel.path == "scale")
           channel.node->scale =
               glm::mix(sampler.outputsVec4[i], sampler.outputsVec4[i + 1], a);
-        }
       }
-    }
   }
   for (const auto &node : scene.nodes)
     updateJoints(node.get(), device, jointBuffersWithMemory, scene);
