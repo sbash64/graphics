@@ -156,6 +156,10 @@ static void onMouseButton(GLFWwindow *window, int button, int action,
   }
 }
 
+static auto pressing(GLFWwindow *window, int key) -> bool {
+  return glfwGetKey(window, key) == GLFW_PRESS;
+}
+
 static void onFramebufferResize(GLFWwindow *window, int /*width*/,
                                 int /*height*/) {
   auto *const glfwCallback =
@@ -296,6 +300,20 @@ static auto textureImages(VkDevice device, VkPhysicalDevice physicalDevice,
   return textureImages;
 }
 
+static auto textureImages(VkDevice device, VkPhysicalDevice physicalDevice,
+                          VkCommandPool commandPool, VkQueue queue,
+                          const Scene &scene) -> std::vector<VulkanImage> {
+  std::vector<VulkanImage> vulkanImages;
+  transform(
+      scene.images.begin(), scene.images.end(), back_inserter(vulkanImages),
+      [device, physicalDevice, commandPool, queue](const Image &image) {
+        return textureImage(image.buffer.data(), image.buffer.size(),
+                            VK_FORMAT_R8G8B8A8_UNORM, image.width, image.height,
+                            device, physicalDevice, commandPool, queue);
+      });
+  return vulkanImages;
+}
+
 static auto drawables(VkDevice device, VkPhysicalDevice physicalDevice,
                       VkCommandPool commandPool, VkQueue graphicsQueue,
                       const std::vector<Object> &objects)
@@ -379,10 +397,6 @@ static auto readTexturedObjects(const std::string &path)
   return objects;
 }
 
-static auto pressing(GLFWwindow *window, int key) -> bool {
-  return glfwGetKey(window, key) == GLFW_PRESS;
-}
-
 static auto uniformBufferWithMemory(VkDevice device,
                                     VkPhysicalDevice physicalDevice,
                                     VkDeviceSize bufferSize)
@@ -401,7 +415,6 @@ drawNode(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout,
          const std::map<int, VkDescriptorSet> &jointMatricesDescriptorSets,
          const Node &node, const Scene &scene) {
   if (!node.mesh.primitives.empty()) {
-    // Pass the node's matrix via push constants
     // Traverse the node hierarchy to the top-most parent to get the final
     // matrix of the current node
     auto nodeMatrix = node.matrix;
@@ -410,11 +423,9 @@ drawNode(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout,
       nodeMatrix = currentParent->matrix * nodeMatrix;
       currentParent = currentParent->parent;
     }
-    // Pass the final matrix to the vertex shader using push constants
     vkCmdPushConstants(commandBuffer, pipelineLayout,
                        VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4),
                        &nodeMatrix);
-    // Bind SSBO with skin data for this node to set 1
     std::array<VkDescriptorSet, 1> skinDescriptorSets{
         jointMatricesDescriptorSets.at(node.skin)};
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -426,7 +437,6 @@ drawNode(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout,
             textureDescriptorSets.at(scene.textureIndices.at(
                 scene.materials.at(primitive.materialIndex)
                     .baseColorTextureIndex))};
-        // Bind the descriptor for the current primitive's texture to set 2
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                 pipelineLayout, 2, imageDescriptorSets.size(),
                                 imageDescriptorSets.data(), 0, nullptr);
@@ -435,10 +445,9 @@ drawNode(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout,
       }
     }
   }
-  for (const auto &child : node.children) {
+  for (const auto &child : node.children)
     drawNode(commandBuffer, pipelineLayout, textureDescriptorSets,
              jointMatricesDescriptorSets, *child, scene);
-  }
 }
 
 static auto getLocalMatrix(const Node &node) -> glm::mat4 {
@@ -628,13 +637,8 @@ animatingDescriptorPool(VkDevice device,
   storageBufferDescriptorPoolSize.descriptorCount =
       static_cast<uint32_t>(scene.skins.size());
   std::vector<VkDescriptorPoolSize> poolSizes = {
-      uniformBufferDescriptorPoolSize,
-      // One combined image sampler per material image/texture
-      imageSamplerDescriptorPoolSize,
-      // One ssbo per skin
+      uniformBufferDescriptorPoolSize, imageSamplerDescriptorPoolSize,
       storageBufferDescriptorPoolSize};
-  // Number of descriptor sets = One for the scene ubo + one per image + one per
-  // skin
   const auto maxSetCount{
       std::accumulate(poolSizes.begin(), poolSizes.end(), 0U,
                       [](uint32_t count, const VkDescriptorPoolSize &size) {
@@ -647,7 +651,7 @@ static auto inverseBindMatricesBuffersWithMemory(
     VkDevice device, VkPhysicalDevice physicalDevice, const Scene &scene)
     -> std::map<int, VulkanBufferWithMemory> {
   std::map<int, VulkanBufferWithMemory> buffersWithMemory;
-  int i{0};
+  int index{0};
   for (const auto &skin : scene.skins)
     if (!skin.inverseBindMatrices.empty()) {
       const VkDeviceSize bufferSize{sizeof(glm::mat4) *
@@ -659,27 +663,12 @@ static auto inverseBindMatricesBuffersWithMemory(
                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
       copy(device, memory.memory, skin.inverseBindMatrices.data(), bufferSize);
-      // VK_CHECK_RESULT(skins[i].ssbo.map());
       buffersWithMemory.emplace(
-          i, VulkanBufferWithMemory{std::move(jointsVulkanBuffer),
-                                    std::move(memory)});
-      ++i;
+          index, VulkanBufferWithMemory{std::move(jointsVulkanBuffer),
+                                        std::move(memory)});
+      ++index;
     }
   return buffersWithMemory;
-}
-
-static auto textureImages(VkDevice device, VkPhysicalDevice physicalDevice,
-                          VkCommandPool commandPool, VkQueue queue,
-                          const Scene &scene) -> std::vector<VulkanImage> {
-  std::vector<VulkanImage> vulkanImages;
-  transform(
-      scene.images.begin(), scene.images.end(), back_inserter(vulkanImages),
-      [device, physicalDevice, commandPool, queue](const Image &image) {
-        return textureImage(image.buffer.data(), image.buffer.size(),
-                            VK_FORMAT_R8G8B8A8_UNORM, image.width, image.height,
-                            device, physicalDevice, commandPool, queue);
-      });
-  return vulkanImages;
 }
 
 static auto jointMatricesDescriptorSets(
@@ -860,8 +849,6 @@ static void run(const std::string &stationaryVertexShaderCodePath,
                                                    imageView.view},
                                                   glfwWindow.window};
             });
-  const auto worldUniformBufferWithMemory{uniformBufferWithMemory(
-      vulkanDevice.device, vulkanPhysicalDevice, sizeof(UniformBufferObject))};
   const vulkan_wrappers::Sampler vulkanTextureSampler{vulkanDevice.device,
                                                       vulkanPhysicalDevice, 13};
   VkQueue graphicsQueue{nullptr};
@@ -916,6 +903,9 @@ static void run(const std::string &stationaryVertexShaderCodePath,
   vulkan_wrappers::DescriptorPool worldDescriptorPool{
       vulkanDevice.device, worldDescriptorPoolSizes,
       static_cast<uint32_t>(1 + worldTextureImages.size())};
+
+  const auto worldUniformBufferWithMemory{uniformBufferWithMemory(
+      vulkanDevice.device, vulkanPhysicalDevice, sizeof(UniformBufferObject))};
 
   auto *const worldUniformBufferDescriptorSet{
       stationaryUniformBufferDescriptorSet(
