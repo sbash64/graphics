@@ -237,18 +237,6 @@ static void draw(const std::vector<Object> &objects,
   }
 }
 
-static auto uniformBufferWithMemory(VkDevice device,
-                                    VkPhysicalDevice physicalDevice,
-                                    VkDeviceSize bufferSize)
-    -> VulkanBufferWithMemory {
-  vulkan_wrappers::Buffer buffer{device, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-                                 bufferSize};
-  auto memory{bufferMemory(device, physicalDevice, buffer.buffer,
-                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                               VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
-  return VulkanBufferWithMemory{std::move(buffer), std::move(memory)};
-}
-
 static auto textureImage(VkDevice device, VkPhysicalDevice physicalDevice,
                          VkCommandPool commandPool, VkQueue graphicsQueue,
                          const std::string &path) -> VulkanImage {
@@ -311,8 +299,8 @@ static auto vulkanImage(const void *buffer, VkDeviceSize bufferSize,
       mipLevels,
       VK_SAMPLE_COUNT_1_BIT};
 
-  auto deviceMemory{imageMemory(device, physicalDevice, image.image,
-                                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
+  auto memory{imageMemory(device, physicalDevice, image.image,
+                          VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)};
 
   transitionImageLayout(device, commandPool, copyQueue, image.image,
                         VK_IMAGE_LAYOUT_UNDEFINED,
@@ -327,11 +315,10 @@ static auto vulkanImage(const void *buffer, VkDeviceSize bufferSize,
   copyBufferToImage(device, commandPool, copyQueue, stagingBuffer.buffer,
                     image.image, width, height);
   generateMipmaps(device, physicalDevice, commandPool, copyQueue, image.image,
-                  VK_FORMAT_R8G8B8A8_SRGB, width, height, mipLevels);
+                  format, width, height, mipLevels);
   vulkan_wrappers::ImageView imageView{device, image.image, format,
                                        VK_IMAGE_ASPECT_COLOR_BIT, mipLevels};
-  return VulkanImage{std::move(image), std::move(imageView),
-                     std::move(deviceMemory)};
+  return VulkanImage{std::move(image), std::move(imageView), std::move(memory)};
 }
 
 static auto textureImages(VkDevice device, VkPhysicalDevice physicalDevice,
@@ -434,6 +421,18 @@ static auto readTexturedObjects(const std::string &path)
 
 static auto pressing(GLFWwindow *window, int key) -> bool {
   return glfwGetKey(window, key) == GLFW_PRESS;
+}
+
+static auto uniformBufferWithMemory(VkDevice device,
+                                    VkPhysicalDevice physicalDevice,
+                                    VkDeviceSize bufferSize)
+    -> VulkanBufferWithMemory {
+  vulkan_wrappers::Buffer buffer{device, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                 bufferSize};
+  auto memory{bufferMemory(device, physicalDevice, buffer.buffer,
+                           VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                               VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
+  return VulkanBufferWithMemory{std::move(buffer), std::move(memory)};
 }
 
 static void
