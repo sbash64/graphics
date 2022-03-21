@@ -497,41 +497,6 @@ static auto quaternion(glm::vec4 v) -> glm::quat {
   return quat;
 }
 
-static void updateAnimation(
-    float &currentTime,
-    const std::map<int, VulkanBufferWithMemory> &jointBuffersWithMemory,
-    const Scene &scene, VkDevice device, float deltaTime) {
-  const auto animation{scene.animations.at(0)};
-  currentTime += deltaTime;
-  if (currentTime > animation.end)
-    currentTime -= animation.end;
-
-  for (const auto &channel : animation.channels) {
-    const auto &sampler = animation.samplers[channel.samplerIndex];
-    if (sampler.interpolation != "LINEAR")
-      continue;
-    for (auto i{0U}; i < sampler.inputs.size() - 1; i++)
-      // Get the input keyframe values for the current time stamp
-      if (currentTime >= sampler.inputs[i] &&
-          currentTime <= sampler.inputs[i + 1]) {
-        const auto a = (currentTime - sampler.inputs[i]) /
-                       (sampler.inputs[i + 1] - sampler.inputs[i]);
-        if (channel.path == "translation")
-          channel.node->translation =
-              glm::mix(sampler.outputsVec4[i], sampler.outputsVec4[i + 1], a);
-        else if (channel.path == "rotation")
-          channel.node->rotation = glm::normalize(
-              glm::slerp(quaternion(sampler.outputsVec4[i]),
-                         quaternion(sampler.outputsVec4[i + 1]), a));
-        else if (channel.path == "scale")
-          channel.node->scale =
-              glm::mix(sampler.outputsVec4[i], sampler.outputsVec4[i + 1], a);
-      }
-  }
-  for (const auto &node : scene.nodes)
-    updateJoints(node.get(), device, jointBuffersWithMemory, scene);
-}
-
 static auto
 animatingPipeline(VkDevice device, VkPhysicalDevice physicalDevice,
                   VkSurfaceKHR surface, VkRenderPass renderPass,
@@ -1181,8 +1146,36 @@ static void run(const std::string &stationaryVertexShaderCodePath,
       }
     }
 
-    updateAnimation(animationTime, jointMatricesVulkanBuffersWithMemory, scene,
-                    vulkanDevice.device, 1.f / 60);
+    const auto animation{scene.animations.at(0)};
+    animationTime += 1.f / 60;
+    if (animationTime > animation.end)
+      animationTime -= animation.end;
+
+    for (const auto &channel : animation.channels) {
+      const auto &sampler = animation.samplers[channel.samplerIndex];
+      if (sampler.interpolation != "LINEAR")
+        continue;
+      for (auto i{0U}; i < sampler.inputs.size() - 1; i++)
+        // Get the input keyframe values for the current time stamp
+        if (animationTime >= sampler.inputs[i] &&
+            animationTime <= sampler.inputs[i + 1]) {
+          const auto a = (animationTime - sampler.inputs[i]) /
+                         (sampler.inputs[i + 1] - sampler.inputs[i]);
+          if (channel.path == "translation")
+            channel.node->translation =
+                glm::mix(sampler.outputsVec4[i], sampler.outputsVec4[i + 1], a);
+          else if (channel.path == "rotation")
+            channel.node->rotation = glm::normalize(
+                glm::slerp(quaternion(sampler.outputsVec4[i]),
+                           quaternion(sampler.outputsVec4[i + 1]), a));
+          else if (channel.path == "scale")
+            channel.node->scale =
+                glm::mix(sampler.outputsVec4[i], sampler.outputsVec4[i + 1], a);
+        }
+    }
+    for (const auto &node : scene.nodes)
+      updateJoints(node.get(), vulkanDevice.device,
+                   jointMatricesVulkanBuffersWithMemory, scene);
 
     vkWaitForFences(vulkanDevice.device, 1,
                     &vulkanInFlightFences[currentFrame].fence, VK_TRUE,
