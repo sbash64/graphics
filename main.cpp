@@ -754,7 +754,7 @@ static void run(const std::string &stationaryVertexShaderCodePath,
                 const std::string &animatingScenePath) {
   const glfw_wrappers::Init glfwInitialization;
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-  const glfw_wrappers::Window glfwWindow{1280, 960};
+  const glfw_wrappers::Window glfwWindow{1280, 720};
   GlfwCallback glfwCallback{};
   glfwSetWindowUserPointer(glfwWindow.window, &glfwCallback);
   glfwSetCursorPosCallback(glfwWindow.window, onCursorPositionChanged);
@@ -1187,6 +1187,7 @@ static void run(const std::string &stationaryVertexShaderCodePath,
                            std::cos(glm::radians(glfwCallback.camera.pitch))}),
         playerCameraFocus, glm::vec3(0, 1, 0));
 
+    // writes to uniform and storage buffers
     updateUniformBuffer(vulkanDevice, worldUniformBufferWithMemory.memory, view,
                         projection, worldOrigin, 0.1);
     updateUniformBuffer(vulkanDevice, animatingUniformBufferWithMemory.memory,
@@ -1194,6 +1195,7 @@ static void run(const std::string &stationaryVertexShaderCodePath,
     for (const auto &node : scene.nodes)
       updateJoints(node.get(), vulkanDevice.device, jointMatricesStorageBuffers,
                    scene);
+    // end writes
 
     vkWaitForFences(vulkanDevice.device, 1,
                     &inFlightVulkanFences[currentFrame].fence, VK_TRUE,
