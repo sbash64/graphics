@@ -328,55 +328,6 @@ static auto drawables(VkDevice device, VkPhysicalDevice physicalDevice,
   return drawables;
 }
 
-static auto combinedImageSamplerDescriptorSets(
-    VkDescriptorPool descriptorPool, const vulkan_wrappers::Device &device,
-    const vulkan_wrappers::Sampler &sampler,
-    const vulkan_wrappers::DescriptorSetLayout &descriptorSetLayout,
-    const std::vector<VulkanImage> &images) -> std::vector<VkDescriptorSet> {
-  std::vector<VkDescriptorSet> sets;
-  transform(images.begin(), images.end(), back_inserter(sets),
-            [descriptorPool, &device, &sampler,
-             &descriptorSetLayout](const VulkanImage &image) {
-              VkDescriptorSet descriptorSet{nullptr};
-
-              VkDescriptorSetAllocateInfo allocInfo{};
-              allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-              allocInfo.descriptorPool = descriptorPool;
-              allocInfo.descriptorSetCount = 1;
-              allocInfo.pSetLayouts = &descriptorSetLayout.descriptorSetLayout;
-
-              throwOnError(
-                  [&]() {
-                    // deallocated by pool
-                    return vkAllocateDescriptorSets(device.device, &allocInfo,
-                                                    &descriptorSet);
-                  },
-                  "failed to allocate descriptor sets!");
-
-              VkDescriptorImageInfo imageInfo{};
-              imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-              imageInfo.imageView = image.view.view;
-              imageInfo.sampler = sampler.sampler;
-
-              std::array<VkWriteDescriptorSet, 1> descriptorWrite{};
-
-              descriptorWrite.at(0).sType =
-                  VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-              descriptorWrite.at(0).dstSet = descriptorSet;
-              descriptorWrite.at(0).dstBinding = 0;
-              descriptorWrite.at(0).dstArrayElement = 0;
-              descriptorWrite.at(0).descriptorType =
-                  VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-              descriptorWrite.at(0).descriptorCount = 1;
-              descriptorWrite.at(0).pImageInfo = &imageInfo;
-
-              vkUpdateDescriptorSets(device.device, descriptorWrite.size(),
-                                     descriptorWrite.data(), 0, nullptr);
-              return descriptorSet;
-            });
-  return sets;
-}
-
 static auto textureImagePaths(const std::string &objectPath,
                               const std::vector<StationaryObject> &objects)
     -> std::vector<std::string> {
@@ -639,45 +590,53 @@ static auto jointMatricesStorageBufferDescriptorSets(
   return jointMatricesDescriptorSets;
 }
 
-static auto animatingCombinedImageSamplerDescriptorSets(
-    VkDevice device, const vulkan_wrappers::DescriptorPool &descriptorPool,
+static auto combinedImageSamplerDescriptorSets(
+    VkDescriptorPool descriptorPool, const vulkan_wrappers::Device &device,
     const vulkan_wrappers::Sampler &sampler,
-    const vulkan_wrappers::DescriptorSetLayout &setLayout,
+    const vulkan_wrappers::DescriptorSetLayout &descriptorSetLayout,
     const std::vector<VulkanImage> &images) -> std::vector<VkDescriptorSet> {
-  std::vector<VkDescriptorSet> descriptorSets;
-  transform(
-      images.begin(), images.end(), back_inserter(descriptorSets),
-      [&device, &descriptorPool, &setLayout,
-       &sampler](const VulkanImage &image) {
-        VkDescriptorSetAllocateInfo descriptorSetAllocateInfo{};
-        descriptorSetAllocateInfo.sType =
-            VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        descriptorSetAllocateInfo.descriptorPool =
-            descriptorPool.descriptorPool;
-        descriptorSetAllocateInfo.pSetLayouts = &setLayout.descriptorSetLayout;
-        descriptorSetAllocateInfo.descriptorSetCount = 1;
-        VkDescriptorSet descriptorSet{nullptr};
-        vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo,
-                                 &descriptorSet);
+  std::vector<VkDescriptorSet> sets;
+  transform(images.begin(), images.end(), back_inserter(sets),
+            [descriptorPool, &device, &sampler,
+             &descriptorSetLayout](const VulkanImage &image) {
+              VkDescriptorSet descriptorSet{nullptr};
 
-        VkWriteDescriptorSet writeDescriptorSet{};
-        writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writeDescriptorSet.dstSet = descriptorSet;
-        writeDescriptorSet.descriptorType =
-            VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        writeDescriptorSet.dstBinding = 0;
+              VkDescriptorSetAllocateInfo allocInfo{};
+              allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+              allocInfo.descriptorPool = descriptorPool;
+              allocInfo.descriptorSetCount = 1;
+              allocInfo.pSetLayouts = &descriptorSetLayout.descriptorSetLayout;
 
-        VkDescriptorImageInfo descriptor;
-        descriptor.sampler = sampler.sampler;
-        descriptor.imageView = image.view.view;
-        descriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+              throwOnError(
+                  [&]() {
+                    // deallocated by descriptorPool
+                    return vkAllocateDescriptorSets(device.device, &allocInfo,
+                                                    &descriptorSet);
+                  },
+                  "failed to allocate descriptor sets!");
 
-        writeDescriptorSet.pImageInfo = &descriptor;
-        writeDescriptorSet.descriptorCount = 1;
-        vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0, nullptr);
-        return descriptorSet;
-      });
-  return descriptorSets;
+              VkDescriptorImageInfo imageInfo{};
+              imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+              imageInfo.imageView = image.view.view;
+              imageInfo.sampler = sampler.sampler;
+
+              std::array<VkWriteDescriptorSet, 1> descriptorWrite{};
+
+              descriptorWrite.at(0).sType =
+                  VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+              descriptorWrite.at(0).dstSet = descriptorSet;
+              descriptorWrite.at(0).dstBinding = 0;
+              descriptorWrite.at(0).dstArrayElement = 0;
+              descriptorWrite.at(0).descriptorType =
+                  VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+              descriptorWrite.at(0).descriptorCount = 1;
+              descriptorWrite.at(0).pImageInfo = &imageInfo;
+
+              vkUpdateDescriptorSets(device.device, descriptorWrite.size(),
+                                     descriptorWrite.data(), 0, nullptr);
+              return descriptorSet;
+            });
+  return sets;
 }
 
 static auto uniformBufferDescriptorSet(
@@ -903,6 +862,10 @@ static void run(const std::string &stationaryVertexShaderCodePath,
   animatingUniformBufferDescriptorSetLayoutBinding.pImmutableSamplers = nullptr;
   animatingUniformBufferDescriptorSetLayoutBinding.stageFlags =
       VK_SHADER_STAGE_VERTEX_BIT;
+  const vulkan_wrappers::DescriptorSetLayout
+      animatingUniformBufferDescriptorSetLayout{
+          vulkanDevice.device,
+          {animatingUniformBufferDescriptorSetLayoutBinding}};
 
   VkDescriptorSetLayoutBinding jointMatricesDescriptorSetLayoutBinding{};
   jointMatricesDescriptorSetLayoutBinding.binding = 0;
@@ -912,6 +875,8 @@ static void run(const std::string &stationaryVertexShaderCodePath,
   jointMatricesDescriptorSetLayoutBinding.pImmutableSamplers = nullptr;
   jointMatricesDescriptorSetLayoutBinding.stageFlags =
       VK_SHADER_STAGE_VERTEX_BIT;
+  const vulkan_wrappers::DescriptorSetLayout jointMatricesDescriptorSetLayout{
+      vulkanDevice.device, {jointMatricesDescriptorSetLayoutBinding}};
 
   VkDescriptorSetLayoutBinding
       animatingCombinedImageSamplerDescriptorSetLayoutBinding{};
@@ -923,28 +888,20 @@ static void run(const std::string &stationaryVertexShaderCodePath,
       nullptr;
   animatingCombinedImageSamplerDescriptorSetLayoutBinding.stageFlags =
       VK_SHADER_STAGE_FRAGMENT_BIT;
-
-  const vulkan_wrappers::DescriptorSetLayout
-      animatingUniformBufferDescriptorSetLayout{
-          vulkanDevice.device,
-          {animatingUniformBufferDescriptorSetLayoutBinding}};
-
-  const vulkan_wrappers::DescriptorSetLayout jointMatricesDescriptorSetLayout{
-      vulkanDevice.device, {jointMatricesDescriptorSetLayoutBinding}};
-
   const vulkan_wrappers::DescriptorSetLayout
       animatingCombinedImageSamplerDescriptorSetLayout{
           vulkanDevice.device,
           {animatingCombinedImageSamplerDescriptorSetLayoutBinding}};
 
-  const auto jointMatricesDescriptorSets{
+  const auto jointMatricesStorageBufferDescriptorSets{
       graphics::jointMatricesStorageBufferDescriptorSets(
           vulkanDevice.device, animatingDescriptorPool,
           jointMatricesDescriptorSetLayout, playerJointMatricesStorageBuffers)};
 
   const auto animatingTextureDescriptorSets{
-      graphics::animatingCombinedImageSamplerDescriptorSets(
-          vulkanDevice.device, animatingDescriptorPool, vulkanTextureSampler,
+      graphics::combinedImageSamplerDescriptorSets(
+          animatingDescriptorPool.descriptorPool, vulkanDevice,
+          vulkanTextureSampler,
           animatingCombinedImageSamplerDescriptorSetLayout,
           animatingTextureVulkanImages)};
 
@@ -976,11 +933,12 @@ static void run(const std::string &stationaryVertexShaderCodePath,
 
   const auto playerModelViewProjectionUniformBuffer{uniformBufferWithMemory(
       vulkanDevice.device, vulkanPhysicalDevice, sizeof(UniformBufferObject))};
-  auto *const animatingUniformBufferDescriptorSet{uniformBufferDescriptorSet(
-      animatingDescriptorPool.descriptorPool,
-      animatingUniformBufferDescriptorSetLayout.descriptorSetLayout,
-      vulkanDevice.device,
-      playerModelViewProjectionUniformBuffer.buffer.buffer)};
+  auto *const playerModelViewProjectionUniformBufferDescriptorSet{
+      uniformBufferDescriptorSet(
+          animatingDescriptorPool.descriptorPool,
+          animatingUniformBufferDescriptorSetLayout.descriptorSetLayout,
+          vulkanDevice.device,
+          playerModelViewProjectionUniformBuffer.buffer.buffer)};
 
   const auto animatingPipeline{graphics::animatingPipeline(
       vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface,
@@ -1011,7 +969,7 @@ static void run(const std::string &stationaryVertexShaderCodePath,
                       animatingPipeline.pipeline);
     {
       std::array<VkDescriptorSet, 1> descriptorSets{
-          animatingUniformBufferDescriptorSet};
+          playerModelViewProjectionUniformBufferDescriptorSet};
       vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                               animatingPipelineLayout.pipelineLayout, 0,
                               descriptorSets.size(), descriptorSets.data(), 0,
@@ -1027,8 +985,8 @@ static void run(const std::string &stationaryVertexShaderCodePath,
                          VK_INDEX_TYPE_UINT32);
     for (const auto &node : scene.nodes)
       drawNode(commandBuffer, animatingPipelineLayout.pipelineLayout,
-               animatingTextureDescriptorSets, jointMatricesDescriptorSets,
-               *node, scene);
+               animatingTextureDescriptorSets,
+               jointMatricesStorageBufferDescriptorSets, *node, scene);
     vkCmdEndRenderPass(commandBuffer);
     throwOnError([&]() { return vkEndCommandBuffer(commandBuffer); },
                  "failed to record command buffer!");
