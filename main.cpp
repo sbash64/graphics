@@ -204,43 +204,6 @@ static auto drawable(VkDevice device, VkPhysicalDevice physicalDevice,
                        sizeof(object.indices[0]) * object.indices.size())};
 }
 
-static void updateModelViewProjectionUniformBuffer(
-    const vulkan_wrappers::Device &device,
-    const vulkan_wrappers::DeviceMemory &memory, glm::mat4 view,
-    glm::mat4 perspective, glm::vec3 translation, float scale = 1,
-    float rotationXAngleDegrees = 0) {
-  UniformBufferObject ubo{};
-  perspective[1][1] *= -1;
-  ubo.mvp = perspective * view * glm::translate(glm::mat4{1.F}, translation) *
-            glm::rotate(glm::mat4{1.F}, glm::radians(rotationXAngleDegrees),
-                        glm::vec3{1.F, 0.F, 0.F}) *
-            glm::scale(glm::vec3{scale, scale, scale});
-  copy(device.device, memory.memory, &ubo, sizeof(ubo));
-}
-
-static void draw(const std::vector<StationaryObject> &objects,
-                 const std::vector<VulkanDrawable> &drawables,
-                 const vulkan_wrappers::PipelineLayout &pipelineLayout,
-                 const std::vector<VkDescriptorSet> &descriptors,
-                 VkCommandBuffer commandBuffer) {
-  for (auto j{0U}; j < drawables.size(); ++j) {
-    std::array<VkBuffer, 1> vertexBuffers = {
-        drawables.at(j).vertexBufferWithMemory.buffer.buffer};
-    std::array<VkDeviceSize, 1> offsets = {0};
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers.data(),
-                           offsets.data());
-    vkCmdBindIndexBuffer(commandBuffer,
-                         drawables.at(j).indexBufferWithMemory.buffer.buffer, 0,
-                         VK_INDEX_TYPE_UINT32);
-    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                            pipelineLayout.pipelineLayout, 1, 1,
-                            &descriptors.at(j), 0, nullptr);
-    vkCmdDrawIndexed(commandBuffer,
-                     static_cast<uint32_t>(objects.at(j).indices.size()), 1, 0,
-                     0, 0);
-  }
-}
-
 static auto textureImage(const void *buffer, VkDeviceSize bufferSize,
                          VkFormat format, uint32_t width, uint32_t height,
                          VkDevice device, VkPhysicalDevice physicalDevice,
@@ -340,7 +303,7 @@ static auto textureImagePaths(const std::string &objectPath,
   return textureImagePaths;
 }
 
-static auto readTexturedObjects(const std::string &path)
+static auto readTexturedStationaryObjects(const std::string &path)
     -> std::vector<StationaryObject> {
   auto objects{readStationaryObjects(path)};
   erase_if(objects, [](const StationaryObject &object) {
@@ -359,6 +322,29 @@ static auto uniformBufferWithMemory(VkDevice device,
                            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                                VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
   return VulkanBufferWithMemory{std::move(buffer), std::move(memory)};
+}
+
+static void draw(const std::vector<StationaryObject> &objects,
+                 const std::vector<VulkanDrawable> &drawables,
+                 const vulkan_wrappers::PipelineLayout &pipelineLayout,
+                 const std::vector<VkDescriptorSet> &descriptors,
+                 VkCommandBuffer commandBuffer) {
+  for (auto j{0U}; j < drawables.size(); ++j) {
+    std::array<VkBuffer, 1> vertexBuffers = {
+        drawables.at(j).vertexBufferWithMemory.buffer.buffer};
+    std::array<VkDeviceSize, 1> offsets = {0};
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers.data(),
+                           offsets.data());
+    vkCmdBindIndexBuffer(commandBuffer,
+                         drawables.at(j).indexBufferWithMemory.buffer.buffer, 0,
+                         VK_INDEX_TYPE_UINT32);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            pipelineLayout.pipelineLayout, 1, 1,
+                            &descriptors.at(j), 0, nullptr);
+    vkCmdDrawIndexed(commandBuffer,
+                     static_cast<uint32_t>(objects.at(j).indices.size()), 1, 0,
+                     0, 0);
+  }
 }
 
 static void
@@ -441,6 +427,20 @@ static void updateJointMatricesStorageBuffers(
                                       jointMatricesStorageBuffers, scene);
 }
 
+static void updateModelViewProjectionUniformBuffer(
+    const vulkan_wrappers::Device &device,
+    const vulkan_wrappers::DeviceMemory &memory, glm::mat4 view,
+    glm::mat4 perspective, glm::vec3 translation, float scale = 1,
+    float rotationXAngleDegrees = 0) {
+  UniformBufferObject ubo{};
+  perspective[1][1] *= -1;
+  ubo.mvp = perspective * view * glm::translate(glm::mat4{1.F}, translation) *
+            glm::rotate(glm::mat4{1.F}, glm::radians(rotationXAngleDegrees),
+                        glm::vec3{1.F, 0.F, 0.F}) *
+            glm::scale(glm::vec3{scale, scale, scale});
+  copy(device.device, memory.memory, &ubo, sizeof(ubo));
+}
+
 static auto quaternion(glm::vec4 v) -> glm::quat {
   glm::quat quat;
   quat.x = v.x;
@@ -448,6 +448,29 @@ static auto quaternion(glm::vec4 v) -> glm::quat {
   quat.z = v.z;
   quat.w = v.w;
   return quat;
+}
+
+static auto jointMatricesStorageBuffers(VkDevice device,
+                                        VkPhysicalDevice physicalDevice,
+                                        const Scene &scene)
+    -> std::map<int, VulkanBufferWithMemory> {
+  std::map<int, VulkanBufferWithMemory> buffersWithMemory;
+  int index{0};
+  for (const auto &skin : scene.skins)
+    if (!skin.inverseBindMatrices.empty()) {
+      const VkDeviceSize bufferSize{sizeof(glm::mat4) *
+                                    skin.inverseBindMatrices.size()};
+      vulkan_wrappers::Buffer buffer{device, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                     bufferSize};
+      auto memory{bufferMemory(device, physicalDevice, buffer.buffer,
+                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                                   VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
+      copy(device, memory.memory, skin.inverseBindMatrices.data(), bufferSize);
+      buffersWithMemory.emplace(
+          index, VulkanBufferWithMemory{std::move(buffer), std::move(memory)});
+      ++index;
+    }
+  return buffersWithMemory;
 }
 
 static auto
@@ -524,29 +547,6 @@ animatingDescriptorPool(VkDevice device,
   return {device, poolSizes, maxSetCount};
 }
 
-static auto jointMatricesStorageBuffers(VkDevice device,
-                                        VkPhysicalDevice physicalDevice,
-                                        const Scene &scene)
-    -> std::map<int, VulkanBufferWithMemory> {
-  std::map<int, VulkanBufferWithMemory> buffersWithMemory;
-  int index{0};
-  for (const auto &skin : scene.skins)
-    if (!skin.inverseBindMatrices.empty()) {
-      const VkDeviceSize bufferSize{sizeof(glm::mat4) *
-                                    skin.inverseBindMatrices.size()};
-      vulkan_wrappers::Buffer buffer{device, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                                     bufferSize};
-      auto memory{bufferMemory(device, physicalDevice, buffer.buffer,
-                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-                                   VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
-      copy(device, memory.memory, skin.inverseBindMatrices.data(), bufferSize);
-      buffersWithMemory.emplace(
-          index, VulkanBufferWithMemory{std::move(buffer), std::move(memory)});
-      ++index;
-    }
-  return buffersWithMemory;
-}
-
 static auto jointMatricesStorageBufferDescriptorSets(
     VkDevice device, const vulkan_wrappers::DescriptorPool &descriptorPool,
     const vulkan_wrappers::DescriptorSetLayout &setLayout,
@@ -568,8 +568,13 @@ static auto jointMatricesStorageBufferDescriptorSets(
         descriptorSetAllocateInfo.descriptorSetCount = 1;
 
         VkDescriptorSet descriptorSet{nullptr};
-        vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo,
-                                 &descriptorSet);
+        throwOnError(
+            [&descriptorSetAllocateInfo, &descriptorSet, device]() {
+              // deallocated by descriptorPool
+              return vkAllocateDescriptorSets(
+                  device, &descriptorSetAllocateInfo, &descriptorSet);
+            },
+            "failed to allocate descriptor sets!");
 
         VkWriteDescriptorSet writeDescriptorSet{};
         writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -772,7 +777,7 @@ static void run(const std::string &stationaryVertexShaderCodePath,
           vulkanDevice.device,
           {stationaryCombinedImageSamplerDescriptorSetLayoutBinding}};
 
-  const auto worldObjects{readTexturedObjects(worldObjectPath)};
+  const auto worldObjects{readTexturedStationaryObjects(worldObjectPath)};
   const auto worldTextureImages{textureImages(
       vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
       graphicsQueue, textureImagePaths(worldObjectPath, worldObjects))};
@@ -841,17 +846,17 @@ static void run(const std::string &stationaryVertexShaderCodePath,
                                       vulkanCommandPool.commandPool,
                                       graphicsQueue, worldObjects)};
 
-  const auto scene{readScene(animatingScenePath)};
-  const auto animatingTextureVulkanImages{
+  const auto playerScene{readScene(animatingScenePath)};
+  const auto playerTextureImages{
       textureImages(vulkanDevice.device, vulkanPhysicalDevice,
-                    vulkanCommandPool.commandPool, graphicsQueue, scene)};
+                    vulkanCommandPool.commandPool, graphicsQueue, playerScene)};
 
   const auto animatingDescriptorPool{graphics::animatingDescriptorPool(
-      vulkanDevice.device, animatingTextureVulkanImages, scene)};
+      vulkanDevice.device, playerTextureImages, playerScene)};
 
   const auto playerJointMatricesStorageBuffers{
       graphics::jointMatricesStorageBuffers(vulkanDevice.device,
-                                            vulkanPhysicalDevice, scene)};
+                                            vulkanPhysicalDevice, playerScene)};
 
   VkDescriptorSetLayoutBinding
       animatingUniformBufferDescriptorSetLayoutBinding{};
@@ -893,17 +898,17 @@ static void run(const std::string &stationaryVertexShaderCodePath,
           vulkanDevice.device,
           {animatingCombinedImageSamplerDescriptorSetLayoutBinding}};
 
-  const auto jointMatricesStorageBufferDescriptorSets{
+  const auto playerJointMatricesStorageBufferDescriptorSets{
       graphics::jointMatricesStorageBufferDescriptorSets(
           vulkanDevice.device, animatingDescriptorPool,
           jointMatricesDescriptorSetLayout, playerJointMatricesStorageBuffers)};
 
-  const auto animatingTextureDescriptorSets{
+  const auto playerCombinedImageSamplerDescriptorSets{
       graphics::combinedImageSamplerDescriptorSets(
           animatingDescriptorPool.descriptorPool, vulkanDevice,
           vulkanTextureSampler,
           animatingCombinedImageSamplerDescriptorSetLayout,
-          animatingTextureVulkanImages)};
+          playerTextureImages)};
 
   VkPushConstantRange pushConstantRange{};
   pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
@@ -916,20 +921,21 @@ static void run(const std::string &stationaryVertexShaderCodePath,
        animatingCombinedImageSamplerDescriptorSetLayout.descriptorSetLayout},
       {pushConstantRange}};
 
-  const auto animatingVertexBuffer{bufferWithMemory(
+  const auto playerVertexBuffer{bufferWithMemory(
       vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
       graphicsQueue,
       VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-      scene.vertices.data(),
-      scene.vertices.size() * sizeof(decltype(scene.vertices)::value_type))};
+      playerScene.vertices.data(),
+      playerScene.vertices.size() *
+          sizeof(decltype(playerScene.vertices)::value_type))};
 
-  const auto animatingIndexBuffer{bufferWithMemory(
+  const auto playerIndexBuffer{bufferWithMemory(
       vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
       graphicsQueue,
       VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-      scene.vertexIndices.data(),
-      scene.vertexIndices.size() *
-          sizeof(decltype(scene.vertexIndices)::value_type))};
+      playerScene.vertexIndices.data(),
+      playerScene.vertexIndices.size() *
+          sizeof(decltype(playerScene.vertexIndices)::value_type))};
 
   const auto playerModelViewProjectionUniformBuffer{uniformBufferWithMemory(
       vulkanDevice.device, vulkanPhysicalDevice, sizeof(UniformBufferObject))};
@@ -978,15 +984,15 @@ static void run(const std::string &stationaryVertexShaderCodePath,
     {
       std::array<VkDeviceSize, 1> offsets{0};
       vkCmdBindVertexBuffers(commandBuffer, 0, 1,
-                             &animatingVertexBuffer.buffer.buffer,
-                             offsets.data());
+                             &playerVertexBuffer.buffer.buffer, offsets.data());
     }
-    vkCmdBindIndexBuffer(commandBuffer, animatingIndexBuffer.buffer.buffer, 0,
+    vkCmdBindIndexBuffer(commandBuffer, playerIndexBuffer.buffer.buffer, 0,
                          VK_INDEX_TYPE_UINT32);
-    for (const auto &node : scene.nodes)
+    for (const auto &node : playerScene.nodes)
       drawNode(commandBuffer, animatingPipelineLayout.pipelineLayout,
-               animatingTextureDescriptorSets,
-               jointMatricesStorageBufferDescriptorSets, *node, scene);
+               playerCombinedImageSamplerDescriptorSets,
+               playerJointMatricesStorageBufferDescriptorSets, *node,
+               playerScene);
     vkCmdEndRenderPass(commandBuffer);
     throwOnError([&]() { return vkEndCommandBuffer(commandBuffer); },
                  "failed to record command buffer!");
@@ -1033,7 +1039,7 @@ static void run(const std::string &stationaryVertexShaderCodePath,
     {
       if (pressing(glfwWindow.window, GLFW_KEY_F) && animationIndex == 0) {
         animationIndex = 1;
-        animationTime = scene.animations.at(animationIndex).start;
+        animationTime = playerScene.animations.at(animationIndex).start;
       }
       constexpr auto playerRunAcceleration{2};
       constexpr auto playerJumpAcceleration{6};
@@ -1078,7 +1084,7 @@ static void run(const std::string &stationaryVertexShaderCodePath,
       }
     }
 
-    const auto animation{scene.animations.at(animationIndex)};
+    const auto animation{playerScene.animations.at(animationIndex)};
 
     for (const auto &channel : animation.channels) {
       const auto &sampler = animation.samplers[channel.samplerIndex];
@@ -1105,7 +1111,7 @@ static void run(const std::string &stationaryVertexShaderCodePath,
     animationTime += 1.f / 60;
     if (animationTime > animation.end) {
       animationIndex = 0;
-      animationTime = scene.animations.at(animationIndex).start;
+      animationTime = playerScene.animations.at(animationIndex).start;
     }
 
     const auto projection =
@@ -1135,10 +1141,10 @@ static void run(const std::string &stationaryVertexShaderCodePath,
     updateModelViewProjectionUniformBuffer(
         vulkanDevice, playerModelViewProjectionUniformBuffer.memory, view,
         projection, playerPosition, 2000.F, -90.F);
-    for (const auto &node : scene.nodes)
+    for (const auto &node : playerScene.nodes)
       updateJointMatricesStorageBuffers(node.get(), vulkanDevice.device,
                                         playerJointMatricesStorageBuffers,
-                                        scene);
+                                        playerScene);
     // end writes
 
     vkWaitForFences(vulkanDevice.device, 1,

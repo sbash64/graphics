@@ -1,4 +1,3 @@
-#include <sbash64/graphics/load-object.hpp>
 #include <sbash64/graphics/vulkan-wrappers.hpp>
 
 #include <algorithm>
