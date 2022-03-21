@@ -680,41 +680,10 @@ static auto animatingCombinedImageSamplerDescriptorSets(
   return descriptorSets;
 }
 
-static auto animatingUniformBufferDescriptorSet(
-    VkDevice device, const VulkanBufferWithMemory &bufferWithMemory,
-    const vulkan_wrappers::DescriptorPool &descriptorPool,
-    const vulkan_wrappers::DescriptorSetLayout &setLayout) -> VkDescriptorSet {
-  VkDescriptorSetAllocateInfo descriptorSetAllocateInfo{};
-  descriptorSetAllocateInfo.sType =
-      VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-  descriptorSetAllocateInfo.descriptorPool = descriptorPool.descriptorPool;
-  descriptorSetAllocateInfo.pSetLayouts = &setLayout.descriptorSetLayout;
-  descriptorSetAllocateInfo.descriptorSetCount = 1;
-
-  VkDescriptorSet descriptorSet{nullptr};
-  vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo, &descriptorSet);
-
-  VkWriteDescriptorSet writeDescriptorSet{};
-  writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-  writeDescriptorSet.dstSet = descriptorSet;
-  writeDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  writeDescriptorSet.dstBinding = 0;
-
-  VkDescriptorBufferInfo descriptorBufferInfo;
-  descriptorBufferInfo.buffer = bufferWithMemory.buffer.buffer;
-  descriptorBufferInfo.offset = 0;
-  descriptorBufferInfo.range = VK_WHOLE_SIZE;
-
-  writeDescriptorSet.pBufferInfo = &descriptorBufferInfo;
-  writeDescriptorSet.descriptorCount = 1;
-  vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0, nullptr);
-  return descriptorSet;
-}
-
-static auto stationaryUniformBufferDescriptorSet(
+static auto uniformBufferDescriptorSet(
     VkDescriptorPool descriptorPool, VkDescriptorSetLayout descriptorSetLayout,
     VkDevice device, VkBuffer buffer) -> VkDescriptorSet {
-  VkDescriptorSet uniformBufferDescriptorSet{nullptr};
+  VkDescriptorSet descriptorSet{nullptr};
 
   VkDescriptorSetAllocateInfo allocInfo{};
   allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -724,9 +693,8 @@ static auto stationaryUniformBufferDescriptorSet(
 
   throwOnError(
       [&]() {
-        // no deallocate needed here per tutorial
-        return vkAllocateDescriptorSets(device, &allocInfo,
-                                        &uniformBufferDescriptorSet);
+        // freed by descriptorPool
+        return vkAllocateDescriptorSets(device, &allocInfo, &descriptorSet);
       },
       "failed to allocate descriptor sets!");
 
@@ -737,7 +705,7 @@ static auto stationaryUniformBufferDescriptorSet(
 
   VkWriteDescriptorSet descriptorWrite{};
   descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-  descriptorWrite.dstSet = uniformBufferDescriptorSet;
+  descriptorWrite.dstSet = descriptorSet;
   descriptorWrite.dstBinding = 0;
   descriptorWrite.dstArrayElement = 0;
   descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -745,7 +713,7 @@ static auto stationaryUniformBufferDescriptorSet(
   descriptorWrite.pBufferInfo = &bufferInfo;
 
   vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
-  return uniformBufferDescriptorSet;
+  return descriptorSet;
 }
 
 static void run(const std::string &stationaryVertexShaderCodePath,
@@ -864,12 +832,11 @@ static void run(const std::string &stationaryVertexShaderCodePath,
   const auto worldModelViewProjectionUniformBuffer{uniformBufferWithMemory(
       vulkanDevice.device, vulkanPhysicalDevice, sizeof(UniformBufferObject))};
 
-  auto *const worldUniformBufferDescriptorSet{
-      stationaryUniformBufferDescriptorSet(
-          worldDescriptorPool.descriptorPool,
-          stationaryUniformBufferDescriptorSetLayout.descriptorSetLayout,
-          vulkanDevice.device,
-          worldModelViewProjectionUniformBuffer.buffer.buffer)};
+  auto *const worldUniformBufferDescriptorSet{uniformBufferDescriptorSet(
+      worldDescriptorPool.descriptorPool,
+      stationaryUniformBufferDescriptorSetLayout.descriptorSetLayout,
+      vulkanDevice.device,
+      worldModelViewProjectionUniformBuffer.buffer.buffer)};
 
   const auto worldTextureImageDescriptors{combinedImageSamplerDescriptorSets(
       worldDescriptorPool.descriptorPool, vulkanDevice, vulkanTextureSampler,
@@ -1009,10 +976,11 @@ static void run(const std::string &stationaryVertexShaderCodePath,
 
   const auto playerModelViewProjectionUniformBuffer{uniformBufferWithMemory(
       vulkanDevice.device, vulkanPhysicalDevice, sizeof(UniformBufferObject))};
-  auto *const animatingUniformBufferDescriptorSet{
-      graphics::animatingUniformBufferDescriptorSet(
-          vulkanDevice.device, playerModelViewProjectionUniformBuffer,
-          animatingDescriptorPool, animatingUniformBufferDescriptorSetLayout)};
+  auto *const animatingUniformBufferDescriptorSet{uniformBufferDescriptorSet(
+      animatingDescriptorPool.descriptorPool,
+      animatingUniformBufferDescriptorSetLayout.descriptorSetLayout,
+      vulkanDevice.device,
+      playerModelViewProjectionUniformBuffer.buffer.buffer)};
 
   const auto animatingPipeline{graphics::animatingPipeline(
       vulkanDevice.device, vulkanPhysicalDevice, vulkanSurface.surface,
