@@ -1094,6 +1094,7 @@ static void run(const std::string &stationaryVertexShaderCodePath,
   glfwCallback.camera.yaw = -90;
   glfwCallback.camera.pitch = 15;
   FixedPointVector3D playerDisplacement{1000, 0, -500};
+  auto animationIndex{0};
   while (!recreatingSwapChain) {
     if (glfwWindowShouldClose(glfwWindow.window) != 0) {
       break;
@@ -1101,6 +1102,10 @@ static void run(const std::string &stationaryVertexShaderCodePath,
 
     glfwPollEvents();
     {
+      if (pressing(glfwWindow.window, GLFW_KEY_F) && animationIndex == 0) {
+        animationIndex = 1;
+        animationTime = scene.animations.at(animationIndex).start;
+      }
       constexpr auto playerRunAcceleration{2};
       constexpr auto playerJumpAcceleration{6};
       const RationalNumber gravity{-1, 4};
@@ -1144,10 +1149,7 @@ static void run(const std::string &stationaryVertexShaderCodePath,
       }
     }
 
-    const auto animation{scene.animations.at(0)};
-    animationTime += 1.f / 60;
-    if (animationTime > animation.end)
-      animationTime -= animation.end;
+    const auto animation{scene.animations.at(animationIndex)};
 
     for (const auto &channel : animation.channels) {
       const auto &sampler = animation.samplers[channel.samplerIndex];
@@ -1169,6 +1171,12 @@ static void run(const std::string &stationaryVertexShaderCodePath,
             channel.node->scale =
                 glm::mix(sampler.outputsVec4[i], sampler.outputsVec4[i + 1], a);
         }
+    }
+
+    animationTime += 1.f / 60;
+    if (animationTime > animation.end) {
+      animationIndex = 0;
+      animationTime = scene.animations.at(animationIndex).start;
     }
 
     const auto projection =
