@@ -204,11 +204,11 @@ static auto drawable(VkDevice device, VkPhysicalDevice physicalDevice,
                        sizeof(object.indices[0]) * object.indices.size())};
 }
 
-static void updateUniformBuffer(const vulkan_wrappers::Device &device,
-                                const vulkan_wrappers::DeviceMemory &memory,
-                                glm::mat4 view, glm::mat4 perspective,
-                                glm::vec3 translation, float scale = 1,
-                                float rotationXAngleDegrees = 0) {
+static void updateModelViewProjectionUniformBuffer(
+    const vulkan_wrappers::Device &device,
+    const vulkan_wrappers::DeviceMemory &memory, glm::mat4 view,
+    glm::mat4 perspective, glm::vec3 translation, float scale = 1,
+    float rotationXAngleDegrees = 0) {
   UniformBufferObject ubo{};
   perspective[1][1] *= -1;
   ubo.mvp = perspective * view * glm::translate(glm::mat4{1.F}, translation) *
@@ -468,7 +468,7 @@ static auto getNodeMatrix(Node *node) -> glm::mat4 {
   return nodeMatrix;
 }
 
-static void updateJoints(
+static void updateJointMatricesStorageBuffers(
     Node *node, VkDevice device,
     const std::map<int, VulkanBufferWithMemory> &jointMatricesStorageBuffers,
     const Scene &scene) {
@@ -485,7 +485,8 @@ static void updateJoints(
          jointMatrices.size() * sizeof(decltype(jointMatrices)::value_type));
   }
   for (const auto &child : node->children)
-    updateJoints(child.get(), device, jointMatricesStorageBuffers, scene);
+    updateJointMatricesStorageBuffers(child.get(), device,
+                                      jointMatricesStorageBuffers, scene);
 }
 
 static auto quaternion(glm::vec4 v) -> glm::quat {
@@ -754,7 +755,8 @@ static void run(const std::string &stationaryVertexShaderCodePath,
                 const std::string &animatingScenePath) {
   const glfw_wrappers::Init glfwInitialization;
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-  const glfw_wrappers::Window glfwWindow{1280, 720};
+  const glfw_wrappers::Window glfwWindow{
+      1280, 720}; // nintendo switch screen 1280 x 720
   GlfwCallback glfwCallback{};
   glfwSetWindowUserPointer(glfwWindow.window, &glfwCallback);
   glfwSetCursorPosCallback(glfwWindow.window, onCursorPositionChanged);
@@ -858,14 +860,15 @@ static void run(const std::string &stationaryVertexShaderCodePath,
       vulkanDevice.device, worldDescriptorPoolSizes,
       static_cast<uint32_t>(1 + worldTextureImages.size())};
 
-  const auto worldUniformBufferWithMemory{uniformBufferWithMemory(
+  const auto worldModelViewProjectionUniformBuffer{uniformBufferWithMemory(
       vulkanDevice.device, vulkanPhysicalDevice, sizeof(UniformBufferObject))};
 
   auto *const worldUniformBufferDescriptorSet{
       stationaryUniformBufferDescriptorSet(
           worldDescriptorPool.descriptorPool,
           stationaryUniformBufferDescriptorSetLayout.descriptorSetLayout,
-          vulkanDevice.device, worldUniformBufferWithMemory.buffer.buffer)};
+          vulkanDevice.device,
+          worldModelViewProjectionUniformBuffer.buffer.buffer)};
 
   const auto worldTextureImageDescriptors{combinedImageSamplerDescriptorSets(
       worldDescriptorPool.descriptorPool, vulkanDevice, vulkanTextureSampler,
@@ -919,8 +922,9 @@ static void run(const std::string &stationaryVertexShaderCodePath,
   const auto animatingDescriptorPool{graphics::animatingDescriptorPool(
       vulkanDevice.device, animatingTextureVulkanImages, scene)};
 
-  const auto jointMatricesStorageBuffers{graphics::jointMatricesStorageBuffers(
-      vulkanDevice.device, vulkanPhysicalDevice, scene)};
+  const auto playerJointMatricesStorageBuffers{
+      graphics::jointMatricesStorageBuffers(vulkanDevice.device,
+                                            vulkanPhysicalDevice, scene)};
 
   VkDescriptorSetLayoutBinding
       animatingUniformBufferDescriptorSetLayoutBinding{};
@@ -968,7 +972,7 @@ static void run(const std::string &stationaryVertexShaderCodePath,
   const auto jointMatricesDescriptorSets{
       graphics::jointMatricesStorageBufferDescriptorSets(
           vulkanDevice.device, animatingDescriptorPool,
-          jointMatricesDescriptorSetLayout, jointMatricesStorageBuffers)};
+          jointMatricesDescriptorSetLayout, playerJointMatricesStorageBuffers)};
 
   const auto animatingTextureDescriptorSets{
       graphics::animatingCombinedImageSamplerDescriptorSets(
@@ -1000,11 +1004,11 @@ static void run(const std::string &stationaryVertexShaderCodePath,
       scene.vertexIndices.data(),
       scene.vertexIndices.size() * sizeof(uint32_t))};
 
-  const auto animatingUniformBufferWithMemory{uniformBufferWithMemory(
+  const auto playerModelViewProjectionUniformBuffer{uniformBufferWithMemory(
       vulkanDevice.device, vulkanPhysicalDevice, sizeof(UniformBufferObject))};
   auto *const animatingUniformBufferDescriptorSet{
       graphics::animatingUniformBufferDescriptorSet(
-          vulkanDevice.device, animatingUniformBufferWithMemory,
+          vulkanDevice.device, playerModelViewProjectionUniformBuffer,
           animatingDescriptorPool, animatingUniformBufferDescriptorSetLayout)};
 
   const auto animatingPipeline{graphics::animatingPipeline(
@@ -1150,7 +1154,6 @@ static void run(const std::string &stationaryVertexShaderCodePath,
       if (sampler.interpolation != "LINEAR")
         continue;
       for (auto i{0U}; i < sampler.inputs.size() - 1; i++)
-        // Get the input keyframe values for the current time stamp
         if (animationTime >= sampler.inputs[i] &&
             animationTime <= sampler.inputs[i + 1]) {
           const auto a = (animationTime - sampler.inputs[i]) /
@@ -1173,9 +1176,10 @@ static void run(const std::string &stationaryVertexShaderCodePath,
                          static_cast<float>(swapChainExtent.width) /
                              static_cast<float>(swapChainExtent.height),
                          10.F, 1000.F);
-    const glm::vec3 playerPosition{playerDisplacement.x * .3F,
-                                   playerDisplacement.y * .3F,
-                                   playerDisplacement.z * .3F};
+    const glm::vec3 playerPosition{
+        static_cast<float>(playerDisplacement.x) * .3F,
+        static_cast<float>(playerDisplacement.y) * .3F,
+        static_cast<float>(playerDisplacement.z) * .3F};
     const auto playerCameraFocus{playerPosition + glm::vec3{0, 15.F, 0}};
     const auto view = glm::lookAt(
         playerCameraFocus +
@@ -1188,13 +1192,16 @@ static void run(const std::string &stationaryVertexShaderCodePath,
         playerCameraFocus, glm::vec3(0, 1, 0));
 
     // writes to uniform and storage buffers
-    updateUniformBuffer(vulkanDevice, worldUniformBufferWithMemory.memory, view,
-                        projection, worldOrigin, 0.1);
-    updateUniformBuffer(vulkanDevice, animatingUniformBufferWithMemory.memory,
-                        view, projection, playerPosition, 2000.F, -90.F);
+    updateModelViewProjectionUniformBuffer(
+        vulkanDevice, worldModelViewProjectionUniformBuffer.memory, view,
+        projection, worldOrigin, 0.1F);
+    updateModelViewProjectionUniformBuffer(
+        vulkanDevice, playerModelViewProjectionUniformBuffer.memory, view,
+        projection, playerPosition, 2000.F, -90.F);
     for (const auto &node : scene.nodes)
-      updateJoints(node.get(), vulkanDevice.device, jointMatricesStorageBuffers,
-                   scene);
+      updateJointMatricesStorageBuffers(node.get(), vulkanDevice.device,
+                                        playerJointMatricesStorageBuffers,
+                                        scene);
     // end writes
 
     vkWaitForFences(vulkanDevice.device, 1,
