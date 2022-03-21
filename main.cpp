@@ -470,7 +470,7 @@ static auto getNodeMatrix(Node *node) -> glm::mat4 {
 
 static void updateJoints(
     Node *node, VkDevice device,
-    const std::map<int, VulkanBufferWithMemory> &jointBuffersWithMemory,
+    const std::map<int, VulkanBufferWithMemory> &jointMatricesStorageBuffers,
     const Scene &scene) {
   if (node->skin > -1) {
     const auto inverseTransform{glm::inverse(getNodeMatrix(node))};
@@ -480,12 +480,12 @@ static void updateJoints(
       jointMatrices.at(i) =
           inverseTransform * getNodeMatrix(joints.at(i)) *
           scene.skins.at(node->skin).inverseBindMatrices.at(i);
-    copy(device, jointBuffersWithMemory.at(node->skin).memory.memory,
+    copy(device, jointMatricesStorageBuffers.at(node->skin).memory.memory,
          jointMatrices.data(),
          jointMatrices.size() * sizeof(decltype(jointMatrices)::value_type));
   }
   for (const auto &child : node->children)
-    updateJoints(child.get(), device, jointBuffersWithMemory, scene);
+    updateJoints(child.get(), device, jointMatricesStorageBuffers, scene);
 }
 
 static auto quaternion(glm::vec4 v) -> glm::quat {
@@ -602,8 +602,9 @@ animatingDescriptorPool(VkDevice device,
   return {device, poolSizes, maxSetCount};
 }
 
-static auto inverseBindMatricesBuffersWithMemory(
-    VkDevice device, VkPhysicalDevice physicalDevice, const Scene &scene)
+static auto jointMatricesStorageBuffers(VkDevice device,
+                                        VkPhysicalDevice physicalDevice,
+                                        const Scene &scene)
     -> std::map<int, VulkanBufferWithMemory> {
   std::map<int, VulkanBufferWithMemory> buffersWithMemory;
   int index{0};
@@ -611,22 +612,20 @@ static auto inverseBindMatricesBuffersWithMemory(
     if (!skin.inverseBindMatrices.empty()) {
       const VkDeviceSize bufferSize{sizeof(glm::mat4) *
                                     skin.inverseBindMatrices.size()};
-      vulkan_wrappers::Buffer jointsVulkanBuffer{
-          device, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, bufferSize};
-      auto memory{bufferMemory(device, physicalDevice,
-                               jointsVulkanBuffer.buffer,
+      vulkan_wrappers::Buffer buffer{device, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                                     bufferSize};
+      auto memory{bufferMemory(device, physicalDevice, buffer.buffer,
                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                                    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)};
       copy(device, memory.memory, skin.inverseBindMatrices.data(), bufferSize);
       buffersWithMemory.emplace(
-          index, VulkanBufferWithMemory{std::move(jointsVulkanBuffer),
-                                        std::move(memory)});
+          index, VulkanBufferWithMemory{std::move(buffer), std::move(memory)});
       ++index;
     }
   return buffersWithMemory;
 }
 
-static auto jointMatricesDescriptorSets(
+static auto jointMatricesStorageBufferDescriptorSets(
     VkDevice device, const vulkan_wrappers::DescriptorPool &descriptorPool,
     const vulkan_wrappers::DescriptorSetLayout &setLayout,
     const std::map<int, VulkanBufferWithMemory> &buffersWithMemory)
@@ -669,7 +668,7 @@ static auto jointMatricesDescriptorSets(
   return jointMatricesDescriptorSets;
 }
 
-static auto animatingTextureDescriptorSets(
+static auto animatingCombinedImageSamplerDescriptorSets(
     VkDevice device, const vulkan_wrappers::DescriptorPool &descriptorPool,
     const vulkan_wrappers::Sampler &sampler,
     const vulkan_wrappers::DescriptorSetLayout &setLayout,
@@ -920,9 +919,8 @@ static void run(const std::string &stationaryVertexShaderCodePath,
   const auto animatingDescriptorPool{graphics::animatingDescriptorPool(
       vulkanDevice.device, animatingTextureVulkanImages, scene)};
 
-  const auto jointMatricesVulkanBuffersWithMemory{
-      inverseBindMatricesBuffersWithMemory(vulkanDevice.device,
-                                           vulkanPhysicalDevice, scene)};
+  const auto jointMatricesStorageBuffers{graphics::jointMatricesStorageBuffers(
+      vulkanDevice.device, vulkanPhysicalDevice, scene)};
 
   VkDescriptorSetLayoutBinding
       animatingUniformBufferDescriptorSetLayoutBinding{};
@@ -967,12 +965,13 @@ static void run(const std::string &stationaryVertexShaderCodePath,
           vulkanDevice.device,
           {animatingCombinedImageSamplerDescriptorSetLayoutBinding}};
 
-  const auto jointMatricesDescriptorSets{graphics::jointMatricesDescriptorSets(
-      vulkanDevice.device, animatingDescriptorPool,
-      jointMatricesDescriptorSetLayout, jointMatricesVulkanBuffersWithMemory)};
+  const auto jointMatricesDescriptorSets{
+      graphics::jointMatricesStorageBufferDescriptorSets(
+          vulkanDevice.device, animatingDescriptorPool,
+          jointMatricesDescriptorSetLayout, jointMatricesStorageBuffers)};
 
   const auto animatingTextureDescriptorSets{
-      graphics::animatingTextureDescriptorSets(
+      graphics::animatingCombinedImageSamplerDescriptorSets(
           vulkanDevice.device, animatingDescriptorPool, vulkanTextureSampler,
           animatingCombinedImageSamplerDescriptorSetLayout,
           animatingTextureVulkanImages)};
@@ -1013,11 +1012,6 @@ static void run(const std::string &stationaryVertexShaderCodePath,
       vulkanRenderPass.renderPass, glfwWindow.window,
       animatingVertexShaderCodePath, animatingFragmentShaderCodePath,
       animatingPipelineLayout)};
-
-  // Calculate initial pose
-  for (const auto &node : scene.nodes)
-    updateJoints(node.get(), vulkanDevice.device,
-                 jointMatricesVulkanBuffersWithMemory, scene);
 
   auto frameBufferCount{0U};
   for (auto *const commandBuffer : vulkanDrawCommandBuffers.commandBuffers) {
@@ -1072,14 +1066,14 @@ static void run(const std::string &stationaryVertexShaderCodePath,
                                                      vulkanSurface.surface),
                    0, &presentQueue);
   const auto maxFramesInFlight{2};
-  std::vector<vulkan_wrappers::Fence> vulkanInFlightFences;
-  generate_n(back_inserter(vulkanInFlightFences), maxFramesInFlight,
+  std::vector<vulkan_wrappers::Fence> inFlightVulkanFences;
+  generate_n(back_inserter(inFlightVulkanFences), maxFramesInFlight,
              [&vulkanDevice]() {
                return vulkan_wrappers::Fence{vulkanDevice.device};
              });
-  const auto vulkanImageAvailableSemaphores{
+  const auto imageAvailableVulkanSemaphores{
       semaphores(vulkanDevice.device, maxFramesInFlight)};
-  const auto vulkanRenderFinishedSemaphores{
+  const auto renderFinishedVulkanSemaphores{
       semaphores(vulkanDevice.device, maxFramesInFlight)};
   std::vector<VkFence> imagesInFlight(swapChainImages.size(), VK_NULL_HANDLE);
   const auto swapChainExtent{swapExtent(
@@ -1173,29 +1167,6 @@ static void run(const std::string &stationaryVertexShaderCodePath,
                 glm::mix(sampler.outputsVec4[i], sampler.outputsVec4[i + 1], a);
         }
     }
-    for (const auto &node : scene.nodes)
-      updateJoints(node.get(), vulkanDevice.device,
-                   jointMatricesVulkanBuffersWithMemory, scene);
-
-    vkWaitForFences(vulkanDevice.device, 1,
-                    &vulkanInFlightFences[currentFrame].fence, VK_TRUE,
-                    UINT64_MAX);
-
-    uint32_t imageIndex{0};
-    {
-      const auto result{vkAcquireNextImageKHR(
-          vulkanDevice.device, vulkanSwapchain.swapChain, UINT64_MAX,
-          vulkanImageAvailableSemaphores[currentFrame].semaphore,
-          VK_NULL_HANDLE, &imageIndex)};
-
-      if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-        prepareForSwapChainRecreation(vulkanDevice.device, glfwWindow.window);
-        recreatingSwapChain = true;
-        continue;
-      }
-      if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
-        throw std::runtime_error("failed to acquire swap chain image!");
-    }
 
     const auto projection =
         glm::perspective(glm::radians(45.F),
@@ -1215,25 +1186,49 @@ static void run(const std::string &stationaryVertexShaderCodePath,
                        std::sin(glm::radians(glfwCallback.camera.yaw)) *
                            std::cos(glm::radians(glfwCallback.camera.pitch))}),
         playerCameraFocus, glm::vec3(0, 1, 0));
+
     updateUniformBuffer(vulkanDevice, worldUniformBufferWithMemory.memory, view,
                         projection, worldOrigin, 0.1);
     updateUniformBuffer(vulkanDevice, animatingUniformBufferWithMemory.memory,
                         view, projection, playerPosition, 2000.F, -90.F);
+    for (const auto &node : scene.nodes)
+      updateJoints(node.get(), vulkanDevice.device, jointMatricesStorageBuffers,
+                   scene);
+
+    vkWaitForFences(vulkanDevice.device, 1,
+                    &inFlightVulkanFences[currentFrame].fence, VK_TRUE,
+                    UINT64_MAX);
+
+    uint32_t imageIndex{0};
+    {
+      const auto result{vkAcquireNextImageKHR(
+          vulkanDevice.device, vulkanSwapchain.swapChain, UINT64_MAX,
+          imageAvailableVulkanSemaphores[currentFrame].semaphore,
+          VK_NULL_HANDLE, &imageIndex)};
+
+      if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+        prepareForSwapChainRecreation(vulkanDevice.device, glfwWindow.window);
+        recreatingSwapChain = true;
+        continue;
+      }
+      if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
+        throw std::runtime_error("failed to acquire swap chain image!");
+    }
 
     if (imagesInFlight[imageIndex] != VK_NULL_HANDLE)
       vkWaitForFences(vulkanDevice.device, 1, &imagesInFlight[imageIndex],
                       VK_TRUE, UINT64_MAX);
 
-    imagesInFlight[imageIndex] = vulkanInFlightFences[currentFrame].fence;
+    imagesInFlight[imageIndex] = inFlightVulkanFences[currentFrame].fence;
     submit(vulkanDevice, graphicsQueue,
-           vulkanImageAvailableSemaphores[currentFrame].semaphore,
-           vulkanRenderFinishedSemaphores[currentFrame].semaphore,
-           vulkanInFlightFences[currentFrame].fence,
+           imageAvailableVulkanSemaphores[currentFrame].semaphore,
+           renderFinishedVulkanSemaphores[currentFrame].semaphore,
+           inFlightVulkanFences[currentFrame].fence,
            vulkanDrawCommandBuffers.commandBuffers[imageIndex]);
     {
       const auto result{
           present(presentQueue, vulkanSwapchain, imageIndex,
-                  vulkanRenderFinishedSemaphores[currentFrame].semaphore)};
+                  renderFinishedVulkanSemaphores[currentFrame].semaphore)};
       if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR ||
           glfwCallback.frameBufferResized) {
         glfwCallback.frameBufferResized = false;
