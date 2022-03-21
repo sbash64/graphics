@@ -6,18 +6,19 @@
 #include <unordered_map>
 
 namespace sbash64::graphics {
-auto readObjects(const std::string &path) -> std::vector<Object> {
+auto readStationaryObjects(const std::string &path)
+    -> std::vector<StationaryObject> {
   tinyobj::ObjReader reader;
   tinyobj::ObjReaderConfig reader_config;
 
   if (!reader.ParseFromFile(path, reader_config))
     throw std::runtime_error{reader.Error()};
 
-  std::vector<Object> objects;
+  std::vector<StationaryObject> objects;
   std::transform(
       reader.GetShapes().begin(), reader.GetShapes().end(),
       std::back_inserter(objects), [&reader](const tinyobj::shape_t &shape) {
-        Object object;
+        StationaryObject object;
         std::unordered_map<Vertex, uint32_t> uniqueVertices{};
         for (const auto &index : shape.mesh.indices) {
           Vertex vertex{};

@@ -190,7 +190,7 @@ struct VulkanDrawable {
 
 static auto drawable(VkDevice device, VkPhysicalDevice physicalDevice,
                      VkCommandPool commandPool, VkQueue graphicsQueue,
-                     const Object &object) -> VulkanDrawable {
+                     const StationaryObject &object) -> VulkanDrawable {
   return VulkanDrawable{
       bufferWithMemory(device, physicalDevice, commandPool, graphicsQueue,
                        VK_BUFFER_USAGE_TRANSFER_DST_BIT |
@@ -218,7 +218,7 @@ static void updateModelViewProjectionUniformBuffer(
   copy(device.device, memory.memory, &ubo, sizeof(ubo));
 }
 
-static void draw(const std::vector<Object> &objects,
+static void draw(const std::vector<StationaryObject> &objects,
                  const std::vector<VulkanDrawable> &drawables,
                  const vulkan_wrappers::PipelineLayout &pipelineLayout,
                  const std::vector<VkDescriptorSet> &descriptors,
@@ -316,12 +316,12 @@ static auto textureImages(VkDevice device, VkPhysicalDevice physicalDevice,
 
 static auto drawables(VkDevice device, VkPhysicalDevice physicalDevice,
                       VkCommandPool commandPool, VkQueue graphicsQueue,
-                      const std::vector<Object> &objects)
+                      const std::vector<StationaryObject> &objects)
     -> std::vector<VulkanDrawable> {
   std::vector<VulkanDrawable> drawables;
   transform(objects.begin(), objects.end(), back_inserter(drawables),
             [device, physicalDevice, commandPool,
-             graphicsQueue](const Object &object) {
+             graphicsQueue](const StationaryObject &object) {
               return drawable(device, physicalDevice, commandPool,
                               graphicsQueue, object);
             });
@@ -378,11 +378,11 @@ static auto combinedImageSamplerDescriptorSets(
 }
 
 static auto textureImagePaths(const std::string &objectPath,
-                              const std::vector<Object> &objects)
+                              const std::vector<StationaryObject> &objects)
     -> std::vector<std::string> {
   std::vector<std::string> textureImagePaths;
   transform(objects.begin(), objects.end(), back_inserter(textureImagePaths),
-            [&objectPath](const Object &object) {
+            [&objectPath](const StationaryObject &object) {
               return std::filesystem::path{objectPath}.parent_path() /
                      object.textureFileName;
             });
@@ -390,10 +390,11 @@ static auto textureImagePaths(const std::string &objectPath,
 }
 
 static auto readTexturedObjects(const std::string &path)
-    -> std::vector<Object> {
-  auto objects{readObjects(path)};
-  erase_if(objects,
-           [](const Object &object) { return object.textureFileName.empty(); });
+    -> std::vector<StationaryObject> {
+  auto objects{readStationaryObjects(path)};
+  erase_if(objects, [](const StationaryObject &object) {
+    return object.textureFileName.empty();
+  });
   return objects;
 }
 
@@ -543,37 +544,6 @@ animatingPipeline(VkDevice device, VkPhysicalDevice physicalDevice,
           bindingDescription};
 }
 
-static auto animatingUniformBufferDescriptorSet(
-    VkDevice device, const VulkanBufferWithMemory &bufferWithMemory,
-    const vulkan_wrappers::DescriptorPool &descriptorPool,
-    const vulkan_wrappers::DescriptorSetLayout &setLayout) -> VkDescriptorSet {
-  VkDescriptorSetAllocateInfo descriptorSetAllocateInfo{};
-  descriptorSetAllocateInfo.sType =
-      VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-  descriptorSetAllocateInfo.descriptorPool = descriptorPool.descriptorPool;
-  descriptorSetAllocateInfo.pSetLayouts = &setLayout.descriptorSetLayout;
-  descriptorSetAllocateInfo.descriptorSetCount = 1;
-
-  VkDescriptorSet descriptorSet{nullptr};
-  vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo, &descriptorSet);
-
-  VkWriteDescriptorSet writeDescriptorSet{};
-  writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-  writeDescriptorSet.dstSet = descriptorSet;
-  writeDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-  writeDescriptorSet.dstBinding = 0;
-
-  VkDescriptorBufferInfo descriptorBufferInfo;
-  descriptorBufferInfo.buffer = bufferWithMemory.buffer.buffer;
-  descriptorBufferInfo.offset = 0;
-  descriptorBufferInfo.range = VK_WHOLE_SIZE;
-
-  writeDescriptorSet.pBufferInfo = &descriptorBufferInfo;
-  writeDescriptorSet.descriptorCount = 1;
-  vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0, nullptr);
-  return descriptorSet;
-}
-
 static auto
 animatingDescriptorPool(VkDevice device,
                         const std::vector<VulkanImage> &textureImages,
@@ -710,6 +680,37 @@ static auto animatingCombinedImageSamplerDescriptorSets(
   return descriptorSets;
 }
 
+static auto animatingUniformBufferDescriptorSet(
+    VkDevice device, const VulkanBufferWithMemory &bufferWithMemory,
+    const vulkan_wrappers::DescriptorPool &descriptorPool,
+    const vulkan_wrappers::DescriptorSetLayout &setLayout) -> VkDescriptorSet {
+  VkDescriptorSetAllocateInfo descriptorSetAllocateInfo{};
+  descriptorSetAllocateInfo.sType =
+      VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+  descriptorSetAllocateInfo.descriptorPool = descriptorPool.descriptorPool;
+  descriptorSetAllocateInfo.pSetLayouts = &setLayout.descriptorSetLayout;
+  descriptorSetAllocateInfo.descriptorSetCount = 1;
+
+  VkDescriptorSet descriptorSet{nullptr};
+  vkAllocateDescriptorSets(device, &descriptorSetAllocateInfo, &descriptorSet);
+
+  VkWriteDescriptorSet writeDescriptorSet{};
+  writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+  writeDescriptorSet.dstSet = descriptorSet;
+  writeDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+  writeDescriptorSet.dstBinding = 0;
+
+  VkDescriptorBufferInfo descriptorBufferInfo;
+  descriptorBufferInfo.buffer = bufferWithMemory.buffer.buffer;
+  descriptorBufferInfo.offset = 0;
+  descriptorBufferInfo.range = VK_WHOLE_SIZE;
+
+  writeDescriptorSet.pBufferInfo = &descriptorBufferInfo;
+  writeDescriptorSet.descriptorCount = 1;
+  vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0, nullptr);
+  return descriptorSet;
+}
+
 static auto stationaryUniformBufferDescriptorSet(
     VkDescriptorPool descriptorPool, VkDescriptorSetLayout descriptorSetLayout,
     VkDevice device, VkBuffer buffer) -> VkDescriptorSet {
@@ -732,7 +733,7 @@ static auto stationaryUniformBufferDescriptorSet(
   VkDescriptorBufferInfo bufferInfo{};
   bufferInfo.buffer = buffer;
   bufferInfo.offset = 0;
-  bufferInfo.range = sizeof(UniformBufferObject);
+  bufferInfo.range = VK_WHOLE_SIZE;
 
   VkWriteDescriptorSet descriptorWrite{};
   descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -995,14 +996,16 @@ static void run(const std::string &stationaryVertexShaderCodePath,
       vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
       graphicsQueue,
       VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-      scene.vertices.data(), scene.vertices.size() * sizeof(AnimatingVertex))};
+      scene.vertices.data(),
+      scene.vertices.size() * sizeof(decltype(scene.vertices)::value_type))};
 
   const auto animatingIndexBuffer{bufferWithMemory(
       vulkanDevice.device, vulkanPhysicalDevice, vulkanCommandPool.commandPool,
       graphicsQueue,
       VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
       scene.vertexIndices.data(),
-      scene.vertexIndices.size() * sizeof(uint32_t))};
+      scene.vertexIndices.size() *
+          sizeof(decltype(scene.vertexIndices)::value_type))};
 
   const auto playerModelViewProjectionUniformBuffer{uniformBufferWithMemory(
       vulkanDevice.device, vulkanPhysicalDevice, sizeof(UniformBufferObject))};

@@ -28,13 +28,14 @@ template <> struct hash<sbash64::graphics::Vertex> {
 } // namespace std
 
 namespace sbash64::graphics {
-struct Object {
+struct StationaryObject {
   std::vector<Vertex> vertices;
   std::vector<uint32_t> indices;
   std::string textureFileName;
 };
 
-auto readObjects(const std::string &path) -> std::vector<Object>;
+auto readStationaryObjects(const std::string &path)
+    -> std::vector<StationaryObject>;
 } // namespace sbash64::graphics
 
 #endif
