@@ -347,11 +347,12 @@ static void draw(const std::vector<StationaryObject> &objects,
   }
 }
 
-static void
-drawNode(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout,
-         const std::vector<VkDescriptorSet> &textureDescriptorSets,
-         const std::map<int, VkDescriptorSet> &jointMatricesDescriptorSets,
-         const Node &node, const Scene &scene) {
+static void drawNode(VkCommandBuffer commandBuffer,
+                     VkPipelineLayout pipelineLayout,
+                     const std::vector<VkDescriptorSet> &textureDescriptorSets,
+                     const Node &node, const Scene &scene,
+                     const std::function<void(VkCommandBuffer, VkPipelineLayout,
+                                              const Node &)> &f = {}) {
   if (!node.mesh.primitives.empty()) {
     // Traverse the node hierarchy to the top-most parent to get the final
     // matrix of the current node
@@ -364,14 +365,7 @@ drawNode(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout,
     vkCmdPushConstants(commandBuffer, pipelineLayout,
                        VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(nodeMatrix),
                        &nodeMatrix);
-    {
-      std::array<VkDescriptorSet, 1> descriptorSets{
-          jointMatricesDescriptorSets.at(node.skin)};
-      const auto set{1U};
-      vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                              pipelineLayout, set, descriptorSets.size(),
-                              descriptorSets.data(), 0, nullptr);
-    }
+    f(commandBuffer, pipelineLayout, node);
     for (const auto &primitive : node.mesh.primitives)
       if (primitive.indexCount > 0) {
         std::array<VkDescriptorSet, 1> descriptorSets{textureDescriptorSets.at(
@@ -386,8 +380,8 @@ drawNode(VkCommandBuffer commandBuffer, VkPipelineLayout pipelineLayout,
       }
   }
   for (const auto &child : node.children)
-    drawNode(commandBuffer, pipelineLayout, textureDescriptorSets,
-             jointMatricesDescriptorSets, *child, scene);
+    drawNode(commandBuffer, pipelineLayout, textureDescriptorSets, *child,
+             scene, f);
 }
 
 static auto getLocalMatrix(const Node &node) -> glm::mat4 {
@@ -989,10 +983,19 @@ static void run(const std::string &stationaryVertexShaderCodePath,
     vkCmdBindIndexBuffer(commandBuffer, playerIndexBuffer.buffer.buffer, 0,
                          VK_INDEX_TYPE_UINT32);
     for (const auto &node : playerScene.nodes)
-      drawNode(commandBuffer, animatingPipelineLayout.pipelineLayout,
-               playerCombinedImageSamplerDescriptorSets,
-               playerJointMatricesStorageBufferDescriptorSets, *node,
-               playerScene);
+      drawNode(
+          commandBuffer, animatingPipelineLayout.pipelineLayout,
+          playerCombinedImageSamplerDescriptorSets, *node, playerScene,
+          [&playerJointMatricesStorageBufferDescriptorSets](
+              VkCommandBuffer commandBuffer_, VkPipelineLayout pipelineLayout,
+              const Node &node_) {
+            std::array<VkDescriptorSet, 1> descriptorSets{
+                playerJointMatricesStorageBufferDescriptorSets.at(node_.skin)};
+            const auto set{1U};
+            vkCmdBindDescriptorSets(
+                commandBuffer_, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout,
+                set, descriptorSets.size(), descriptorSets.data(), 0, nullptr);
+          });
     vkCmdEndRenderPass(commandBuffer);
     throwOnError([&]() { return vkEndCommandBuffer(commandBuffer); },
                  "failed to record command buffer!");
