@@ -17,12 +17,6 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(stb)
 
 FetchContent_Declare(
-  tinyobjloader
-  GIT_REPOSITORY https://github.com/tinyobjloader/tinyobjloader
-  GIT_TAG 097ad6a826336a76e42a27e6e531da7dbdf3fd01)
-FetchContent_MakeAvailable(tinyobjloader)
-
-FetchContent_Declare(
   tinygltf
   GIT_REPOSITORY https://github.com/syoyo/tinygltf
   GIT_TAG v2.5.0)
@@ -38,9 +32,8 @@ include(FindVulkan)
 
 add_executable(
   sbash64-learn-vulkan-main main.cpp vulkan-wrappers.cpp glfw-wrappers.cpp
-                            stbi-wrappers.cpp load-object.cpp load-scene.cpp)
-target_link_libraries(sbash64-learn-vulkan-main glfw Vulkan::Vulkan glm
-                      tinyobjloader)
+                            stbi-wrappers.cpp load-scene.cpp)
+target_link_libraries(sbash64-learn-vulkan-main glfw Vulkan::Vulkan glm)
 target_include_directories(
   sbash64-learn-vulkan-main PRIVATE include ${stb_SOURCE_DIR}
                                     ${tinygltf_SOURCE_DIR})

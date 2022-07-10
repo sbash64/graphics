@@ -1,5 +1,4 @@
 #include <sbash64/graphics/glfw-wrappers.hpp>
-#include <sbash64/graphics/load-object.hpp>
 #include <sbash64/graphics/load-scene.hpp>
 #include <sbash64/graphics/stbi-wrappers.hpp>
 #include <sbash64/graphics/vulkan-wrappers.hpp>
@@ -984,7 +983,7 @@ static void run(const std::string &stationaryVertexShaderCodePath,
   auto worldOrigin{glm::vec3{0.F, 0.F, 0.F}};
   glfwCallback.camera.yaw = -90;
   glfwCallback.camera.pitch = 15;
-  FixedPointVector3D playerDisplacement{1000, 0, -500};
+  FixedPointVector3D playerDisplacement{0, 0, 0};
   auto animationIndex{0};
   while (!recreatingSwapChain) {
     if (glfwWindowShouldClose(glfwWindow.window) != 0) {
