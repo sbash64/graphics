@@ -39,56 +39,11 @@ constexpr auto withFriction(int velocity, int friction) -> int {
 
 enum class JumpState { grounded, started, released };
 
-struct RationalNumber {
-  int numerator;
-  int denominator;
-};
-
-constexpr auto operator+=(RationalNumber &a, RationalNumber b)
-    -> RationalNumber & {
-  const auto smallerDenominator{std::min(a.denominator, b.denominator)};
-  const auto largerDenominator{std::max(a.denominator, b.denominator)};
-  auto commonDenominator{smallerDenominator};
-  auto candidateDenominator{largerDenominator};
-  while (true) {
-    while (commonDenominator <
-           std::min(std::numeric_limits<int>::max() - smallerDenominator,
-                    candidateDenominator))
-      commonDenominator += smallerDenominator;
-    if (commonDenominator != candidateDenominator) {
-      if (candidateDenominator <
-          std::numeric_limits<int>::max() - largerDenominator)
-        candidateDenominator += largerDenominator;
-      else
-        return a;
-    } else {
-      a.numerator = a.numerator * commonDenominator / a.denominator +
-                    b.numerator * commonDenominator / b.denominator;
-      a.denominator = commonDenominator;
-      return a;
-    }
-  }
-}
-
-constexpr auto operator+=(RationalNumber &a, int b) -> RationalNumber {
-  a.numerator += a.denominator * b;
-  return a;
-}
-
 constexpr auto absoluteValue(int a) -> int { return a < 0 ? -a : a; }
 
-constexpr auto round(RationalNumber a) -> int {
-  const auto division{a.numerator / a.denominator};
-  if (absoluteValue(a.numerator) % a.denominator <
-      (absoluteValue(a.denominator) + 1) / 2)
-    return division;
-  return ((a.numerator < 0) ^ (a.denominator < 0)) != 0 ? division - 1
-                                                        : division + 1;
-}
-
 struct ScreenPoint {
-  float x;
-  float y;
+  double x;
+  double y;
 };
 
 struct Mouse {
@@ -111,26 +66,16 @@ struct FixedPointVector3D {
 
 struct GlfwCallback {
   Mouse mouse{};
-  Camera camera{};
   bool frameBufferResized{};
 };
 
-static void updateCameraAndMouse(GlfwCallback *callback, float x, float y) {
-  const auto dy{callback->mouse.position.y - y};
-  const auto dx{callback->mouse.position.x - x};
-  if (callback->mouse.leftPressed) {
-    const auto sensitivity{0.5F};
-    callback->camera.yaw += dx * sensitivity;
-    callback->camera.pitch =
-        std::clamp(callback->camera.pitch + dy * sensitivity, 1.F, 179.F);
-  }
+static void updateMousePosition(GlfwCallback *callback, double x, double y) {
   callback->mouse.position = {x, y};
 }
 
 static void onCursorPositionChanged(GLFWwindow *window, double x, double y) {
-  updateCameraAndMouse(
-      static_cast<GlfwCallback *>(glfwGetWindowUserPointer(window)),
-      static_cast<float>(x), static_cast<float>(y));
+  updateMousePosition(
+      static_cast<GlfwCallback *>(glfwGetWindowUserPointer(window)), x, y);
 }
 
 static void onMouseButton(GLFWwindow *window, int button, int action,
@@ -331,13 +276,17 @@ static void updateModelViewProjectionUniformBuffer(
     const vulkan_wrappers::Device &device,
     const vulkan_wrappers::DeviceMemory &memory, glm::mat4 view,
     glm::mat4 perspective, glm::vec3 translation, float scale = 1,
-    float rotationXAngleDegrees = 0) {
+    float rotationXAngleDegrees = 0, float rotationZAngleDegrees = 0) {
   UniformBufferObject ubo{};
   perspective[1][1] *= -1;
-  ubo.mvp = perspective * view * glm::translate(glm::mat4{1.F}, translation) *
-            glm::rotate(glm::mat4{1.F}, glm::radians(rotationXAngleDegrees),
-                        glm::vec3{1.F, 0.F, 0.F}) *
-            glm::scale(glm::vec3{scale, scale, scale});
+  ubo.mvp =
+      perspective * view * glm::translate(glm::mat4{1.F}, translation) *
+      glm::rotate(glm::mat4{1.F}, glm::radians(rotationXAngleDegrees),
+                  glm::vec3{1.F, 0.F, 0.F}) *
+      glm::rotate(glm::mat4{1.F}, glm::radians(0.F), glm::vec3{0.F, 1.F, 0.F}) *
+      glm::rotate(glm::mat4{1.F}, glm::radians(rotationZAngleDegrees),
+                  glm::vec3{0.F, 0.F, 1.F}) *
+      glm::scale(glm::vec3{scale, scale, scale});
   copy(device.device, memory.memory, &ubo, sizeof(ubo));
 }
 
@@ -978,13 +927,15 @@ static void run(const std::string &stationaryVertexShaderCodePath,
   auto recreatingSwapChain{false};
   auto currentFrame{0U};
   FixedPointVector3D playerVelocity{};
-  RationalNumber verticalVelocity{0, 1};
+  auto verticalVelocity{0};
   auto jumpState{JumpState::grounded};
   auto worldOrigin{glm::vec3{0.F, 0.F, 0.F}};
-  glfwCallback.camera.yaw = -90;
-  glfwCallback.camera.pitch = 15;
+  Camera camera{};
+  camera.yaw = -90;
+  camera.pitch = 15;
   FixedPointVector3D playerDisplacement{0, 0, 0};
   auto animationIndex{0};
+  ScreenPoint lastMousePosition{};
   while (!recreatingSwapChain) {
     if (glfwWindowShouldClose(glfwWindow.window) != 0) {
       break;
@@ -992,13 +943,26 @@ static void run(const std::string &stationaryVertexShaderCodePath,
 
     glfwPollEvents();
     {
+      if (glfwCallback.mouse.leftPressed) {
+        const auto sensitivity{0.5F};
+        camera.yaw += static_cast<float>(glfwCallback.mouse.position.x -
+                                         lastMousePosition.x) *
+                      sensitivity;
+        camera.pitch = std::clamp(
+            camera.pitch + static_cast<float>(glfwCallback.mouse.position.y -
+                                              lastMousePosition.y) *
+                               sensitivity,
+            1.F, 179.F);
+      }
+      lastMousePosition = glfwCallback.mouse.position;
+
       if (pressing(glfwWindow.window, GLFW_KEY_F) && animationIndex == 0) {
         animationIndex = 1;
         animationTime = playerScene.animations.at(animationIndex).start;
       }
-      constexpr auto playerRunAcceleration{2};
-      constexpr auto playerJumpAcceleration{6};
-      const RationalNumber gravity{-1, 4};
+      constexpr auto playerRunAcceleration{30};
+      constexpr auto playerJumpAcceleration{50};
+      const auto gravity{-1};
       if (pressing(glfwWindow.window, GLFW_KEY_A)) {
         playerVelocity.x += playerRunAcceleration;
       }
@@ -1020,10 +984,10 @@ static void run(const std::string &stationaryVertexShaderCodePath,
       if (glfwGetKey(glfwWindow.window, GLFW_KEY_SPACE) != GLFW_PRESS &&
           jumpState == JumpState::started) {
         jumpState = JumpState::released;
-        if (verticalVelocity.numerator > 0)
-          verticalVelocity = {0, 1};
+        if (verticalVelocity > 0)
+          verticalVelocity = 0;
       }
-      constexpr auto playerMaxGroundSpeed{4};
+      constexpr auto playerMaxGroundSpeed{100};
       constexpr auto groundFriction{1};
       playerVelocity.x = withFriction(
           clamp(playerVelocity.x, playerMaxGroundSpeed), groundFriction);
@@ -1031,11 +995,11 @@ static void run(const std::string &stationaryVertexShaderCodePath,
           clamp(playerVelocity.z, playerMaxGroundSpeed), groundFriction);
       playerDisplacement.x += playerVelocity.x;
       playerDisplacement.z += playerVelocity.z;
-      playerDisplacement.y += round(verticalVelocity);
+      playerDisplacement.y += verticalVelocity;
       if (playerDisplacement.y < 0) {
         jumpState = JumpState::grounded;
         playerDisplacement.y = 0;
-        verticalVelocity = {0, 1};
+        verticalVelocity = 0;
       }
     }
 
@@ -1075,19 +1039,19 @@ static void run(const std::string &stationaryVertexShaderCodePath,
                              static_cast<float>(swapChainExtent.height),
                          10.F, 1000.F);
     const glm::vec3 playerPosition{
-        static_cast<float>(playerDisplacement.x) * .3F,
-        static_cast<float>(playerDisplacement.y) * .3F,
-        static_cast<float>(playerDisplacement.z) * .3F};
+        static_cast<float>(playerDisplacement.x) * .03F,
+        static_cast<float>(playerDisplacement.y) * .03F,
+        static_cast<float>(playerDisplacement.z) * .03F};
     const auto playerCameraFocus{playerPosition + glm::vec3{0, 15.F, 0}};
-    const auto view = glm::lookAt(
-        playerCameraFocus +
-            60.F * glm::normalize(glm::vec3{
-                       std::cos(glm::radians(glfwCallback.camera.yaw)) *
-                           std::cos(glm::radians(glfwCallback.camera.pitch)),
-                       std::sin(glm::radians(glfwCallback.camera.pitch)),
-                       std::sin(glm::radians(glfwCallback.camera.yaw)) *
-                           std::cos(glm::radians(glfwCallback.camera.pitch))}),
-        playerCameraFocus, glm::vec3(0, 1, 0));
+    const auto view =
+        glm::lookAt(playerCameraFocus +
+                        60.F * glm::normalize(glm::vec3{
+                                   std::cos(glm::radians(camera.yaw)) *
+                                       std::cos(glm::radians(camera.pitch)),
+                                   std::sin(glm::radians(camera.pitch)),
+                                   std::sin(glm::radians(camera.yaw)) *
+                                       std::cos(glm::radians(camera.pitch))}),
+                    playerCameraFocus, glm::vec3(0, 1, 0));
 
     // writes to uniform and storage buffers
     updateModelViewProjectionUniformBuffer(
@@ -1095,7 +1059,7 @@ static void run(const std::string &stationaryVertexShaderCodePath,
         projection, worldOrigin, 10.F);
     updateModelViewProjectionUniformBuffer(
         vulkanDevice, playerModelViewProjectionUniformBuffer.memory, view,
-        projection, playerPosition, 2000.F, -90.F);
+        projection, playerPosition, 2000.F, -90.F, -90.F - camera.yaw);
     for (const auto &node : playerScene.nodes)
       updateJointMatricesStorageBuffers(node.get(), vulkanDevice.device,
                                         playerJointMatricesStorageBuffers,
