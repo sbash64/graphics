@@ -13,13 +13,16 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
 #include <functional>
 #include <iostream>
 #include <iterator>
+#include <limits>
 #include <map>
 #include <numeric>
 #include <span>
@@ -36,6 +39,76 @@ constexpr auto clamp(int velocity, int limit) -> int {
 constexpr auto withFriction(int velocity, int friction) -> int {
   return (velocity < 0 ? -1 : 1) * std::max(0, std::abs(velocity) - friction);
 }
+
+constexpr std::array<int, 91> lut = {
+    0,      17452,  34899,  52336,  69756,  87156,  104528, 121869, 139173,
+    156434, 173648, 190809, 207912, 224951, 241922, 258819, 275637, 292372,
+    309017, 325568, 342020, 358368, 374607, 390731, 406737, 422618, 438371,
+    453990, 469472, 484810, 500000, 515038, 529919, 544639, 559193, 573576,
+    587785, 601815, 615661, 629320, 642788, 656059, 669131, 681998, 694658,
+    707107, 719340, 731354, 743145, 754710, 766044, 777146, 788011, 798636,
+    809017, 819152, 829038, 838671, 848048, 857167, 866025, 874620, 882948,
+    891007, 898794, 906308, 913545, 920505, 927184, 933580, 939693, 945519,
+    951057, 956305, 961262, 965926, 970296, 974370, 978148, 981627, 984808,
+    987688, 990268, 992546, 994522, 996195, 997564, 998630, 999391, 999848,
+    1000000};
+
+constexpr auto sinTimesMillion(int degrees) -> int {
+  if (degrees < 0)
+    return -sinTimesMillion(-degrees);
+  if (degrees < 90)
+    return lut.at(degrees);
+  if (degrees < 180)
+    return lut.at(180 - degrees);
+  if (degrees < 270)
+    return -lut.at(degrees - 180);
+  if (degrees < 360)
+    return -lut.at(360 - degrees);
+  return 0;
+}
+
+static_assert(sinTimesMillion(0) == 0, "sin implementation incorrect");
+static_assert(sinTimesMillion(2) == 34899, "sin implementation incorrect");
+static_assert(sinTimesMillion(89) == 999848, "sin implementation incorrect");
+static_assert(sinTimesMillion(90) == 1000000, "sin implementation incorrect");
+static_assert(sinTimesMillion(91) == 999848, "sin implementation incorrect");
+static_assert(sinTimesMillion(179) == 17452, "sin implementation incorrect");
+static_assert(sinTimesMillion(180) == 0, "sin implementation incorrect");
+static_assert(sinTimesMillion(181) == -17452, "sin implementation incorrect");
+static_assert(sinTimesMillion(269) == -999848, "sin implementation incorrect");
+static_assert(sinTimesMillion(270) == -1000000, "sin implementation incorrect");
+static_assert(sinTimesMillion(271) == -999848, "sin implementation incorrect");
+static_assert(sinTimesMillion(359) == -17452, "sin implementation incorrect");
+static_assert(sinTimesMillion(360) == 0, "sin implementation incorrect");
+static_assert(sinTimesMillion(-10) == -173648, "sin implementation incorrect");
+
+constexpr auto cosTimesMillion(int degrees) -> int {
+  if (degrees < 0)
+    return cosTimesMillion(-degrees);
+  if (degrees < 90)
+    return lut.at(90 - degrees);
+  if (degrees < 180)
+    return -lut.at(degrees - 90);
+  if (degrees < 270)
+    return -lut.at(270 - degrees);
+  if (degrees < 360)
+    return lut.at(degrees - 270);
+  return 1000000;
+}
+
+static_assert(cosTimesMillion(0) == 1000000, "cos implementation incorrect");
+static_assert(cosTimesMillion(1) == 999848, "cos implementation incorrect");
+static_assert(cosTimesMillion(89) == 17452, "cos implementation incorrect");
+static_assert(cosTimesMillion(90) == 0, "cos implementation incorrect");
+static_assert(cosTimesMillion(91) == -17452, "cos implementation incorrect");
+static_assert(cosTimesMillion(179) == -999848, "cos implementation incorrect");
+static_assert(cosTimesMillion(180) == -1000000, "cos implementation incorrect");
+static_assert(cosTimesMillion(181) == -999848, "cos implementation incorrect");
+static_assert(cosTimesMillion(269) == -17452, "cos implementation incorrect");
+static_assert(cosTimesMillion(270) == 0, "cos implementation incorrect");
+static_assert(cosTimesMillion(271) == 17452, "cos implementation incorrect");
+static_assert(cosTimesMillion(359) == 999848, "cos implementation incorrect");
+static_assert(cosTimesMillion(360) == 1000000, "cos implementation incorrect");
 
 enum class JumpState { grounded, started, released };
 
@@ -54,14 +127,14 @@ struct Mouse {
 };
 
 struct Camera {
-  float yaw;
-  float pitch;
+  int yawDegrees;
+  int pitchDegrees;
 };
 
 struct FixedPointVector3D {
-  int x;
-  int y;
-  int z;
+  int_fast64_t x;
+  int_fast64_t y;
+  int_fast64_t z;
 };
 
 struct GlfwCallback {
@@ -553,6 +626,11 @@ static auto uniformBufferDescriptorSet(
   return descriptorSet;
 }
 
+static auto horizontalSpeedSquaredOfVelocityVector(FixedPointVector3D v)
+    -> int_fast64_t {
+  return v.x * v.x + v.z * v.z;
+}
+
 static void run(const std::string &stationaryVertexShaderCodePath,
                 const std::string &stationaryFragmentShaderCodePath,
                 const std::string &animatingVertexShaderCodePath,
@@ -922,7 +1000,7 @@ static void run(const std::string &stationaryVertexShaderCodePath,
   const auto swapChainExtent{swapExtent(
       vulkanPhysicalDevice, vulkanSurface.surface, glfwWindow.window)};
 
-  auto animationTime{0.f};
+  auto animationTime{0.F};
 
   auto recreatingSwapChain{false};
   auto currentFrame{0U};
@@ -931,8 +1009,8 @@ static void run(const std::string &stationaryVertexShaderCodePath,
   auto jumpState{JumpState::grounded};
   auto worldOrigin{glm::vec3{0.F, 0.F, 0.F}};
   Camera camera{};
-  camera.yaw = -90;
-  camera.pitch = 15;
+  camera.yawDegrees = 90;
+  camera.pitchDegrees = 15;
   FixedPointVector3D playerDisplacement{0, 0, 0};
   auto animationIndex{0};
   ScreenPoint lastMousePosition{};
@@ -944,15 +1022,20 @@ static void run(const std::string &stationaryVertexShaderCodePath,
     glfwPollEvents();
     {
       if (glfwCallback.mouse.leftPressed) {
-        const auto sensitivity{0.5F};
-        camera.yaw += static_cast<float>(glfwCallback.mouse.position.x -
-                                         lastMousePosition.x) *
-                      sensitivity;
-        camera.pitch = std::clamp(
-            camera.pitch + static_cast<float>(glfwCallback.mouse.position.y -
-                                              lastMousePosition.y) *
-                               sensitivity,
-            1.F, 179.F);
+        const auto sensitivity{0.5};
+        camera.yawDegrees += static_cast<int>(
+            std::round((glfwCallback.mouse.position.x - lastMousePosition.x) *
+                       sensitivity));
+        if (camera.yawDegrees > 179)
+          camera.yawDegrees -= 360;
+        if (camera.yawDegrees < -179)
+          camera.yawDegrees += 360;
+        camera.pitchDegrees = std::clamp(
+            camera.pitchDegrees +
+                static_cast<int>(std::round(
+                    (glfwCallback.mouse.position.y - lastMousePosition.y) *
+                    sensitivity)),
+            1, 179);
       }
       lastMousePosition = glfwCallback.mouse.position;
 
@@ -960,20 +1043,48 @@ static void run(const std::string &stationaryVertexShaderCodePath,
         animationIndex = 1;
         animationTime = playerScene.animations.at(animationIndex).start;
       }
-      constexpr auto playerRunAcceleration{30};
-      constexpr auto playerJumpAcceleration{50};
+      constexpr auto playerRunAcceleration{1000};
+      constexpr auto playerJumpAcceleration{3000};
       const auto gravity{-1};
       if (pressing(glfwWindow.window, GLFW_KEY_A)) {
-        playerVelocity.x += playerRunAcceleration;
+        playerVelocity.x +=
+            (playerRunAcceleration * cosTimesMillion(camera.yawDegrees - 90) +
+             500000) /
+            1000000;
+        playerVelocity.z +=
+            (playerRunAcceleration * sinTimesMillion(camera.yawDegrees - 90) +
+             500000) /
+            1000000;
       }
       if (pressing(glfwWindow.window, GLFW_KEY_D)) {
-        playerVelocity.x -= playerRunAcceleration;
+        playerVelocity.x +=
+            (playerRunAcceleration * cosTimesMillion(camera.yawDegrees + 90) +
+             500000) /
+            1000000;
+        playerVelocity.z +=
+            (playerRunAcceleration * sinTimesMillion(camera.yawDegrees + 90) +
+             500000) /
+            1000000;
       }
       if (pressing(glfwWindow.window, GLFW_KEY_W)) {
-        playerVelocity.z += playerRunAcceleration;
+        playerVelocity.x +=
+            (playerRunAcceleration * cosTimesMillion(camera.yawDegrees) +
+             500000) /
+            1000000;
+        playerVelocity.z +=
+            (playerRunAcceleration * sinTimesMillion(camera.yawDegrees) +
+             500000) /
+            1000000;
       }
       if (pressing(glfwWindow.window, GLFW_KEY_S)) {
-        playerVelocity.z -= playerRunAcceleration;
+        playerVelocity.x -=
+            (playerRunAcceleration * cosTimesMillion(camera.yawDegrees) +
+             500000) /
+            1000000;
+        playerVelocity.z -=
+            (playerRunAcceleration * sinTimesMillion(camera.yawDegrees) +
+             500000) /
+            1000000;
       }
       if (pressing(glfwWindow.window, GLFW_KEY_SPACE) &&
           jumpState == JumpState::grounded) {
@@ -987,12 +1098,10 @@ static void run(const std::string &stationaryVertexShaderCodePath,
         if (verticalVelocity > 0)
           verticalVelocity = 0;
       }
-      constexpr auto playerMaxGroundSpeed{100};
-      constexpr auto groundFriction{1};
-      playerVelocity.x = withFriction(
-          clamp(playerVelocity.x, playerMaxGroundSpeed), groundFriction);
-      playerVelocity.z = withFriction(
-          clamp(playerVelocity.z, playerMaxGroundSpeed), groundFriction);
+      // constexpr auto playerMaxGroundSpeed{10000};
+      // if (horizontalSpeedOfVelocityVector(playerVelocity) >
+      //     playerMaxGroundSpeed)
+      //   ;
       playerDisplacement.x += playerVelocity.x;
       playerDisplacement.z += playerVelocity.z;
       playerDisplacement.y += verticalVelocity;
@@ -1039,19 +1148,23 @@ static void run(const std::string &stationaryVertexShaderCodePath,
                              static_cast<float>(swapChainExtent.height),
                          10.F, 1000.F);
     const glm::vec3 playerPosition{
-        static_cast<float>(playerDisplacement.x) * .03F,
-        static_cast<float>(playerDisplacement.y) * .03F,
-        static_cast<float>(playerDisplacement.z) * .03F};
+        static_cast<float>(playerDisplacement.x) * .0003F,
+        static_cast<float>(playerDisplacement.y) * .0003F,
+        static_cast<float>(playerDisplacement.z) * .0003F};
     const auto playerCameraFocus{playerPosition + glm::vec3{0, 15.F, 0}};
-    const auto view =
-        glm::lookAt(playerCameraFocus +
-                        60.F * glm::normalize(glm::vec3{
-                                   std::cos(glm::radians(camera.yaw)) *
-                                       std::cos(glm::radians(camera.pitch)),
-                                   std::sin(glm::radians(camera.pitch)),
-                                   std::sin(glm::radians(camera.yaw)) *
-                                       std::cos(glm::radians(camera.pitch))}),
-                    playerCameraFocus, glm::vec3(0, 1, 0));
+    const auto view = glm::lookAt(
+        playerCameraFocus +
+            60.F * glm::vec3{-std::cosf(glm::radians(
+                                 static_cast<float>(camera.yawDegrees))) *
+                                 std::cosf(glm::radians(
+                                     static_cast<float>(camera.pitchDegrees))),
+                             std::sinf(glm::radians(
+                                 static_cast<float>(camera.pitchDegrees))),
+                             -std::sinf(glm::radians(
+                                 static_cast<float>(camera.yawDegrees))) *
+                                 std::cosf(glm::radians(
+                                     static_cast<float>(camera.pitchDegrees)))},
+        playerCameraFocus, glm::vec3(0, 1, 0));
 
     // writes to uniform and storage buffers
     updateModelViewProjectionUniformBuffer(
@@ -1059,7 +1172,7 @@ static void run(const std::string &stationaryVertexShaderCodePath,
         projection, worldOrigin, 10.F);
     updateModelViewProjectionUniformBuffer(
         vulkanDevice, playerModelViewProjectionUniformBuffer.memory, view,
-        projection, playerPosition, 2000.F, -90.F, -90.F - camera.yaw);
+        projection, playerPosition, 2000.F, -90.F, 90.F - camera.yawDegrees);
     for (const auto &node : playerScene.nodes)
       updateJointMatricesStorageBuffers(node.get(), vulkanDevice.device,
                                         playerJointMatricesStorageBuffers,
