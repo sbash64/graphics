@@ -1079,7 +1079,7 @@ static void run(const std::string &stationaryVertexShaderCodePath,
       animationTime = playerScene.animations.at(animationIndex).start;
     }
 
-    constexpr auto playerRunAcceleration{1000};
+    constexpr auto playerRunAcceleration{4000};
     if (pressing(glfwWindow.window, GLFW_KEY_A))
       playerVelocity = applyHorizontalAcceleration(
           playerVelocity, playerRunAcceleration, camera, -90);
@@ -1114,6 +1114,8 @@ static void run(const std::string &stationaryVertexShaderCodePath,
     // constexpr auto groundFriction{500};
     // playerVelocity.x = withFriction(playerVelocity.x, groundFriction);
     // playerVelocity.z = withFriction(playerVelocity.z, groundFriction);
+    playerVelocity.x /= 2;
+    playerVelocity.z /= 2;
     playerDisplacement = applyVelocity(playerDisplacement, playerVelocity);
     if (playerDisplacement.y < 0) {
       playerJumpState = JumpState::grounded;
