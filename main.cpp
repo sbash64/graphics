@@ -36,11 +36,13 @@ constexpr auto clamp(int velocity, int limit) -> int {
   return std::clamp(velocity, -limit, limit);
 }
 
-constexpr auto withFriction(int velocity, int friction) -> int {
-  return (velocity < 0 ? -1 : 1) * std::max(0, std::abs(velocity) - friction);
+constexpr auto withFriction(int_fast64_t velocity, int_fast64_t friction)
+    -> int_fast64_t {
+  return (velocity < 0 ? -1 : 1) *
+         std::max(int_fast64_t{0}, std::abs(velocity) - friction);
 }
 
-constexpr std::array<int, 91> lut = {
+constexpr std::array<int, 91> sinTimesMillionLUT = {
     0,      17452,  34899,  52336,  69756,  87156,  104528, 121869, 139173,
     156434, 173648, 190809, 207912, 224951, 241922, 258819, 275637, 292372,
     309017, 325568, 342020, 358368, 374607, 390731, 406737, 422618, 438371,
@@ -57,13 +59,13 @@ constexpr auto sinTimesMillion(int degrees) -> int {
   if (degrees < 0)
     return -sinTimesMillion(-degrees);
   if (degrees < 90)
-    return lut.at(degrees);
+    return sinTimesMillionLUT.at(degrees);
   if (degrees < 180)
-    return lut.at(180 - degrees);
+    return sinTimesMillionLUT.at(180 - degrees);
   if (degrees < 270)
-    return -lut.at(degrees - 180);
+    return -sinTimesMillionLUT.at(degrees - 180);
   if (degrees < 360)
-    return -lut.at(360 - degrees);
+    return -sinTimesMillionLUT.at(360 - degrees);
   return 0;
 }
 
@@ -86,13 +88,13 @@ constexpr auto cosTimesMillion(int degrees) -> int {
   if (degrees < 0)
     return cosTimesMillion(-degrees);
   if (degrees < 90)
-    return lut.at(90 - degrees);
+    return sinTimesMillionLUT.at(90 - degrees);
   if (degrees < 180)
-    return -lut.at(degrees - 90);
+    return -sinTimesMillionLUT.at(degrees - 90);
   if (degrees < 270)
-    return -lut.at(270 - degrees);
+    return -sinTimesMillionLUT.at(270 - degrees);
   if (degrees < 360)
-    return lut.at(degrees - 270);
+    return sinTimesMillionLUT.at(degrees - 270);
   return 1000000;
 }
 
@@ -131,7 +133,7 @@ struct Camera {
   int pitchDegrees;
 };
 
-struct FixedPointVector3D {
+struct IntegerVector3D {
   int_fast64_t x;
   int_fast64_t y;
   int_fast64_t z;
@@ -626,17 +628,59 @@ static auto uniformBufferDescriptorSet(
   return descriptorSet;
 }
 
-static auto horizontalSpeedSquaredOfVelocityVector(FixedPointVector3D v)
+static auto horizontalSpeedSquaredOfVelocityVector(IntegerVector3D v)
     -> int_fast64_t {
   return v.x * v.x + v.z * v.z;
+}
+
+static auto applyVelocity(IntegerVector3D displacement,
+                          IntegerVector3D velocity) -> IntegerVector3D {
+  return {displacement.x + velocity.x, displacement.y + velocity.y,
+          displacement.z + velocity.z};
+}
+
+// https://stackoverflow.com/a/18067292
+static auto divide(int_fast64_t n, int_fast64_t d) -> int_fast64_t {
+  return ((n < 0) ^ (d < 0)) != 0 ? ((n - d / 2) / d) : ((n + d / 2) / d);
+}
+
+static auto applyHorizontalAcceleration(IntegerVector3D velocity,
+                                        int acceleration, Camera camera,
+                                        int degreeOffset) -> IntegerVector3D {
+  return {
+      velocity.x + divide(static_cast<int_fast64_t>(acceleration) *
+                              cosTimesMillion(camera.yawDegrees + degreeOffset),
+                          1000000),
+      velocity.y,
+      velocity.z + divide(static_cast<int_fast64_t>(acceleration) *
+                              sinTimesMillion(camera.yawDegrees + degreeOffset),
+                          1000000)};
+}
+
+static auto updateCamera(Camera camera, const GlfwCallback &glfwCallback,
+                         ScreenPoint lastMousePosition) -> Camera {
+  const auto sensitivity{0.5};
+  camera.yawDegrees += static_cast<int>(std::round(
+      (glfwCallback.mouse.position.x - lastMousePosition.x) * sensitivity));
+  if (camera.yawDegrees > 179)
+    camera.yawDegrees -= 360;
+  if (camera.yawDegrees < -179)
+    camera.yawDegrees += 360;
+  camera.pitchDegrees =
+      std::clamp(camera.pitchDegrees +
+                     static_cast<int>(std::round(
+                         (glfwCallback.mouse.position.y - lastMousePosition.y) *
+                         sensitivity)),
+                 1, 179);
+  return camera;
 }
 
 static void run(const std::string &stationaryVertexShaderCodePath,
                 const std::string &stationaryFragmentShaderCodePath,
                 const std::string &animatingVertexShaderCodePath,
                 const std::string &animatingFragmentShaderCodePath,
-                const std::string &worldObjectPath,
-                const std::string &animatingScenePath) {
+                const std::string &worldScenePath,
+                const std::string &playerScenePath) {
   const glfw_wrappers::Init glfwInitialization;
   glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
   const glfw_wrappers::Window glfwWindow{
@@ -728,7 +772,7 @@ static void run(const std::string &stationaryVertexShaderCodePath,
           vulkanDevice.device,
           {stationaryCombinedImageSamplerDescriptorSetLayoutBinding}};
 
-  const auto worldScene{readScene(worldObjectPath)};
+  const auto worldScene{readScene(worldScenePath)};
   const auto worldTextureImages{
       textureImages(vulkanDevice.device, vulkanPhysicalDevice,
                     vulkanCommandPool.commandPool, graphicsQueue, worldScene)};
@@ -815,7 +859,7 @@ static void run(const std::string &stationaryVertexShaderCodePath,
       attributeDescriptions,
       bindingDescription};
 
-  const auto playerScene{readScene(animatingScenePath)};
+  const auto playerScene{readScene(playerScenePath)};
   const auto playerTextureImages{
       textureImages(vulkanDevice.device, vulkanPhysicalDevice,
                     vulkanCommandPool.commandPool, graphicsQueue, playerScene)};
@@ -1004,112 +1048,70 @@ static void run(const std::string &stationaryVertexShaderCodePath,
 
   auto recreatingSwapChain{false};
   auto currentFrame{0U};
-  FixedPointVector3D playerVelocity{};
-  auto verticalVelocity{0};
-  auto jumpState{JumpState::grounded};
+  IntegerVector3D playerVelocity{};
+  auto playerJumpState{JumpState::grounded};
   auto worldOrigin{glm::vec3{0.F, 0.F, 0.F}};
   Camera camera{};
   camera.yawDegrees = 90;
   camera.pitchDegrees = 15;
-  FixedPointVector3D playerDisplacement{0, 0, 0};
+  IntegerVector3D playerDisplacement{0, 0, 0};
   auto animationIndex{0};
   ScreenPoint lastMousePosition{};
   while (!recreatingSwapChain) {
-    if (glfwWindowShouldClose(glfwWindow.window) != 0) {
+    if (glfwWindowShouldClose(glfwWindow.window) != 0)
       break;
-    }
 
     glfwPollEvents();
-    {
-      if (glfwCallback.mouse.leftPressed) {
-        const auto sensitivity{0.5};
-        camera.yawDegrees += static_cast<int>(
-            std::round((glfwCallback.mouse.position.x - lastMousePosition.x) *
-                       sensitivity));
-        if (camera.yawDegrees > 179)
-          camera.yawDegrees -= 360;
-        if (camera.yawDegrees < -179)
-          camera.yawDegrees += 360;
-        camera.pitchDegrees = std::clamp(
-            camera.pitchDegrees +
-                static_cast<int>(std::round(
-                    (glfwCallback.mouse.position.y - lastMousePosition.y) *
-                    sensitivity)),
-            1, 179);
-      }
-      lastMousePosition = glfwCallback.mouse.position;
 
-      if (pressing(glfwWindow.window, GLFW_KEY_F) && animationIndex == 0) {
-        animationIndex = 1;
-        animationTime = playerScene.animations.at(animationIndex).start;
-      }
-      constexpr auto playerRunAcceleration{1000};
-      constexpr auto playerJumpAcceleration{3000};
-      const auto gravity{-1};
-      if (pressing(glfwWindow.window, GLFW_KEY_A)) {
-        playerVelocity.x +=
-            (playerRunAcceleration * cosTimesMillion(camera.yawDegrees - 90) +
-             500000) /
-            1000000;
-        playerVelocity.z +=
-            (playerRunAcceleration * sinTimesMillion(camera.yawDegrees - 90) +
-             500000) /
-            1000000;
-      }
-      if (pressing(glfwWindow.window, GLFW_KEY_D)) {
-        playerVelocity.x +=
-            (playerRunAcceleration * cosTimesMillion(camera.yawDegrees + 90) +
-             500000) /
-            1000000;
-        playerVelocity.z +=
-            (playerRunAcceleration * sinTimesMillion(camera.yawDegrees + 90) +
-             500000) /
-            1000000;
-      }
-      if (pressing(glfwWindow.window, GLFW_KEY_W)) {
-        playerVelocity.x +=
-            (playerRunAcceleration * cosTimesMillion(camera.yawDegrees) +
-             500000) /
-            1000000;
-        playerVelocity.z +=
-            (playerRunAcceleration * sinTimesMillion(camera.yawDegrees) +
-             500000) /
-            1000000;
-      }
-      if (pressing(glfwWindow.window, GLFW_KEY_S)) {
-        playerVelocity.x -=
-            (playerRunAcceleration * cosTimesMillion(camera.yawDegrees) +
-             500000) /
-            1000000;
-        playerVelocity.z -=
-            (playerRunAcceleration * sinTimesMillion(camera.yawDegrees) +
-             500000) /
-            1000000;
-      }
-      if (pressing(glfwWindow.window, GLFW_KEY_SPACE) &&
-          jumpState == JumpState::grounded) {
-        jumpState = JumpState::started;
-        verticalVelocity += playerJumpAcceleration;
-      }
-      verticalVelocity += gravity;
-      if (glfwGetKey(glfwWindow.window, GLFW_KEY_SPACE) != GLFW_PRESS &&
-          jumpState == JumpState::started) {
-        jumpState = JumpState::released;
-        if (verticalVelocity > 0)
-          verticalVelocity = 0;
-      }
-      // constexpr auto playerMaxGroundSpeed{10000};
-      // if (horizontalSpeedOfVelocityVector(playerVelocity) >
-      //     playerMaxGroundSpeed)
-      //   ;
-      playerDisplacement.x += playerVelocity.x;
-      playerDisplacement.z += playerVelocity.z;
-      playerDisplacement.y += verticalVelocity;
-      if (playerDisplacement.y < 0) {
-        jumpState = JumpState::grounded;
-        playerDisplacement.y = 0;
-        verticalVelocity = 0;
-      }
+    if (glfwCallback.mouse.leftPressed)
+      camera = updateCamera(camera, glfwCallback, lastMousePosition);
+    lastMousePosition = glfwCallback.mouse.position;
+
+    if (pressing(glfwWindow.window, GLFW_KEY_F) && animationIndex == 0) {
+      animationIndex = 1;
+      animationTime = playerScene.animations.at(animationIndex).start;
+    }
+
+    constexpr auto playerRunAcceleration{1000};
+    if (pressing(glfwWindow.window, GLFW_KEY_A))
+      playerVelocity = applyHorizontalAcceleration(
+          playerVelocity, playerRunAcceleration, camera, -90);
+    if (pressing(glfwWindow.window, GLFW_KEY_D))
+      playerVelocity = applyHorizontalAcceleration(
+          playerVelocity, playerRunAcceleration, camera, 90);
+    if (pressing(glfwWindow.window, GLFW_KEY_W))
+      playerVelocity = applyHorizontalAcceleration(
+          playerVelocity, playerRunAcceleration, camera, 0);
+    if (pressing(glfwWindow.window, GLFW_KEY_S))
+      playerVelocity = applyHorizontalAcceleration(
+          playerVelocity, playerRunAcceleration, camera, 180);
+
+    constexpr auto playerJumpAcceleration{10000};
+    if (pressing(glfwWindow.window, GLFW_KEY_SPACE) &&
+        playerJumpState == JumpState::grounded) {
+      playerJumpState = JumpState::started;
+      playerVelocity.y += playerJumpAcceleration;
+    }
+    const auto gravity{-500};
+    playerVelocity.y += gravity;
+    if (glfwGetKey(glfwWindow.window, GLFW_KEY_SPACE) != GLFW_PRESS &&
+        playerJumpState == JumpState::started) {
+      playerJumpState = JumpState::released;
+      if (playerVelocity.y > 0)
+        playerVelocity.y = 0;
+    }
+    // constexpr auto playerMaxGroundSpeed{10000};
+    // if (horizontalSpeedOfVelocityVector(playerVelocity) >
+    //     playerMaxGroundSpeed)
+    //   ;
+    // constexpr auto groundFriction{500};
+    // playerVelocity.x = withFriction(playerVelocity.x, groundFriction);
+    // playerVelocity.z = withFriction(playerVelocity.z, groundFriction);
+    playerDisplacement = applyVelocity(playerDisplacement, playerVelocity);
+    if (playerDisplacement.y < 0) {
+      playerJumpState = JumpState::grounded;
+      playerDisplacement.y = 0;
+      playerVelocity.y = 0;
     }
 
     const auto animation{playerScene.animations.at(animationIndex)};
