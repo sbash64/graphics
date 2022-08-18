@@ -675,6 +675,23 @@ static auto updateCamera(Camera camera, const GlfwCallback &glfwCallback,
   return camera;
 }
 
+static void bindGraphics(VkDescriptorSet descriptorSet,
+                         const vulkan_wrappers::PipelineLayout &pipelineLayout,
+                         VkCommandBuffer commandBuffer) {
+  std::array<VkDescriptorSet, 1> descriptorSets{descriptorSet};
+  vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                          pipelineLayout.pipelineLayout, 0,
+                          descriptorSets.size(), descriptorSets.data(), 0,
+                          nullptr);
+}
+
+static void bindVertex(const VulkanBufferWithMemory &bufferWithMemory,
+                       VkCommandBuffer commandBuffer) {
+  std::array<VkDeviceSize, 1> offsets{0};
+  vkCmdBindVertexBuffers(commandBuffer, 0, 1, &bufferWithMemory.buffer.buffer,
+                         offsets.data());
+}
+
 static void run(const std::string &stationaryVertexShaderCodePath,
                 const std::string &stationaryFragmentShaderCodePath,
                 const std::string &animatingVertexShaderCodePath,
@@ -970,19 +987,9 @@ static void run(const std::string &stationaryVertexShaderCodePath,
                     vulkanRenderPass.renderPass);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                       stationaryVulkanPipeline.pipeline);
-    {
-      std::array<VkDescriptorSet, 1> descriptorSets{
-          worldModelViewProjectionUniformBufferDescriptorSet};
-      vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                              stationaryPipelineLayout.pipelineLayout, 0,
-                              descriptorSets.size(), descriptorSets.data(), 0,
-                              nullptr);
-    }
-    {
-      std::array<VkDeviceSize, 1> offsets{0};
-      vkCmdBindVertexBuffers(commandBuffer, 0, 1,
-                             &worldVertexBuffer.buffer.buffer, offsets.data());
-    }
+    bindGraphics(worldModelViewProjectionUniformBufferDescriptorSet,
+                 stationaryPipelineLayout, commandBuffer);
+    bindVertex(worldVertexBuffer, commandBuffer);
     vkCmdBindIndexBuffer(commandBuffer, worldIndexBuffer.buffer.buffer, 0,
                          VK_INDEX_TYPE_UINT32);
     for (const auto &node : worldScene.nodes)
@@ -990,19 +997,9 @@ static void run(const std::string &stationaryVertexShaderCodePath,
                worldCombinedImageSamplerDescriptorSets, 1U, *node, worldScene);
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                       animatingPipeline.pipeline);
-    {
-      std::array<VkDescriptorSet, 1> descriptorSets{
-          playerModelViewProjectionUniformBufferDescriptorSet};
-      vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                              animatingPipelineLayout.pipelineLayout, 0,
-                              descriptorSets.size(), descriptorSets.data(), 0,
-                              nullptr);
-    }
-    {
-      std::array<VkDeviceSize, 1> offsets{0};
-      vkCmdBindVertexBuffers(commandBuffer, 0, 1,
-                             &playerVertexBuffer.buffer.buffer, offsets.data());
-    }
+    bindGraphics(playerModelViewProjectionUniformBufferDescriptorSet,
+                 animatingPipelineLayout, commandBuffer);
+    bindVertex(playerVertexBuffer, commandBuffer);
     vkCmdBindIndexBuffer(commandBuffer, playerIndexBuffer.buffer.buffer, 0,
                          VK_INDEX_TYPE_UINT32);
     for (const auto &node : playerScene.nodes)
