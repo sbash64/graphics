@@ -638,11 +638,6 @@ static auto uniformBufferDescriptorSet(
   return descriptorSet;
 }
 
-static auto horizontalSpeedSquaredOfVelocityVector(IntegerVector3D v)
-    -> int_fast64_t {
-  return v.x * v.x + v.z * v.z;
-}
-
 static auto applyVelocity(IntegerVector3D displacement,
                           IntegerVector3D velocity) -> IntegerVector3D {
   return {displacement.x + velocity.x, displacement.y + velocity.y,
@@ -1107,13 +1102,6 @@ static void run(const std::string &stationaryVertexShaderCodePath,
       if (playerVelocity.y > 0)
         playerVelocity.y = 0;
     }
-    // constexpr auto playerMaxGroundSpeed{10000};
-    // if (horizontalSpeedOfVelocityVector(playerVelocity) >
-    //     playerMaxGroundSpeed)
-    //   ;
-    // constexpr auto groundFriction{500};
-    // playerVelocity.x = withFriction(playerVelocity.x, groundFriction);
-    // playerVelocity.z = withFriction(playerVelocity.z, groundFriction);
     playerVelocity.x /= 2;
     playerVelocity.z /= 2;
     playerDisplacement = applyVelocity(playerDisplacement, playerVelocity);
